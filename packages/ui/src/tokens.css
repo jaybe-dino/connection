@@ -1,0 +1,76 @@
+/* 커넥션 디자인 토큰 — 프로토타입 클릭데모 팔레트 추출본 (정본: 데모 HTML) */
+
+:root {
+  /* 웜 뉴트럴 */
+  --n0: #ffffff;
+  --n50: #faf8f4;
+  --n100: #f3efe7;
+  --n150: #ede7dc;
+  --n200: #e4dccf;
+  --n300: #d3c8b6;
+  --n400: #b0a492;
+  --n500: #8a8072;
+  --n600: #6b6358;
+  --n700: #4a443c;
+  --n800: #2c2823;
+  --n900: #1a1820;
+
+  /* 테라코타 (주 액션) */
+  --t100: #f7ddd4;
+  --t200: #edb8a7;
+  --t300: #de8c74;
+  --t400: #ce6c50;
+  --t500: #c2543c;
+
+  /* 세이지 (긍정·승인) */
+  --s50: #eff5f0;
+  --s100: #d5e5d9;
+  --s300: #8fb79a;
+  --s500: #5e8c6a;
+  --s700: #3e6249;
+
+  /* 앰버 (주의·보류) */
+  --a50: #fbf3e2;
+  --a100: #f3e2bc;
+  --a300: #d9af61;
+  --a500: #b5852f;
+  --a700: #855f1c;
+
+  /* 클레이 레드 (거절·위험) */
+  --c50: #fbefec;
+  --c300: #d08772;
+  --c500: #8e3b2a;
+  --c700: #672519;
+
+  /* 다크 (콘솔 레일 등) */
+  --d400: #8f8899;
+  --d500: #3c3746;
+  --d600: #2e2a36;
+  --d700: #232029;
+  --d800: #1a1820;
+  --d900: #131218;
+
+  /* 플럼 (아리) */
+  --p50: #f5eaee;
+  --p500: #6d2e46;
+
+  --font: "Pretendard", -apple-system, "Apple SD Gothic Neo", "Noto Sans KR",
+    "Noto Sans Thai", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --radius: 12px;
+  --radius-lg: 18px;
+  --shadow: 0 1px 3px rgb(26 24 32 / 0.08), 0 4px 16px rgb(26 24 32 / 0.06);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  background: var(--n50);
+  color: var(--n800);
+  -webkit-font-smoothing: antialiased;
+}

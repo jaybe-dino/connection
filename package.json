@@ -1,0 +1,12 @@
+{
+  "name": "connection",
+  "private": true,
+  "scripts": {
+    "dev:creator": "pnpm --filter @connection/creator-app dev",
+    "dev:console": "pnpm --filter @connection/console dev",
+    "dev:signup": "pnpm --filter @connection/signup dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "packageManager": "pnpm@10.33.0"
+}

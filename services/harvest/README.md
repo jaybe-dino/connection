@@ -35,11 +35,12 @@ python -m harvest.cli emails --bio "contact: jay(at)dino(dot)studio"
 
 ## 남은 것 (벤더 계약 후)
 
-1. `vendors/adapters.py`의 HTTP 호출 구현 — 키는 환경변수
-   (`SCRAPECREATORS_API_KEY` · `ENSEMBLEDATA_TOKEN` · `APIFY_TOKEN`)
-2. D1 해시태그 discover 어댑터 → `q.fetch` 적재
-3. D2 그래프 확장 워커 (`q.expand` 소비 · fanout_cap · 일일 예산)
-4. link-in-bio 크롤러 · 이메일 DB 조인(상위 등급만) · ZeroBounce류 연동
+1. ~~HTTP 벤더 어댑터~~ 완료 — `vendors/adapters.py` + `http.py`(토큰 버킷·재시도).
+   키는 환경변수(`SCRAPECREATORS_API_KEY` · `ENSEMBLEDATA_TOKEN` · `APIFY_TOKEN` · `LAMATOK_KEY`).
+   엔드포인트 경로·응답 필드는 공개 문서 기준 초안 — **키 발급 후 실응답으로 normalize 캘리브레이션**
+2. ~~D1 해시태그 워커 · D2 그래프 확장 워커~~ 완료 — `workers.py` (fanout cap · 일일 예산 · 수렴 연동)
+3. ~~link-in-bio 크롤러~~ 완료 — `enrich/linkcrawl.py` (mailto·연락 페이지 추적 · 2회 재시도)
+4. 이메일 DB 조인(influencers.club, 상위 등급만) · ZeroBounce류 VerifyApi 구현
 5. Redis Streams/SQS 큐 어댑터 · cron 지속 루프(§10) · 모니터링 지표(§11)
 6. Postgres 연동 e2e (`db/migrations/001_creator_pool.sql`)
 

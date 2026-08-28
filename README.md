@@ -33,24 +33,37 @@ connection/
 │   │   └── 04_원본자료/
 │   └── DEVELOPMENT.md     # 개발 계획 · P0 백로그 · 스택 결정
 ├── db/
-│   └── migrations/        # PostgreSQL 스키마 (母 DB creator_pool 등)
+│   └── migrations/        # PostgreSQL 스키마 (001 母 DB · 002 공통 레이어)
 ├── services/
-│   └── harvest/           # 수집 엔진 (Python) — MVP 구현
-└── apps/
-    ├── creator-app/       # 크리에이터 앱 (PWA) — 스캐폴드
-    ├── console/           # 브랜드 콘솔 (데스크톱 웹) — 스캐폴드
-    └── signup/            # 브랜드 가입 위저드 — 스캐폴드
+│   ├── harvest/           # 수집 엔진 (Python) — 파이프라인 + 벤더 어댑터 + 워커
+│   └── core/              # 공통 레이어 (Python) — 게이트 · 원장 · 동의 · 브랜드 프로필 · 알림
+├── packages/
+│   ├── shared/            # 도메인 타입 + 목데이터 (TS)
+│   └── ui/                # 디자인 토큰 + 공용 컴포넌트 (React)
+└── apps/                  # pnpm workspace + Vite + React 18
+    ├── creator-app/       # 크리에이터 앱 (PWA · 6탭 + 알림함)
+    ├── console/           # 브랜드 콘솔 (레일 8 + 아리 패널 + 캔버스)
+    └── signup/            # 브랜드 가입 위저드 (5단계 · 아리 학습)
 ```
 
 ## 시작하기
 
-### 수집 엔진 (services/harvest)
+### 앱 (apps/)
 
 ```bash
-cd services/harvest
-pip install -e ".[dev]"     # 로컬 개발 설치
-pytest                      # 단위 테스트 (네트워크 불필요)
-python -m harvest.cli --help
+pnpm install
+pnpm dev:creator    # :5173 크리에이터 PWA
+pnpm dev:console    # :5174 브랜드 콘솔
+pnpm dev:signup     # :5175 가입 위저드
+pnpm build          # 전체 타입체크 + 빌드
+```
+
+### 수집 엔진 (services/harvest) · 공통 레이어 (services/core)
+
+```bash
+cd services/harvest && pip install -e ".[dev]" && pytest   # 68 tests
+cd services/core    && pip install -e ".[dev]" && pytest   # 27 tests
+python -m harvest.cli demo   # 픽스처로 파이프라인 실연
 ```
 
 수집 파이프라인: `Discover → Fetch → Enrich → Normalize → Dedup → Score → Store(母 DB)`.
@@ -60,6 +73,7 @@ python -m harvest.cli --help
 
 ```bash
 psql $DATABASE_URL -f db/migrations/001_creator_pool.sql
+psql $DATABASE_URL -f db/migrations/002_core.sql
 ```
 
 ## 문서 읽는 순서

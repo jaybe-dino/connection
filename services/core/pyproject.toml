@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "connection-core"
+version = "0.1.0"
+description = "커넥션 공통 시스템 레이어 — 게이트 엔진 · append-only 원장 · 동의 · 브랜드 프로필"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+db = ["psycopg[binary]>=3.1"]
+dev = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+include = ["core*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

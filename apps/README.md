@@ -1,6 +1,6 @@
 # apps — 서비스 표면 3종
 
-프레임워크 확정 전 스캐폴드. **화면·흐름 스펙의 정본은 프로토타입 클릭데모**
+pnpm workspace + Vite + React 18 + TypeScript. **화면·흐름 스펙의 정본은 프로토타입 클릭데모**
 ([docs/handover/01_프로토타입/커넥션_프로토타입_클릭데모.html](../docs/handover/01_프로토타입/커넥션_프로토타입_클릭데모.html))
 — 브라우저로 열어 직접 클릭해 볼 것. 프로덕션은 다시 구현한다(데모 코드 재사용 금지).
 
@@ -16,8 +16,20 @@
 게이트 엔진(PII·PAYOUT·OUTBOUND·PUBLISH) · append-only 원장 ·
 브랜드 프로필(버전 관리) · 평가 하네스(30일 채점) · 알림(P0).
 
+## 실행
+
+```bash
+pnpm install
+pnpm dev:creator   # :5173 크리에이터 PWA
+pnpm dev:console   # :5174 브랜드 콘솔
+pnpm dev:signup    # :5175 가입 위저드
+pnpm build         # 전체 타입체크 + 빌드
+```
+
+현재 데이터는 `packages/shared/src/mock.ts` — API 연동 시 이 모듈만 교체.
+
 ## 다음 결정
 
-- 프레임워크 (React/Next 권장 — 팀 선택), 모노레포 도구(pnpm workspace / turborepo)
 - 인증: 틱톡·인스타 OAuth 앱 등록 (크리에이터는 이메일 가입 없음)
 - 푸시: PWA Web Push + 브랜드 외부 알림(메일·카카오·슬랙)
+- 백엔드 API: services/core 도메인 로직을 HTTP로 노출 (FastAPI 권장)

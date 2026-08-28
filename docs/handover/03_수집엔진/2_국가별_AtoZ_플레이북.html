@@ -1,0 +1,283 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>국가별 크리에이터 수집 A→Z 플레이북</title>
+<style>
+:root{
+--n0:#FFFFFF;--n50:#FAF8F4;--n100:#F3EFE7;--n150:#EDE7DC;--n200:#E4DCCF;--n300:#D3C8B6;
+--n400:#A89C8A;--n500:#8A7E6C;--n600:#6E6355;--n700:#544B40;--n900:#2C2620;
+--t50:#FCF2EE;--t100:#F7DDD4;--t300:#DE8C74;--t500:#C2543C;--t700:#853427;
+--s50:#EFF4F0;--s700:#3E6E4E;--a700:#8A6215;--c50:#FBEFEA;--c500:#B0472E;
+--d900:#141319;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Pretendard Variable',Pretendard,-apple-system,'Noto Sans KR',sans-serif;
+ background:var(--n100);color:var(--n900);line-height:1.7;font-size:13.5px}
+.wrap{max-width:940px;margin:0 auto;padding:44px 28px 80px}
+.cover{background:var(--n0);border:1px solid var(--n200);border-radius:18px;padding:34px 38px;margin-bottom:22px}
+.lg{display:flex;align-items:center;gap:9px;margin-bottom:16px}
+.lg .sym{width:30px;height:14px;position:relative;display:inline-block}
+.lg .sym i{position:absolute;border-radius:50%;width:8px;height:8px;top:3px}
+.lg .sym i.a{left:0;background:var(--n900)}.lg .sym i.b{right:0;background:var(--t500)}
+.lg .sym i.c{width:30px;height:1.4px;left:0;top:6.5px;border-radius:0;background:var(--n300)}
+.lg span{font-size:10px;font-weight:900;letter-spacing:.24em;color:var(--t700)}
+h1{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.35;margin-bottom:12px}
+.cover p{color:var(--n600);max-width:680px}
+.meta{display:flex;gap:16px;margin-top:16px;font-size:11px;color:var(--n500)}
+.meta b{color:var(--n900)}
+.toc{background:var(--n0);border:1px solid var(--n200);border-radius:14px;padding:20px 26px;margin-bottom:22px}
+.toc .tt{font-size:9.4px;font-weight:900;letter-spacing:.16em;color:var(--n600);margin-bottom:10px}
+.toc a{display:inline-block;font-size:11.6px;font-weight:700;color:var(--n700);text-decoration:none;
+ background:var(--n100);border-radius:8px;padding:5px 12px;margin:0 4px 6px 0}
+.toc a:hover{background:var(--t50);color:var(--t700)}
+section{background:var(--n0);border:1px solid var(--n200);border-radius:16px;padding:26px 30px;margin-bottom:18px}
+.sn{font-family:var(--mono);font-size:10.5px;font-weight:700;color:var(--t700);background:var(--t50);
+ padding:2px 9px;border-radius:6px;display:inline-block;margin-bottom:8px}
+h2{font-size:19px;font-weight:800;letter-spacing:-.015em;margin-bottom:12px}
+h3{font-size:14px;font-weight:800;margin:22px 0 9px;padding-top:4px}
+.phase{display:flex;align-items:center;gap:9px;margin:22px 0 4px}
+.phase .pb{font-size:10px;font-weight:900;letter-spacing:.1em;color:#fff;background:var(--t500);padding:4px 12px;border-radius:7px}
+.phase .pt{font-size:13px;font-weight:800}
+.phase .pr{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--n400)}
+p{margin-bottom:10px}p b{color:var(--n900)}p,li,td{color:var(--n700)}
+ul{margin:6px 0 10px 18px}li{margin-bottom:4px}
+.step{display:flex;gap:14px;padding:12px 0;border-bottom:1px solid var(--n100)}
+.step:last-child{border-bottom:none}
+.step .az{width:30px;height:30px;border-radius:9px;background:var(--n900);color:#fff;font-size:14px;
+ font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.step .bd{flex:1;min-width:0}
+.step .t{font-size:13px;font-weight:800;margin-bottom:2px}
+.step .d{font-size:11.8px;color:var(--n700);line-height:1.65}
+.step .d b{color:var(--n900)}
+.step .m{font-family:var(--mono);font-size:10px;color:var(--t700);background:var(--t50);
+ border-radius:6px;padding:2px 8px;display:inline-block;margin-top:5px}
+table{width:100%;border-collapse:collapse;margin:10px 0 14px;font-size:11.6px}
+th{background:var(--n50);text-align:left;font-size:9.2px;font-weight:900;letter-spacing:.05em;
+ color:var(--n600);padding:8px 9px;border-bottom:1.5px solid var(--n200)}
+td{padding:8px 9px;border-bottom:1px solid var(--n150);vertical-align:top;line-height:1.5}
+td b{color:var(--n900)}
+.mono{font-family:var(--mono);font-size:10.6px}
+.flag{font-size:15px;margin-right:5px}
+.note{background:var(--t50);border:1px solid var(--t100);border-radius:11px;padding:12px 16px;font-size:12px;color:var(--n700);margin:12px 0}
+.note b{color:var(--t700)}
+.ok{background:var(--s50);border:1px solid #CBDDD1;border-radius:11px;padding:12px 16px;font-size:12px;color:var(--n700);margin:12px 0}
+.ok b{color:var(--s700)}
+.warn{background:var(--c50);border:1px solid #EDC8BC;border-radius:11px;padding:12px 16px;font-size:12px;color:var(--n700);margin:12px 0}
+.warn b{color:var(--c500)}
+.chip{display:inline-block;font-size:9px;font-weight:800;padding:2px 7px;border-radius:5px;margin-right:2px}
+.g1{background:var(--s50);color:var(--s700)}.g2{background:#F6EBD7;color:var(--a700)}.g3{background:var(--c50);color:var(--c500)}
+.cal{width:100%;border-collapse:collapse;font-size:11px;margin:10px 0}
+.cal th{text-align:center}
+.cal td{text-align:center;font-weight:700}
+.cal .lbl{text-align:left;font-weight:800;color:var(--n900);background:var(--n50)}
+.bar{background:var(--t100);border-radius:5px;height:16px;position:relative}
+.bar.s{background:var(--s50);border:1px solid #CBDDD1}
+footer{text-align:center;font-size:10.6px;color:var(--n400);margin-top:26px}
+</style></head><body><div class="wrap">
+
+<div class="cover">
+ <div class="lg"><span class="sym"><i class="c"></i><i class="a"></i><i class="b"></i></span><span>CONNECTION · COUNTRY PLAYBOOK</span></div>
+ <h1>국가별 크리에이터 수집 A→Z 플레이북<br>최대한 많이 수집하고, 최대한 많이 전환한다</h1>
+ <p>수집 엔진(母 DB)을 <b>국가 하나 단위로</b> 어떻게 세우고 굴리는지의 실행 매뉴얼. A부터 Z까지 26단계를 4국면으로 묶었고,
+  국가별 파라미터 시트와 90일 캘린더로 바로 착수할 수 있게 했다. 한 국가에서 검증된 이 루프를 그대로 복제해 국가를 늘린다.</p>
+ <div class="meta"><span>버전 <b>v1.0</b></span><span>2026-08-26</span><span>짝 문서 <b>수집 엔진 설계</b></span></div>
+</div>
+
+<div class="toc"><div class="tt">목차</div>
+ <a href="#s1">1 국가 파드 운영 모델</a><a href="#s2">2 A→Z 26단계</a>
+ <a href="#s3">3 국가별 파라미터 시트</a><a href="#s4">4 90일 실행 캘린더</a>
+ <a href="#s5">5 국가 확장 순서</a><a href="#s6">6 국가별 KPI · 손익</a>
+</div>
+
+<section id="s1"><span class="sn">01</span><h2>국가 파드(Pod) 운영 모델</h2>
+<p>국가마다 <b>독립 파드</b>를 세운다. 언어·채널·규제·시간대가 다르기 때문에 하나의 파이프라인으로 묶지 않는다.
+파드는 <b>현지 1인 + 아리(에이전트 8종) + 수집 엔진</b>의 조합이다. 현지 인력은 사람만 할 수 있는 것 — 커뮤니티 신뢰·현지어 뉘앙스·에이전시 협상 — 에만 쓴다.</p>
+<table>
+<tr><th style="width:150px">파드 구성</th><th>역할</th></tr>
+<tr><td><b>현지 리드 1인</b></td><td>커뮤니티 진입(FB·Zalo·Threads) · 현지어 문안 감수 · 에이전시 협상 · 규제 확인. <span class="chip g3">문서: "미국인 채용 급함", "마이린(베트남)"</span></td></tr>
+<tr><td><b>수집 엔진</b></td><td>母 DB 적재 — L2 스냅샷 · L3 그래프 · L1 API. 국가별 키워드/채널 파라미터만 갈아끼움.</td></tr>
+<tr><td><b>아리 (에이전트)</b></td><td>판정·아웃리치·회신 분류·셀 운영. 발송·게시는 게이트.</td></tr>
+</table>
+<div class="note"><b>핵심 원칙</b> — 파드는 <b>1국가에서 완결</b>되게 만든 뒤 복제한다. 여러 국가를 동시에 어설프게 시작하지 않는다.
+문서의 현재 상태(베트남 Zalo 1천명 목표 · 미국 에이전시 협상 · 리터뉴 아웃리치)가 곧 <b>1번 파드 = 베트남, 2번 파드 = 미국</b>이다.</div>
+</section>
+
+<section id="s2"><span class="sn">02</span><h2>A → Z · 26단계 프로세스</h2>
+<p>한 국가 파드를 세우고 첫 완주까지 가는 전 과정. 각 단계에 담당(엔진/아리/사람)과 산출물을 붙였다.</p>
+
+<div class="phase"><span class="pb">국면 1</span><span class="pt">준비 · 셋업</span><span class="pr">A – F · 1~2주</span></div>
+<div class="step"><div class="az">A</div><div class="bd"><div class="t">국가 선정 · 우선순위 확정</div>
+ <div class="d">시장 크기 · 진출 브랜드 수요 · 규제 난이도 · 현지 인력 확보 가능성으로 순위. <b>이미 자원이 있는 국가부터</b>(베트남·미국).</div>
+ <span class="m">산출: 국가 우선순위표 · 진입 근거</span></div></div>
+<div class="step"><div class="az">B</div><div class="bd"><div class="t">현지 파드 구성</div>
+ <div class="d">현지 리드 1인 채용/배치 · 언어·시간대 커버. 없으면 <b>이 단계에서 막고 진행하지 않는다</b> — 커뮤니티는 현지인만 뚫는다.</div>
+ <span class="m">산출: 파드 배치 · 커뮤니케이션 채널(왓츠앱/Zalo)</span></div></div>
+<div class="step"><div class="az">C</div><div class="bd"><div class="t">카테고리 · 제품 트리 정의</div>
+ <div class="d">뷰티 › 선케어 › 선쿠션 식 트리. 각 제품 노드에 TikTok Shop 카테고리 ID 매핑. <b>전수 수집의 축</b>이 여기서 정해진다.</div>
+ <span class="m">산출: 카테고리·제품 트리 + Shop 카테고리 매핑</span></div></div>
+<div class="step"><div class="az">D</div><div class="bd"><div class="t">현지어 키워드 · 해시태그 사전 구축</div>
+ <div class="d">제품·성분·효능·체험단을 <b>현지어로</b>. 예: 베트남 <span class="mono">#KOCVietnam #reviewmỹphẩm #seedingTikTokShop</span> · 태국 <span class="mono">#ครีมกันแดด</span>. 문서의 베트남 키워드 세트를 시드로.</div>
+ <span class="m">산출: 국가별 시드 사전(해시태그·키워드·경쟁사 태그)</span></div></div>
+<div class="step"><div class="az">E</div><div class="bd"><div class="t">소스 · 툴 셋업</div>
+ <div class="d">L2 벤더 계약(influencers.club·EnsembleData·Apify) · API 키 · 프록시 풀 · 큐 · 발송 인프라(도메인·워밍업). 문서의 <b>TopView·Glovek 메일</b> 발신 세팅 포함.</div>
+ <span class="m">산출: 커넥터 가동 · <span class="mono">creator@glovek.space</span> 발신 준비</span></div></div>
+<div class="step"><div class="az">F</div><div class="bd"><div class="t">母 DB 스키마 · 법률 세팅</div>
+ <div class="d">국가별 개인정보 규제(베트남 PDPD · 태국 PDPA · 미국 州법) 확인 · 처리 근거·수신거부·삭제 절차. 母 DB에 국가·동의 필드.</div>
+ <span class="m">산출: 母 DB 준비 · 국가 규제 체크리스트</span></div></div>
+
+<div class="phase"><span class="pb">국면 2</span><span class="pt">대량 수집</span><span class="pr">G – N · 2~6주 · 병렬</span></div>
+<div class="step"><div class="az">G</div><div class="bd"><div class="t">L2 라이선스 스냅샷 적재 (뼈대)</div>
+ <div class="d">국가×카테고리 필터로 <b>대형 스냅샷을 통째로</b> — 한 번에 수만~수십만 계정. fetch 비용을 건너뛰는 가장 빠른 적재.</div>
+ <span class="m">담당: 엔진 · 목표: 국가별 母 DB 초기 40~60%</span></div></div>
+<div class="step"><div class="az">H</div><div class="bd"><div class="t">L1 공식 커넥터 연결</div>
+ <div class="d">TikTok Shop Affiliate API로 <b>그 국가 카테고리 어필리에이트 전량</b> + 커머스 실적. 커머스 실증 계정이라 고품질.</div>
+ <span class="m">담당: 엔진 · 자격: Shop 파트너</span></div></div>
+<div class="step"><div class="az">I</div><div class="bd"><div class="t">시드 심기</div>
+ <div class="d">D의 해시태그·키워드·경쟁사 태그로 씨앗 영상 → 작성자 계정. 프론티어 큐 초기화.</div>
+ <span class="m">담당: 엔진 · 산출: frontier 큐</span></div></div>
+<div class="step"><div class="az">J</div><div class="bd"><div class="t">그래프 확장 루프 (수렴까지)</div>
+ <div class="d">작성자 → 댓글러·추천유저·같은사운드로 BFS. <b>신규 발견률 3% 미만이 될 때까지</b> = 그 국가·카테고리 사실상 전수.</div>
+ <span class="m">담당: 엔진 · 종료: new_rate &lt; 3%</span></div></div>
+<div class="step"><div class="az">K</div><div class="bd"><div class="t">커뮤니티 워치 가동</div>
+ <div class="d">현지 리드가 FB 그룹(10만+)·Threads·Zalo에 진입해 모집 게시 + 신규 KOC 자기소개 파싱. 문서의 베트남 채널 그대로.</div>
+ <span class="m">담당: 사람+엔진 · 문서: Zalo 그룹·FB 그룹 링크 확보됨</span></div></div>
+<div class="step"><div class="az">L</div><div class="bd"><div class="t">프로필 fetch · 정규화</div>
+ <div class="d">핸들 → 팔로워·게시·bio·지역·링크. 벤더 라우터로 폴백. 필드 표준화(국가 ISO·카테고리 태깅).</div>
+ <span class="m">담당: 엔진 · 단가: ~3원/계정</span></div></div>
+<div class="step"><div class="az">M</div><div class="bd"><div class="t">이메일 · 연락처 심화</div>
+ <div class="d">bio 파싱 → link-in-bio 크롤 → 이메일 DB 조인 3단. 왓츠앱/Zalo/라인 번호도. <b>상위 등급부터</b> 예산 소진까지.</div>
+ <span class="m">담당: 엔진 · 목표: 상위 20~30만 연락처</span></div></div>
+<div class="step"><div class="az">N</div><div class="bd"><div class="t">dedup · 국가 판정 · 스코어링</div>
+ <div class="d">핸들·이메일·링크로 동일인 병합. 리전·언어·국번 다신호 합의로 국가 확정. 영향력·연락 가능성 점수.</div>
+ <span class="m">담당: 엔진 · 산출: 母 DB(POOL) + 등급</span></div></div>
+
+<div class="phase"><span class="pb">국면 3</span><span class="pt">접촉 · 전환</span><span class="pr">O – U · 상시</span></div>
+<div class="step"><div class="az">O</div><div class="bd"><div class="t">영향력 등급 분류</div>
+ <div class="d"><span class="chip g1">Mega/Macro 100K+</span> <span class="chip g2">Mid/Micro 5K~100K</span> <span class="chip g3">Nano ~5K</span>. 등급이 채널을 정한다.</div>
+ <span class="m">담당: 엔진</span></div></div>
+<div class="step"><div class="az">P</div><div class="bd"><div class="t">채널 배분</div>
+ <div class="d">Mega→에이전시/1:1 · Mid→메일·DM 자동 · Nano→커뮤니티·인바운드. 국가별 주력 채널 상이(§3).</div>
+ <span class="m">담당: 아리 · 문서: 채널별 신청률 계측됨</span></div></div>
+<div class="step"><div class="az">Q</div><div class="bd"><div class="t">아웃리치 문안 현지화</div>
+ <div class="d">현지어 + 브랜드 톤 + 고객의 언어. 타깃별 초대장 제목 상이(문서). 링크트리/국가별 링크 자동 삽입.</div>
+ <span class="m">담당: 아리+현지 감수 · 복붙 금지</span></div></div>
+<div class="step"><div class="az">R</div><div class="bd"><div class="t">발송 (게이트 · 상한 · 워밍업)</div>
+ <div class="d">TopView 벌크 메일 · Glovek 메일 · 틱톡 DM. OUTBOUND 게이트 승인 · 일일 상한 · 도메인 워밍업 · unsub.</div>
+ <span class="m">담당: 아리→사람 승인 · 문서: 벌크 발송 진행 중</span></div></div>
+<div class="step"><div class="az">S</div><div class="bd"><div class="t">회신 분류 · 왓츠앱/Zalo 유도</div>
+ <div class="d">관심/거절/부재/수신거부 자동 분류. 관심자는 <b>메일→링크트리→왓츠앱/Zalo→가이드</b> 루트로(문서에서 검증된 경로).</div>
+ <span class="m">담당: 아리 · 문서: "1명 기준 입장 루트 확인됨"</span></div></div>
+<div class="step"><div class="az">T</div><div class="bd"><div class="t">가입 전환 (OAuth · 신청서)</div>
+ <div class="d">왓츠앱/Zalo 가이드 → 커넥션 <b>틱톡/인스타 OAuth 가입</b> → 캠페인 신청서. 母 DB 계정이 검증 크리에이터로 승격.</div>
+ <span class="m">담당: 아리 · 전환: 신청률 계측(문서 1.12%~9.17%)</span></div></div>
+<div class="step"><div class="az">U</div><div class="bd"><div class="t">셀 배정 · 캠페인 매칭</div>
+ <div class="d">국가·카테고리·등급으로 셀 배정. 브랜드 프로필 매칭으로 캠페인 추천. 여기서 발굴·수집 파이프라인과 합류.</div>
+ <span class="m">담당: 아리 · 이후: 셀 생활 · 캠페인</span></div></div>
+
+<div class="phase"><span class="pb">국면 4</span><span class="pt">운영 · 확장</span><span class="pr">V – Z · 지속</span></div>
+<div class="step"><div class="az">V</div><div class="bd"><div class="t">지속 증분 수집</div>
+ <div class="d">신규 발견·지표 리프레시·연락처 보강 3개 상시 루프. 델타만 처리해 저비용 유지. 트렌드·경쟁사 워치 상시.</div>
+ <span class="m">담당: 엔진 · 주기: 일/주/월</span></div></div>
+<div class="step"><div class="az">W</div><div class="bd"><div class="t">성과 계측</div>
+ <div class="d">채널별 <b>완주 CAC</b>(유입 아님)·신청률·잔존. 문서처럼 채널별 신청률을 실측해 배분을 조정.</div>
+ <span class="m">담당: 엔진 · 산출: 국가별 채널 성적표</span></div></div>
+<div class="step"><div class="az">X</div><div class="bd"><div class="t">학습 루프</div>
+ <div class="d">초대→완주 결과가 母 DB 계정에 라벨로. 30일 채점 → 수집·판정 가중치 갱신(평가 하네스).</div>
+ <span class="m">담당: 엔진 · 지표: 브라이어 점수</span></div></div>
+<div class="step"><div class="az">Y</div><div class="bd"><div class="t">국가 확장 (복제)</div>
+ <div class="d">이 파드가 <b>완주 CAC·신청률 기준을 넘으면</b> 다음 국가로 복제. 키워드 사전·채널·규제만 갈아끼운다.</div>
+ <span class="m">담당: 사람 · 조건: 파드 KPI 달성</span></div></div>
+<div class="step"><div class="az">Z</div><div class="bd"><div class="t">母 DB 자산화</div>
+ <div class="d">국가 母 DB는 <b>전 브랜드 공유 자산</b>. 브랜드가 늘수록 계정당 원가는 분모로 나뉘고 완주 라벨은 복리로 쌓인다.</div>
+ <span class="m">담당: 플랫폼 · 결과: CAC 구조적 하락</span></div></div>
+</section>
+
+<section id="s3"><span class="sn">03</span><h2>국가별 파라미터 시트</h2>
+<p>A→Z는 같고, 갈아끼우는 값만 다르다. 문서에서 확인된 채널·현황을 반영했다.</p>
+
+<h3><span class="flag">🇻🇳</span>베트남 — <span class="chip g1">1번 파드 (진행 중)</span></h3>
+<table>
+<tr><th style="width:120px">축</th><th>값</th></tr>
+<tr><td>주력 채널</td><td><b>Zalo</b>(그룹·추천) · <b>Facebook 그룹</b>(KOC/Affiliate 10만+) · <b>Threads</b>(#KOCVietnam) · TikTok Shop</td></tr>
+<tr><td>키워드 시드</td><td class="mono">KOC Vietnam · Beauty Creator · cộng đồng kol · review mỹ phẩm · Nhận sample · Seeding TikTok Shop</td></tr>
+<tr><td>연락 채널</td><td>Zalo 우선 · 왓츠앱 보조 (메일 개봉률 낮음 → 커뮤니티·Zalo 주력)</td></tr>
+<tr><td>현지 리드</td><td>마이린 (문서) · 규제: PDPD(2023) — 동의 기반</td></tr>
+<tr><td>현황·목표</td><td>Zalo 8월 말 <b>1,000명 유입</b> · 메가 캠페인(뷰티/잡화) 예정</td></tr>
+<tr><td>우선 전술</td><td>커뮤니티 침투가 메일보다 강함 — <b>K(커뮤니티 워치)에 무게</b></td></tr>
+</table>
+
+<h3><span class="flag">🇺🇸</span>미국 — <span class="chip g2">2번 파드 (협상 중)</span></h3>
+<table>
+<tr><th style="width:120px">축</th><th>값</th></tr>
+<tr><td>주력 채널</td><td><b>TikTok Shop 어필리에이트</b>(커머스 성숙) · <b>이메일</b>(대량 발송 유효) · 에이전시(TSP)</td></tr>
+<tr><td>키워드 시드</td><td class="mono">TikTokMadeMeBuyIt · KBeauty · sunscreen review · skincare routine · #tiktokshopfinds</td></tr>
+<tr><td>연락 채널</td><td>이메일 주력(개봉률 높음) → 링크트리 → 신청. 문서: Glovek 메일 <b>9.17%</b> · 리터뉴 <b>1.12%</b></td></tr>
+<tr><td>에이전시</td><td>VIPStreamers($50/콘텐츠) · JoinBrands · Innomagix · CHC · Superordinary (회신 대기)</td></tr>
+<tr><td>현지 리드</td><td>이팀장(문서) · <b>미국인 채용 급함</b> · 규제: 州별 · FTC 표기</td></tr>
+<tr><td>우선 전술</td><td>메일 대량 + Shop API 전수 — <b>R(발송)·H(Shop)에 무게</b></td></tr>
+</table>
+
+<h3><span class="flag">🇹🇭</span>태국 — <span class="chip g3">3번 파드 (예정)</span></h3>
+<table>
+<tr><th style="width:120px">축</th><th>값</th></tr>
+<tr><td>주력 채널</td><td>TikTok Shop · <b>LINE</b>(연락) · Facebook 그룹 · 인스타</td></tr>
+<tr><td>키워드 시드</td><td class="mono">#ครีมกันแดด · #รีวิวสกินแคร์ · #KBeauty · #เซรั่ม · 뷰티 리뷰</td></tr>
+<tr><td>연락 채널</td><td>LINE 우선 · 이메일 보조. 태국어 문안 필수</td></tr>
+<tr><td>현지 리드</td><td>(채용 필요) · 규제: PDPA(2022)</td></tr>
+<tr><td>우선 전술</td><td>Shop 성숙 + 커뮤니티 혼합 — 베트남·미국 전술의 중간</td></tr>
+</table>
+
+<h3><span class="flag">🇮🇩</span>인도네시아 · <span class="flag">🇯🇵</span>일본 — <span class="chip g3">후속</span></h3>
+<table>
+<tr><th style="width:120px">국가</th><th>메모</th></tr>
+<tr><td>인도네시아</td><td>TikTok Shop 최대 시장 중 하나 · WhatsApp 연락 · 이슬람 뷰티(할랄) 세그먼트 · 대량 볼륨 기대</td></tr>
+<tr><td>일본</td><td>LINE 중심 · 규제 엄격 · 마이크로 선호 · 번역 품질 민감 — <b>후순위, 품질 우선 접근</b></td></tr>
+</table>
+<div class="note"><b>공통 규칙</b> — 채널 주력은 다르지만 <b>A→Z 골격은 동일</b>. 국가마다 다른 건 ①시드 사전(D) ②주력 채널 배분(P) ③연락 채널(S) ④규제(F). 나머지는 엔진이 파라미터로 흡수한다.</div>
+</section>
+
+<section id="s4"><span class="sn">04</span><h2>90일 실행 캘린더 (1개 파드 기준)</h2>
+<table class="cal">
+<tr><th class="lbl">단계</th><th>W1-2</th><th>W3-4</th><th>W5-6</th><th>W7-8</th><th>W9-10</th><th>W11-12</th></tr>
+<tr><td class="lbl">A-F 준비·셋업</td><td colspan="1"><div class="bar" style="width:100%"></div></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td class="lbl">G-H L2·L1 적재</td><td></td><td colspan="1"><div class="bar" style="width:100%"></div></td><td colspan="1"><div class="bar" style="width:60%"></div></td><td></td><td></td><td></td></tr>
+<tr><td class="lbl">I-J 그래프 수렴</td><td></td><td></td><td colspan="2"><div class="bar" style="width:100%"></div></td><td colspan="1"><div class="bar" style="width:50%"></div></td><td></td></tr>
+<tr><td class="lbl">K 커뮤니티 워치</td><td></td><td colspan="4"><div class="bar" style="width:100%"></div></td><td colspan="1"><div class="bar" style="width:100%"></div></td></tr>
+<tr><td class="lbl">L-N 심화·스코어</td><td></td><td></td><td colspan="1"><div class="bar" style="width:70%"></div></td><td colspan="2"><div class="bar" style="width:100%"></div></td><td></td></tr>
+<tr><td class="lbl">O-U 접촉·전환</td><td></td><td></td><td></td><td colspan="1"><div class="bar s" style="width:60%"></div></td><td colspan="2"><div class="bar s" style="width:100%"></div></td></tr>
+<tr><td class="lbl">V-X 지속·학습</td><td></td><td></td><td></td><td></td><td colspan="2"><div class="bar s" style="width:100%"></div></td></tr>
+</table>
+<table>
+<tr><th style="width:110px">체크포인트</th><th>목표</th></tr>
+<tr><td><b>W4</b></td><td>母 DB 국가별 <b>초기 30만+</b>(L2 스냅샷 완료) · 커뮤니티 진입 완료</td></tr>
+<tr><td><b>W8</b></td><td>그래프 수렴(주요 카테고리) · <b>연락처 확보 상위 10만</b> · 첫 아웃리치 발송</td></tr>
+<tr><td><b>W12</b></td><td>母 DB <b>50만+</b> · 신청률·완주 CAC 실측 · 지속 루프 안정 · <b>Y(복제) 판단</b></td></tr>
+</table>
+</section>
+
+<section id="s5"><span class="sn">05</span><h2>국가 확장 순서</h2>
+<table>
+<tr><th style="width:70px">순서</th><th>국가</th><th>근거</th><th style="width:110px">복제 조건</th></tr>
+<tr><td><b>1</b></td><td><span class="flag">🇻🇳</span>베트남</td><td>이미 자원(마이린)·채널·Zalo 목표 진행 중 · 커뮤니티 침투 쉬움</td><td>지금 착수</td></tr>
+<tr><td><b>2</b></td><td><span class="flag">🇺🇸</span>미국</td><td>커머스 성숙·메일 유효·에이전시 협상 중 · 브랜드 수요 최대</td><td>베트남 W6부터 병행</td></tr>
+<tr><td><b>3</b></td><td><span class="flag">🇹🇭</span>태국</td><td>K-뷰티 친화·Shop 성숙 · 베트남+미국 전술 결합</td><td>1번 파드 KPI 달성 후</td></tr>
+<tr><td><b>4</b></td><td><span class="flag">🇮🇩</span>인니</td><td>볼륨 최대 · 할랄 세그먼트</td><td>3개 파드 안정 후</td></tr>
+<tr><td><b>5</b></td><td><span class="flag">🇯🇵</span>일본</td><td>고단가·품질 민감 · 번역 성숙 필요</td><td>번역 품질 검증 후</td></tr>
+</table>
+<div class="ok"><b>복제 규칙</b> — 새 국가는 앞 파드가 <b>W12 체크포인트를 통과한 뒤</b>에만 연다. 동시 남발이 아니라 <b>검증→복제</b>. 파드가 늘수록 母 DB 통합 규모가 목표(50만~100만 → 국가 합산 수백만)에 수렴한다.</div>
+</section>
+
+<section id="s6"><span class="sn">06</span><h2>국가별 KPI · 손익 관점</h2>
+<table>
+<tr><th>지표</th><th>정의</th><th style="width:150px">파드 성공선</th></tr>
+<tr><td>母 DB 규모</td><td>국가 유니크 계정</td><td>W12에 50만+</td></tr>
+<tr><td>연락처 확보율</td><td>이메일/연락처 있는 비율</td><td>상위 등급 60%+</td></tr>
+<tr><td>신청률</td><td>접촉 → 가입 신청</td><td>메일 5%+ / 커뮤니티 20%+</td></tr>
+<tr><td>완주 CAC</td><td>완주 1명당 총원가</td><td>채널 블렌디드 목표 이하</td></tr>
+<tr><td>母 DB 계정당 원가</td><td>수집·심화 총액 / 계정</td><td>30~120원</td></tr>
+</table>
+<div class="note"><b>손익 구조</b> — 파드 초기엔 수집·심화 비용이 앞선다(투자). 母 DB가 차고 브랜드가 붙기 시작하면
+<b>검증 가입 ₩10,000 × N + 구독</b>이 들어오고, 계정당 수집 원가는 브랜드 수로 나뉘어 급락한다.
+한 국가에서 브랜드가 5곳만 돼도 母 DB는 이미 이익 구조로 전환된다.</div>
+</section>
+
+<footer>CONNECTION · 국가별 크리에이터 수집 A→Z 플레이북 v1.0 · 2026-08-26 · 짝 문서: 수집 엔진 설계 · 서비스 기획안 · 페이지 맵</footer>
+</div></body></html>

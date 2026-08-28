@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "connection-harvest"
+version = "0.1.0"
+description = "커넥션 수집 엔진(母 DB 파이프라인) — Discover→Fetch→Enrich→Dedup→Score→Store"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+db = ["psycopg[binary]>=3.1"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+harvest = "harvest.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["harvest*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

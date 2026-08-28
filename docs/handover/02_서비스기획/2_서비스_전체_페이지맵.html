@@ -1,0 +1,242 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>커넥션 서비스 전체 페이지 맵</title>
+<style>
+:root{
+--n0:#FFFFFF;--n50:#FAF8F4;--n100:#F3EFE7;--n150:#EDE7DC;--n200:#E4DCCF;--n300:#D3C8B6;
+--n400:#A89C8A;--n500:#8A7E6C;--n600:#6E6355;--n700:#544B40;--n900:#2C2620;
+--t50:#FCF2EE;--t100:#F7DDD4;--t500:#C2543C;--t700:#853427;
+--s50:#EFF4F0;--s700:#3E6E4E;--a700:#8A6215;--c50:#FBEFEA;--c500:#B0472E;
+--d900:#141319;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Pretendard Variable',Pretendard,-apple-system,'Noto Sans KR',sans-serif;
+ background:var(--n100);color:var(--n900);line-height:1.6;font-size:13px}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 26px 70px}
+.hd{background:var(--n0);border:1px solid var(--n200);border-radius:16px;padding:26px 30px;margin-bottom:16px}
+.lg{display:flex;align-items:center;gap:9px;margin-bottom:13px}
+.lg .sym{width:28px;height:13px;position:relative}
+.lg .sym i{position:absolute;border-radius:50%;width:8px;height:8px;top:2.5px}
+.lg .sym i.a{left:0;background:var(--n900)}.lg .sym i.b{right:0;background:var(--t500)}
+.lg .sym i.c{width:28px;height:1.3px;left:0;top:6px;border-radius:0;background:var(--n300)}
+.lg span{font-size:10px;font-weight:900;letter-spacing:.22em;color:var(--t700)}
+h1{font-size:23px;font-weight:800;letter-spacing:-.02em;margin-bottom:8px}
+.hd p{color:var(--n600);font-size:12.5px;max-width:700px}
+.legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.lgd{font-size:10px;font-weight:800;padding:3px 10px;border-radius:7px}
+.lgd.done{background:var(--s50);color:var(--s700)}
+.lgd.p0{background:var(--c50);color:var(--c500)}
+.lgd.p1{background:#F6EBD7;color:var(--a700)}
+.lgd.sys{background:var(--n150);color:var(--n600)}
+.flow{background:var(--n0);border:1px solid var(--n200);border-radius:14px;padding:16px 22px;margin-bottom:16px;
+ display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.flow b{font-size:10px;letter-spacing:.1em;color:var(--n600);margin-right:6px}
+.flow span{font-size:10.8px;font-weight:800;background:var(--t50);color:var(--t700);
+ border:1px solid var(--t100);padding:5px 11px;border-radius:8px}
+.flow i{color:var(--n400);font-style:normal}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.surf{background:var(--n0);border:1px solid var(--n200);border-radius:16px;overflow:hidden}
+.surf.wide{grid-column:1/-1}
+.sh{padding:14px 20px;border-bottom:1px solid var(--n150);display:flex;align-items:center;gap:10px}
+.sh.dark{background:var(--d900)}
+.sh .ic{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+ font-size:14px;background:var(--t50);color:var(--t700);flex-shrink:0}
+.sh.dark .ic{background:#2A2833;color:#E8B294}
+.sh h2{font-size:14.5px;font-weight:800}
+.sh.dark h2{color:#fff}
+.sh .url{font-family:var(--mono);font-size:10px;color:var(--n500);margin-left:auto}
+.sh.dark .url{color:#8B8497}
+.sb{padding:14px 20px 18px}
+.tree{list-style:none}
+.tree>li{padding:7px 0;border-bottom:1px solid var(--n100)}
+.tree>li:last-child{border-bottom:none}
+.nd{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+.nd .nm{font-size:12.6px;font-weight:800}
+.nd .ds{font-size:10.8px;color:var(--n600)}
+.sub{list-style:none;margin:5px 0 2px 14px;border-left:2px solid var(--n150);padding-left:12px}
+.sub li{padding:3px 0;font-size:11.4px;color:var(--n700)}
+.sub li b{color:var(--n900)}
+.sub .ds{font-size:10.2px;color:var(--n500)}
+.tag{display:inline-block;font-size:8.6px;font-weight:900;padding:1.5px 7px;border-radius:5px;vertical-align:1px}
+.tag.done{background:var(--s50);color:var(--s700)}
+.tag.p0{background:var(--c50);color:var(--c500)}
+.tag.p1{background:#F6EBD7;color:var(--a700)}
+.tag.gate{background:var(--t50);color:var(--t700)}
+.tag.tr{background:#EDE9F3;color:#6B4E7E}
+.xlink{font-size:9.6px;color:var(--t700);font-weight:700}
+.sysrow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:16px 20px}
+@media(max-width:900px){.sysrow{grid-template-columns:repeat(2,1fr)}}
+.sys{background:var(--n50);border:1px solid var(--n150);border-radius:11px;padding:12px 14px}
+.sys .nm{font-size:11.8px;font-weight:800;margin-bottom:4px}
+.sys .ds{font-size:10.4px;color:var(--n600);line-height:1.55}
+footer{text-align:center;font-size:10.4px;color:var(--n400);margin-top:24px}
+</style></head><body><div class="wrap">
+
+<div class="hd">
+ <div class="lg"><span class="sym"><i class="c"></i><i class="a"></i><i class="b"></i></span><span>CONNECTION · SERVICE MAP</span></div>
+ <h1>서비스 전체 페이지 맵</h1>
+ <p>4개 표면의 모든 화면과 그 연결. 기획안 v1.0의 §7 갭 분석에서 확정된 예정 화면(P0·P1)을 자리까지 잡아 표기했다 —
+  <b>이 맵에 없는 화면은 만들지 않는다</b>가 원칙.</p>
+ <div class="legend">
+  <span class="lgd done">✓ 프로토타입 구현</span><span class="lgd p0">P0 출시 전 필수</span>
+  <span class="lgd p1">P1 첫 분기</span><span class="lgd sys">공통 시스템</span>
+  <span class="lgd" style="background:var(--t50);color:var(--t700)">GATE 승인 필요</span>
+  <span class="lgd" style="background:#EDE9F3;color:#6B4E7E">TR 자동 번역</span>
+ </div>
+</div>
+
+<div class="flow"><b>진입 흐름</b>
+ <span>connection.app/{brand} 링크</span><i>→</i><span>커넥션 패스 로그인 (틱톡·인스타 OAuth)</span><i>→</i>
+ <span>미가입: 가입 + 브랜드 동의</span><i>→</i><span>원래 가려던 셀로 리다이렉트</span>
+ <i style="margin-left:12px">|</i><b style="margin-left:6px">브랜드</b>
+ <span>브랜드 가입 위저드</span><i>→</i><span>콘솔</span></div>
+
+<div class="grid">
+
+<!-- ============ 크리에이터 앱 ============ -->
+<div class="surf">
+ <div class="sh"><div class="ic">◎</div><h2>크리에이터 앱 <span style="font-size:10px;color:var(--n500);font-weight:700">PWA · 모바일</span></h2>
+  <span class="url">connection.app/{brand}</span></div>
+ <div class="sb"><ul class="tree">
+  <li><div class="nd"><span class="nm">온보딩</span><span class="tag done">✓</span></div>
+   <ul class="sub">
+    <li><b>웰컴</b> — 구조 설명 · 브랜드 URL 원칙 안내</li>
+    <li><b>커넥션 가입</b> — 필수 동의 3 + 선택 1 · <b>틱톡/인스타 OAuth 필수</b> (이메일 가입 없음)</li>
+    <li><b>브랜드 셀 합류</b> — 브랜드별 동의 2 · 자격 확인 · 셀 입장 <span class="ds">두 번째 브랜드부터 재가입 없음</span></li>
+   </ul></li>
+  <li><div class="nd"><span class="nm">① 셀</span><span class="tag done">✓</span><span class="tag tr">TR</span>
+    <span class="ds">헤더: ↗ 공유(링크 복사) · 언어 칩</span></div>
+   <ul class="sub">
+    <li><b># 잡담</b> — 멤버 대화(원문 칩) · 아리 마중물 · <b>콘텐츠 예시 카드</b> · 주간 피드</li>
+    <li><b># 촬영 팁</b> — 큐레이션 채널</li>
+    <li><b>◎ 공지</b> (읽기 전용) — <b>캠페인 카드</b>(이미지·조건·USP 번역) → 캠페인 탭</li>
+    <li><span class="tag p0">P0</span> <b>신고 · 차단</b> — 메시지 길게 눌러 신고 → 아리 분류 → 운영자</li>
+   </ul></li>
+  <li><div class="nd"><span class="nm">② 담당자</span><span class="tag done">✓</span><span class="tag tr">TR</span></div>
+   <ul class="sub">
+    <li><b>셀 스위처</b> — "GLOWLAB 담당 / AURA 담당" · 대화는 셀끼리 섞이지 않음</li>
+    <li><b>1:1 스레드</b> — 아리 운영 대화 + <b>캠페인 선정 대화</b>(브랜드 담당자 참여) · 실입력</li>
+   </ul></li>
+  <li><div class="nd"><span class="nm">③ 캠페인</span><span class="tag done">✓</span><span class="tag tr">TR</span></div>
+   <ul class="sub">
+    <li><b>목록</b> — 이미지 · 조건 배지(유가/무가/어필리에이트) · USP 칩 · <b>무조건 내 언어</b>(KO 원문 칩)</li>
+    <li><b>지원 → 상태</b> — 지원 완료 · 선정됨 · 배송 준비 <span class="xlink">↔ 콘솔 지원자 탭</span></li>
+    <li><span class="tag p0">P0</span> <b>배송 추적</b> — 송장 · 상태 스텝 <span class="ds">1:1 문의 절반 제거</span></li>
+   </ul></li>
+  <li><div class="nd"><span class="nm">④ 제출</span><span class="tag done">✓</span></div>
+   <ul class="sub"><li><b>업로드/링크 붙여넣기</b> — 자동 체크(길이·노출·<b>#ad</b>) · 원클릭 보정 · 검수 상태</li></ul></li>
+  <li><div class="nd"><span class="nm">⑤ 정산</span><span class="tag done">✓</span></div>
+   <ul class="sub">
+    <li><b>지급 예정/완료</b> — 캠페인 보상 · 셀별 분리 정산</li>
+    <li><span class="tag p0">P0</span> <b>정산 수단 온보딩</b> — PingPong 연결 · 수수료 · 인출 · 실패 재시도</li>
+    <li><span class="tag p1">P1</span> <b>세금 · 소득 문서</b> — 연간 요약 · 인보이스</li>
+   </ul></li>
+  <li><div class="nd"><span class="nm">⑥ 내 패스</span><span class="tag done">✓</span></div>
+   <ul class="sub">
+    <li><b>프로필</b> — SNS 검증 배지 · 완주율 · 등급 <span class="ds">기록은 본인 소유, 브랜드 바뀌어도 따라감</span></li>
+    <li><b>내 정보 관리</b> — 주소·연락처·피부 타입·계좌 <b>본인 수정</b> <span class="xlink">→ 콘솔 DB 실시간</span></li>
+    <li><b>동의 설정</b> — 교차 추천 on/off(동종 카테고리 배제) · <b>초대 링크 입장</b>(셀 탐색 없음)</li>
+    <li><span class="tag p0">P0</span> <b>언어 수동 변경</b> · <span class="tag p1">P1</span> <b>탈퇴 · 데이터 내보내기</b></li>
+   </ul></li>
+  <li><div class="nd"><span class="nm">알림함</span><span class="tag p0">P0</span>
+    <span class="ds">선정·배송·검수·정산·마감 D-3 · 유형별 푸시 설정 · PWA 설치 배너 <span class="tag done">✓</span></span></div></li>
+ </ul></div>
+</div>
+
+<!-- ============ 브랜드 콘솔 ============ -->
+<div class="surf">
+ <div class="sh dark"><div class="ic">◧</div><h2>브랜드 콘솔 <span style="font-size:10px;color:#8B8497;font-weight:700">데스크톱 · 나란히 구조</span></h2>
+  <span class="url">console.connection.app</span></div>
+ <div class="sb"><ul class="tree">
+  <li><div class="nd"><span class="nm">아리 채팅 패널</span><span class="tag done">✓</span>
+    <span class="ds">상시 — 대화가 곧 내비게이션 · 툴카드 · 캔버스 점프</span></div></li>
+  <li><div class="nd"><span class="nm">① 브리핑</span><span class="tag done">✓</span>
+    <span class="ds">지표 4 · 오늘 결정할 것 · 아리 노트</span></div></li>
+  <li><div class="nd"><span class="nm">② 승인함</span><span class="tag done">✓</span><span class="tag gate">GATE</span></div>
+   <ul class="sub">
+    <li><b>PII</b> 개인정보 제공 · <b>PAYOUT</b> 정산 · <b>OUTBOUND</b> 외부 발송 · <b>PUBLISH</b> 공개 게시</li>
+    <li><span class="tag p0">P0</span> <b>외부 알림 + 모바일 승인</b> — 메일·카카오·슬랙</li>
+   </ul></li>
+  <li><div class="nd"><span class="nm">③ 발굴 · 수집</span><span class="tag done">✓</span></div>
+   <ul class="sub">
+    <li><b>에이전트</b>(근무 현황 8명 · 운영 설계) · <b>틱톡샵</b>(초대권 배분·학습 루프) · <b>커뮤니티</b>(규범 메모리)</li>
+    <li><b>메일링</b>(리서치·시퀀스·안전장치) · <b>판정 엔진</b>(3경로·4축) · <b>학습</b>(완주 CAC·자산 4) · <b>기술 스택</b>(L1~L4)</li>
+   </ul></li>
+  <li><div class="nd"><span class="nm">④ 커뮤니티 셀</span><span class="tag done">✓</span><span class="tag tr">TR</span></div>
+   <ul class="sub">
+    <li><b>대화</b>(같은 방 동석 · 브랜드 칩) · <b>활성화</b>(요일제 플랜 · 주간 피드 발행) · <b>충원</b>(파이프라인 · 후보 큐) · <b>규칙</b>(URL 공개 범위 · 자율 다이얼)</li>
+   </ul></li>
+  <li><div class="nd"><span class="nm">⑤ 크리에이터 DB</span><span class="tag done">✓</span></div>
+   <ul class="sub">
+    <li><b>세그먼트 · 검색 · 위생 스트립</b> — 전원 OAuth 검증 · 본인 수정 실시간</li>
+    <li><b>레코드 카드</b> — 검증 계정 · 여정 · <b>보유 필드와 근거</b> · 아리 메모 · CSV(PII는 게이트)</li>
+   </ul></li>
+  <li><div class="nd"><span class="nm">⑥ 캠페인</span><span class="tag done">✓</span></div>
+   <ul class="sub">
+    <li><b>진행 현황</b>(퍼널) · <b>새 캠페인 등록</b>(유형 3 · 이미지 · USP · 번역 미리보기) · <b>지원자 · 선정</b>(매치 점수 · 1:1 번역 스레드)</li>
+    <li><span class="tag p0">P0</span> <b>배송 관리</b> — 송장 일괄 업로드 · 상태 동기화</li>
+    <li><span class="tag p1">P1</span> <b>어필리에이트 추적</b> · <b>예산 관리</b> · <b>이용 범위 약정</b></li>
+   </ul></li>
+  <li><div class="nd"><span class="nm">⑦ 검수</span><span class="tag done">✓</span>
+    <span class="ds">자동 체크 4종 → 통과/보완요청 (반려 아님)</span></div></li>
+  <li><div class="nd"><span class="nm">⑧ 정산 · 원장</span><span class="tag done">✓</span>
+    <span class="ds">append-only · 구독 + 가입 과금 · 전 이벤트 해시</span></div></li>
+  <li><div class="nd"><span class="nm">설정</span><span class="tag p0">P0</span>
+    <span class="ds"><b>팀 멤버 · 역할 · 게이트별 승인 권한</b> · 브랜드 프로필 버전 관리</span>
+    <span class="tag p1">P1</span><span class="ds"><b>성과 리포트</b>(공유용)</span></div></li>
+ </ul></div>
+</div>
+
+<!-- ============ 브랜드 가입 ============ -->
+<div class="surf">
+ <div class="sh"><div class="ic">▤</div><h2>브랜드 가입 위저드</h2><span class="url">connection.app/for-brands</span></div>
+ <div class="sb"><ul class="tree">
+  <li><div class="nd"><span class="nm">① 계정 · 사업자</span><span class="tag done">✓</span>
+    <span class="ds">사업자번호 조회 · 담당자 메일 · 약관 + <b>DPA</b> + 데이터 원칙</span></div></li>
+  <li><div class="nd"><span class="nm">② 브랜드 프로필</span><span class="tag done">✓</span>
+    <span class="ds">카테고리 · 타깃 국가(=번역 언어) · <b>슬러그 예약</b> connection.app/____ 중복 확인</span></div></li>
+  <li><div class="nd"><span class="nm">③ 플랜 선택</span><span class="tag done">✓</span>
+    <span class="ds">Starter 29 / Growth 79(권장) / Enterprise(배타권 옵션) + 가입 과금 ₩10,000 공통</span></div></li>
+  <li><div class="nd"><span class="nm">④ 아리 온보딩 (브랜드 학습)</span><span class="tag done">✓</span></div>
+   <ul class="sub">
+    <li><b>사이트 링크 학습</b> — 제품·리뷰·SNS 읽기 → 6축 추출(출처 표기) → <b>확인·수정</b></li>
+    <li><b>5문항</b> — 사이트가 말해주지 않는 것 · <b>학습 없이는 완료 불가</b></li>
+   </ul></li>
+  <li><div class="nd"><span class="nm">⑤ 완료</span><span class="tag done">✓</span>
+    <span class="ds">브랜드 프로필 v1 · 아리 첫 주 계획 → 콘솔 브리핑으로</span></div></li>
+ </ul></div>
+</div>
+
+<!-- ============ 핵심 기획 ============ -->
+<div class="surf">
+ <div class="sh"><div class="ic">◈</div><h2>핵심 기획 <span style="font-size:10px;color:var(--n500);font-weight:700">내부 · 기준 문서</span></h2>
+  <span class="url">internal</span></div>
+ <div class="sb"><ul class="tree">
+  <li><div class="nd"><span class="nm">서비스 전체</span><span class="tag done">✓</span>
+    <span class="ds">8카드 — 접근·URL / 가입 / 셀 / 에이전트 / DB / 기술 스택 / 수익 / <b>결정 로그</b></span></div></li>
+  <li><div class="nd"><span class="nm">모집 에이전트 기획</span><span class="tag done">✓</span>
+    <span class="ds">R1~R6 — 브랜드 학습 / 프로필 소비처 / 담당 8명 / 접촉 정책 / 학습 루프 / 로드맵</span></div></li>
+  <li><div class="nd"><span class="nm">문서</span>
+    <span class="ds">서비스 기획안 v1.0(갭 분석 포함) · 이 페이지 맵 · 프로토타입(전 화면 클릭 데모)</span></div></li>
+ </ul></div>
+</div>
+
+<!-- ============ 공통 시스템 ============ -->
+<div class="surf wide">
+ <div class="sh"><div class="ic">⚙</div><h2>공통 시스템 레이어 <span style="font-size:10px;color:var(--n500);font-weight:700">화면 뒤에서 전 표면을 받치는 것</span></h2></div>
+ <div class="sysrow">
+  <div class="sys"><div class="nm">인증 · 패스</div><div class="ds">모든 링크 → 패스 로그인 → 원위치 리다이렉트. 계정 1 · 브랜드별 멤버십 N.</div></div>
+  <div class="sys"><div class="nm">번역 레이어 <span class="tag tr">TR</span></div><div class="ds">시청자 언어 자동 표시 + 원문 칩. 캠페인은 게시 시 일괄 생성 · 용어집 · 미리보기.</div></div>
+  <div class="sys"><div class="nm">게이트 엔진 <span class="tag gate">GATE</span></div><div class="ds">PII · PAYOUT · OUTBOUND · PUBLISH — 자율 등급과 무관하게 사람이 승인.</div></div>
+  <div class="sys"><div class="nm">원장</div><div class="ds">append-only · 판단 근거 · 채점 · 동의 · 프로필 수정 이력 전부 기록.</div></div>
+  <div class="sys"><div class="nm">브랜드 프로필</div><div class="ds">사이트 학습 + 문답 + 운영 피드백 → 판정·문구·채널·금지어의 뿌리. 버전 관리.</div></div>
+  <div class="sys"><div class="nm">평가 하네스</div><div class="ds">모든 예측 30일 채점 → 가중치 갱신. L2 승격 기준 = 브라이어 점수.</div></div>
+  <div class="sys"><div class="nm">알림 시스템 <span class="tag p0">P0</span></div><div class="ds">크리에이터 알림함·푸시 + 브랜드 승인 대기 외부 알림. 유형별 설정.</div></div>
+  <div class="sys"><div class="nm">운영자 콘솔 <span class="tag p1">P1</span></div><div class="ds">신고 처리 · 분쟁 심판 · 어뷰징 · 아리 품질 모니터링 (커넥션 내부).</div></div>
+ </div>
+</div>
+
+</div>
+
+<footer>CONNECTION · 서비스 전체 페이지 맵 v1.0 · 2026-08-26 · 짝 문서: 서비스 기획안 v1.0 · 프로토타입 connection_app2.html</footer>
+</div></body></html>

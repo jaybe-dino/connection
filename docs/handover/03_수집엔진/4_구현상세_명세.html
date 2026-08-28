@@ -1,0 +1,328 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>수집 엔진 구현 상세 명세</title>
+<style>
+:root{
+--n0:#FFFFFF;--n50:#FAF8F4;--n100:#F3EFE7;--n150:#EDE7DC;--n200:#E4DCCF;--n300:#D3C8B6;
+--n400:#A89C8A;--n500:#8A7E6C;--n600:#6E6355;--n700:#544B40;--n900:#2C2620;
+--t50:#FCF2EE;--t100:#F7DDD4;--t300:#DE8C74;--t500:#C2543C;--t700:#853427;
+--s50:#EFF4F0;--s700:#3E6E4E;--a700:#8A6215;--c50:#FBEFEA;--c500:#B0472E;
+--d900:#141319;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Pretendard Variable',Pretendard,-apple-system,'Noto Sans KR',sans-serif;
+ background:var(--n100);color:var(--n900);line-height:1.65;font-size:13px}
+.wrap{max-width:960px;margin:0 auto;padding:44px 26px 80px}
+.cover{background:var(--d900);border-radius:18px;padding:32px 36px;margin-bottom:20px;color:#fff}
+.lg{display:flex;align-items:center;gap:9px;margin-bottom:15px}
+.lg .sym{width:30px;height:14px;position:relative;display:inline-block}
+.lg .sym i{position:absolute;border-radius:50%;width:8px;height:8px;top:3px}
+.lg .sym i.a{left:0;background:#fff}.lg .sym i.b{right:0;background:var(--t500)}
+.lg .sym i.c{width:30px;height:1.4px;left:0;top:6.5px;border-radius:0;background:#4E4A58}
+.lg span{font-size:10px;font-weight:900;letter-spacing:.24em;color:#E8B294}
+h1{font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.35;margin-bottom:10px}
+.cover p{color:#C6C1D0;max-width:700px;font-size:12.5px}
+.toc{background:var(--n0);border:1px solid var(--n200);border-radius:14px;padding:18px 24px;margin-bottom:20px}
+.toc .tt{font-size:9.4px;font-weight:900;letter-spacing:.16em;color:var(--n600);margin-bottom:9px}
+.toc a{display:inline-block;font-size:11px;font-weight:700;color:var(--n700);text-decoration:none;
+ background:var(--n100);border-radius:8px;padding:5px 11px;margin:0 4px 6px 0}
+.toc a:hover{background:var(--t50);color:var(--t700)}
+section{background:var(--n0);border:1px solid var(--n200);border-radius:16px;padding:24px 28px;margin-bottom:16px}
+.sn{font-family:var(--mono);font-size:10.5px;font-weight:700;color:var(--t700);background:var(--t50);
+ padding:2px 9px;border-radius:6px;display:inline-block;margin-bottom:8px}
+h2{font-size:18px;font-weight:800;letter-spacing:-.015em;margin-bottom:6px}
+h3{font-size:13px;font-weight:800;margin:18px 0 7px}
+h4{font-size:11.4px;font-weight:800;margin:13px 0 5px;color:var(--t700)}
+p{margin-bottom:9px}p b{color:var(--n900)}p,li,td{color:var(--n700)}
+ul{margin:5px 0 9px 17px}li{margin-bottom:3px}
+table{width:100%;border-collapse:collapse;margin:9px 0 13px;font-size:10.8px}
+th{background:var(--n50);text-align:left;font-size:8.8px;font-weight:900;letter-spacing:.03em;
+ color:var(--n600);padding:6px 7px;border-bottom:1.5px solid var(--n200)}
+td{padding:6px 7px;border-bottom:1px solid var(--n150);vertical-align:top;line-height:1.45}
+td b{color:var(--n900)}
+.mono{font-family:var(--mono);font-size:10px}
+tr td.mono{color:var(--t700)}
+.note{background:var(--t50);border:1px solid var(--t100);border-radius:11px;padding:11px 15px;font-size:11.5px;color:var(--n700);margin:11px 0}
+.note b{color:var(--t700)}
+.ok{background:var(--s50);border:1px solid #CBDDD1;border-radius:11px;padding:11px 15px;font-size:11.5px;color:var(--n700);margin:11px 0}
+.ok b{color:var(--s700)}
+.warn{background:var(--c50);border:1px solid #EDC8BC;border-radius:11px;padding:11px 15px;font-size:11.5px;color:var(--n700);margin:11px 0}
+.warn b{color:var(--c500)}
+.code{background:var(--d900);color:#D8D4DE;border-radius:11px;padding:13px 16px;font-family:var(--mono);
+ font-size:10.2px;line-height:1.68;overflow-x:auto;margin:9px 0;white-space:pre}
+.code .k{color:#E8B294}.code .c{color:#6E6A78}.code .s{color:#9DC3A6}.code .n{color:#C9A0DC}
+.tag{display:inline-block;font-size:8.4px;font-weight:800;padding:1.5px 6px;border-radius:5px}
+.req{background:var(--c50);color:var(--c500)}.opt{background:var(--n150);color:var(--n600)}
+.der{background:#EDE9F3;color:#6B4E7E}.src{background:var(--s50);color:var(--s700)}
+footer{text-align:center;font-size:10.4px;color:var(--n400);margin-top:24px}
+.big{font-size:16px;font-weight:800;color:var(--n900)}
+</style></head><body><div class="wrap">
+
+<div class="cover">
+ <div class="lg"><span class="sym"><i class="c"></i><i class="a"></i><i class="b"></i></span><span>CONNECTION · HARVEST · IMPLEMENTATION SPEC</span></div>
+ <h1>수집 엔진 구현 상세 명세<br>필드 · 엔드포인트 · 처리량 · 비용 · 에러까지</h1>
+ <p>기술 스택 명세를 <b>엔지니어가 바로 티켓으로 쪼갤 수 있는 수준</b>으로 세분화했다.
+  母 DB 필드 정의, 벤더별 요청/응답 계약, 각 단계의 파라미터·처리량·재시도, 100만 계정 비용 워크드 예제, 모니터링 지표까지.
+  숫자는 설계 기준값(운영에서 캘리브레이션).</p>
+</div>
+
+<div class="toc"><div class="tt">목차</div>
+ <a href="#s1">1 母 DB 필드 스키마</a><a href="#s2">2 큐·이벤트 계약</a><a href="#s3">3 Discover 상세</a>
+ <a href="#s4">4 Fetch 상세</a><a href="#s5">5 Enrich 상세</a><a href="#s6">6 Dedup 상세</a>
+ <a href="#s7">7 Score 공식</a><a href="#s8">8 처리량·비용 100만</a><a href="#s9">9 에러·재시도</a>
+ <a href="#s10">10 지속 루프 스케줄</a><a href="#s11">11 모니터링 지표</a>
+</div>
+
+<section id="s1"><span class="sn">01</span><h2>母 DB 필드 스키마 (creator_pool)</h2>
+<p>필드마다 <b>타입 · 출처 · 갱신주기 · 필수도</b>를 정의. <span class="tag src">SRC 소스직접</span> <span class="tag der">DER 파생계산</span> <span class="tag req">REQ 필수</span> <span class="tag opt">OPT 선택</span></p>
+<table>
+<tr><th style="width:150px">필드</th><th style="width:90px">타입</th><th>출처 · 규칙</th><th style="width:80px">갱신</th></tr>
+<tr><td class="mono">creator_id</td><td>uuid</td><td>내부 PK <span class="tag der">DER</span></td><td>1회</td></tr>
+<tr><td class="mono">platform</td><td>enum</td><td>tiktok·instagram <span class="tag req">REQ</span></td><td>1회</td></tr>
+<tr><td class="mono">platform_uid</td><td>string</td><td>플랫폼 내부 ID(핸들 변경돼도 불변) <span class="tag src">SRC</span> <span class="tag req">REQ</span></td><td>1회</td></tr>
+<tr><td class="mono">handle</td><td>string</td><td>@핸들 · 변경 이력 배열 보관 <span class="tag src">SRC</span></td><td>리프레시</td></tr>
+<tr><td class="mono">display_name</td><td>string</td><td>표시명 <span class="tag src">SRC</span></td><td>리프레시</td></tr>
+<tr><td class="mono">country</td><td>char(2)</td><td>ISO2 · 다신호 합의(§5) <span class="tag der">DER</span> <span class="tag req">REQ</span></td><td>리프레시</td></tr>
+<tr><td class="mono">country_conf</td><td>float</td><td>국가 판정 신뢰도 0~1 <span class="tag der">DER</span></td><td>리프레시</td></tr>
+<tr><td class="mono">lang</td><td>string[]</td><td>bio·캡션 언어 감지 <span class="tag der">DER</span></td><td>리프레시</td></tr>
+<tr><td class="mono">category</td><td>string[]</td><td>콘텐츠 분류(뷰티·스킨케어…) <span class="tag der">DER</span></td><td>리프레시</td></tr>
+<tr><td class="mono">product_tags</td><td>string[]</td><td>다룬 제품/브랜드(전수 그물 태깅) <span class="tag der">DER</span></td><td>증분</td></tr>
+<tr><td class="mono">followers</td><td>int</td><td>팔로워 수 <span class="tag src">SRC</span></td><td>7~30일</td></tr>
+<tr><td class="mono">follower_series</td><td>jsonb</td><td>[{date,count}] 성장 곡선(계단 감지) <span class="tag der">DER</span></td><td>리프레시</td></tr>
+<tr><td class="mono">avg_views</td><td>int</td><td>최근 N개 평균 조회 <span class="tag der">DER</span></td><td>리프레시</td></tr>
+<tr><td class="mono">engagement_rate</td><td>float</td><td>(댓글+저장)/팔로워 <span class="tag der">DER</span></td><td>리프레시</td></tr>
+<tr><td class="mono">post_freq_30d</td><td>int</td><td>30일 게시 수 <span class="tag der">DER</span></td><td>리프레시</td></tr>
+<tr><td class="mono">last_post_at</td><td>ts</td><td>최근성(죽은 계정 판별) <span class="tag src">SRC</span></td><td>리프레시</td></tr>
+<tr><td class="mono">bio</td><td>text</td><td>원문 bio <span class="tag src">SRC</span></td><td>리프레시</td></tr>
+<tr><td class="mono">links</td><td>jsonb</td><td>bio 링크·link-in-bio 확장 <span class="tag src">SRC</span></td><td>리프레시</td></tr>
+<tr><td class="mono">email</td><td>string</td><td>추출·검증 통과분만 <span class="tag der">DER</span></td><td>보강</td></tr>
+<tr><td class="mono">email_status</td><td>enum</td><td>valid·risky·none <span class="tag der">DER</span></td><td>보강</td></tr>
+<tr><td class="mono">whatsapp/zalo/line</td><td>string</td><td>bio 연락 번호 <span class="tag der">DER</span></td><td>보강</td></tr>
+<tr><td class="mono">gmv_signal</td><td>int</td><td>TikTok Shop 실적(있으면) <span class="tag src">SRC</span></td><td>증분</td></tr>
+<tr><td class="mono">sponsor_ratio_90d</td><td>float</td><td>광고 표기 비율 추세 <span class="tag der">DER</span></td><td>리프레시</td></tr>
+<tr><td class="mono">influence_score</td><td>float</td><td>0~100(§7) <span class="tag der">DER</span></td><td>리프레시</td></tr>
+<tr><td class="mono">contact_score</td><td>float</td><td>접촉 우선순위 <span class="tag der">DER</span></td><td>보강</td></tr>
+<tr><td class="mono">grade</td><td>enum</td><td>mega·macro·mid·micro·nano <span class="tag der">DER</span></td><td>리프레시</td></tr>
+<tr><td class="mono">sources</td><td>jsonb</td><td>[{vendor,seen_at}] 교차검증 횟수 <span class="tag src">SRC</span></td><td>누적</td></tr>
+<tr><td class="mono">identity_group</td><td>uuid</td><td>dedup 그룹(동일인) <span class="tag der">DER</span></td><td>dedup</td></tr>
+<tr><td class="mono">state</td><td>enum</td><td>POOL·DORMANT·INVITED·MEMBER·EXCLUDED <span class="tag req">REQ</span></td><td>이벤트</td></tr>
+<tr><td class="mono">consent_ref</td><td>uuid</td><td>동의 원장 참조(가입 후) <span class="tag src">SRC</span></td><td>이벤트</td></tr>
+<tr><td class="mono">first_seen/last_refreshed</td><td>ts</td><td>수집 시각 <span class="tag src">SRC</span></td><td>자동</td></tr>
+</table>
+</section>
+
+<section id="s2"><span class="sn">02</span><h2>큐 · 이벤트 계약</h2>
+<p>단계 간 통신은 큐 메시지로. 각 큐의 메시지 스키마와 소비자를 고정한다.</p>
+<table>
+<tr><th style="width:150px">큐</th><th>메시지</th><th style="width:120px">소비자</th></tr>
+<tr><td class="mono">q.discover</td><td><span class="mono">{source, handle?, seed?, ctx:{country,category}}</span></td><td>Fetch 워커</td></tr>
+<tr><td class="mono">q.fetch</td><td><span class="mono">{handle, platform, ctx, attempt}</span></td><td>Fetch 워커</td></tr>
+<tr><td class="mono">q.enrich</td><td><span class="mono">{creator_id, bio, links}</span></td><td>Enrich 워커</td></tr>
+<tr><td class="mono">q.expand</td><td><span class="mono">{creator_id, video_ids[], ctx}</span></td><td>Discover(그래프) 워커</td></tr>
+<tr><td class="mono">q.dedup</td><td><span class="mono">{creator_id, blocking_keys[]}</span></td><td>Dedup 워커</td></tr>
+<tr><td class="mono">q.dead_letter</td><td>실패 메시지 + 사유</td><td>재처리·알림</td></tr>
+</table>
+<div class="code"><span class="c">// 멱등성: 같은 handle 재유입 시 upsert, expand는 seen 체크 후 skip</span>
+<span class="k">on</span> q.fetch(msg):
+  <span class="k">if</span> pool.exists(msg.handle) <span class="k">and</span> fresh(pool.get(msg.handle)): <span class="k">return</span>  <span class="c">// 중복 fetch 방지</span>
+  profile = router.fetch(msg.handle)
+  cid = pool.upsert(profile, source=msg.source)
+  emit(q.enrich, {cid, profile.bio, profile.links})
+  emit(q.expand, {cid, profile.top_video_ids, msg.ctx})</div></section>
+
+<section id="s3"><span class="sn">03</span><h2>Discover 상세</h2>
+<h4>3.1 시드 사전 구조 (국가·카테고리별)</h4>
+<div class="code"><span class="c"># seed_dict[country][category]</span>
+{
+  "VN": { "sunscreen": {
+    hashtags: ["kemchốngnắng","reviewkemchốngnắng","chốngnắnghànquốc"],
+    keywords: ["kem chống nắng hàn", "chống nắng nâng tông"],
+    competitor_tags: ["@anessa_vn","@beplain.vn"],
+    shop_category_id: "601450" }}}</div>
+<h4>3.2 그래프 확장 파라미터</h4>
+<table>
+<tr><th style="width:180px">파라미터</th><th>기본값</th><th>의미</th></tr>
+<tr><td class="mono">seed_pages_per_tag</td><td>50</td><td>해시태그당 긁는 페이지</td></tr>
+<tr><td class="mono">commenters_per_video</td><td>top 3 영상 × 200</td><td>영상당 댓글러 상한</td></tr>
+<tr><td class="mono">suggested_depth</td><td>2 hop</td><td>추천유저 BFS 깊이</td></tr>
+<tr><td class="mono">expand_fanout_cap</td><td>30 / 계정</td><td>계정당 확장 상한(폭주 방지)</td></tr>
+<tr><td class="mono">converge_threshold</td><td>new_rate &lt; 3%</td><td>최근 10k 중 신규 비율 → 종료</td></tr>
+<tr><td class="mono">converge_window</td><td>3회 연속</td><td>3배치 연속 미달이어야 종료</td></tr>
+</table>
+<h4>3.3 수렴 판정 로직</h4>
+<div class="code">window = ring_buffer(10_000)
+<span class="k">on</span> each account processed:
+  window.push(is_new)
+  new_rate = sum(window) / len(window)
+  <span class="k">if</span> new_rate &lt; 0.03: streak += 1 <span class="k">else</span>: streak = 0
+  <span class="k">if</span> streak >= 3_batches: mark_converged(country, category)  <span class="c"># 사실상 전수</span></div>
+<div class="note"><b>폭주 방어</b> — 그래프 확장은 지수적으로 커질 수 있다. <span class="mono">expand_fanout_cap</span>과 국가·카테고리별 <b>일일 discover 예산</b>(예: VN·선케어 하루 5만 계정)으로 상한을 건다. 예산 소진 시 다음 날로 이월.</div>
+</section>
+
+<section id="s4"><span class="sn">04</span><h2>Fetch 상세 — 벤더 I/O 계약</h2>
+<h4>4.1 라우터 우선순위 규칙</h4>
+<table>
+<tr><th style="width:130px">상황</th><th>1순위</th><th>폴백</th></tr>
+<tr><td>대량 프로필(그래프)</td><td>ScrapeCreators($0.99/1K)</td><td>Apify → EnsembleData</td></tr>
+<tr><td>정밀 필드·bio 확실</td><td>EnsembleData</td><td>Lamatok</td></tr>
+<tr><td>커머스 실적 필요</td><td>TikTok Shop API</td><td>—</td></tr>
+<tr><td>이미 L2 스냅샷에 있음</td><td class="mono">skip fetch</td><td>—</td></tr>
+</table>
+<h4>4.2 EnsembleData user/info 계약 (예)</h4>
+<table>
+<tr><th style="width:150px">요청 파라미터</th><th>응답 필드(발췌)</th></tr>
+<tr><td class="mono">username / sec_uid<br>token</td><td class="mono">uid, unique_id, nickname, follower_count,<br>following_count, aweme_count, total_favorited,<br>signature(bio), region, verification_type,<br>bio_url, ins_id, youtube_channel</td></tr>
+</table>
+<h4>4.3 배치·재시도 규칙</h4>
+<table>
+<tr><th style="width:180px">항목</th><th>값</th></tr>
+<tr><td class="mono">batch_size</td><td>500 (큐 pop 단위)</td></tr>
+<tr><td class="mono">concurrency</td><td>벤더별 레이트 이하(토큰 버킷)</td></tr>
+<tr><td class="mono">retry</td><td>3회 · 지수 백오프(2s→8s→30s)</td></tr>
+<tr><td class="mono">on 429</td><td>레이트 리미터 감속 + 다음 벤더로</td></tr>
+<tr><td class="mono">on 404/deleted</td><td>재시도 없이 <span class="mono">state=EXCLUDED</span> 기록</td></tr>
+<tr><td class="mono">on 3-vendor-fail</td><td class="mono">q.dead_letter</td></tr>
+</table>
+</section>
+
+<section id="s5"><span class="sn">05</span><h2>Enrich 상세</h2>
+<h4>5.1 이메일 추출 규칙 셋</h4>
+<div class="code"><span class="c"># 1) bio 정규식 (난독화 대응)</span>
+r1 = r'[\w.+-]+@[\w-]+\.[\w.-]+'
+r2 = r'[\w.+-]+\s*[\[(]?at[\])]?\s*[\w-]+\s*[\[(]?dot[\])]?\s*\w+'  <span class="c"># a(at)b(dot)com</span>
+<span class="c"># 2) link-in-bio 크롤 대상</span>
+LINK_HOSTS = [linktr.ee, beacons.ai, lnk.bio, taplink, 개인도메인]
+  → GET → 페이지 내 mailto: + 정규식 + 연락 페이지
+<span class="c"># 3) 실패 시 이메일 DB 조인</span>
+email = influencers_club.lookup(handle) <span class="k">if</span> grade in [mega,macro,mid]  <span class="c"># 상위만 유료</span></div>
+<h4>5.2 이메일 검증 파이프</h4>
+<div class="code">candidate → syntax_ok? → MX_exists? → verify_api(ZeroBounce)
+  valid   → store, email_status=valid
+  risky   → store, email_status=risky (발송 제외 기본)
+  invalid → drop, email_status=none</div>
+<h4>5.3 국가 판정 가중치 테이블</h4>
+<table>
+<tr><th style="width:200px">신호</th><th style="width:80px">가중치</th><th>비고</th></tr>
+<tr><td>account_region (공개)</td><td>0.40</td><td>가장 신뢰</td></tr>
+<tr><td>phone_country (bio 국번)</td><td>0.25</td><td>있으면 강함</td></tr>
+<tr><td>bio_lang</td><td>0.15</td><td>영어는 약함</td></tr>
+<tr><td>caption_lang (최근 N개)</td><td>0.15</td><td>다수결</td></tr>
+<tr><td>active_hour_tz</td><td>0.05</td><td>보조</td></tr>
+</table>
+<p><span class="mono">country = argmax(weighted_vote)</span>, <span class="mono">conf = top/Σ</span>. conf &lt; 0.6 → <span class="mono">q.recheck</span>.</p>
+</section>
+
+<section id="s6"><span class="sn">06</span><h2>Dedup 상세</h2>
+<h4>6.1 블로킹 키 (후보군 좁히기)</h4>
+<table>
+<tr><th style="width:200px">키</th><th>정규화</th></tr>
+<tr><td class="mono">norm_email</td><td>소문자·점 제거(gmail)·+태그 제거</td></tr>
+<tr><td class="mono">norm_link_host</td><td>link-in-bio 최종 목적지 도메인</td></tr>
+<tr><td class="mono">norm_handle</td><td>소문자·구분자 제거·유사도</td></tr>
+<tr><td class="mono">phone_e164</td><td>libphonenumber 정규화</td></tr>
+</table>
+<h4>6.2 매칭 규칙 점수 (합산 → 임계)</h4>
+<table>
+<tr><th style="width:230px">규칙</th><th style="width:70px">점수</th></tr>
+<tr><td>동일 검증 이메일</td><td>+1.0 (즉시 병합)</td></tr>
+<tr><td>동일 link-in-bio 목적지</td><td>+0.7</td></tr>
+<tr><td>동일 전화(E164)</td><td>+0.6</td></tr>
+<tr><td>핸들 유사도 &gt; 0.9 + 같은 국가</td><td>+0.4</td></tr>
+<tr><td>표시명 동일 + 상호 팔로우</td><td>+0.3</td></tr>
+<tr><td colspan="2"><b>합산 ≥ 1.0 → 동일인 병합</b> · 0.6~1.0 → 사람 검토 큐</td></tr>
+</table>
+<p>병합 시 <span class="mono">identity_group</span> 공유, 필드는 <b>소스 신뢰도·최신성</b>으로 마스터 선택. 병합 이력은 원장 기록(되돌림 가능).</p>
+</section>
+
+<section id="s7"><span class="sn">07</span><h2>Score 공식</h2>
+<h4>7.1 영향력 스코어 (0~100)</h4>
+<div class="code">influence = 100 * sigmoid(
+   0.30 * z(log(followers))
+ + 0.28 * z(engagement_rate)
+ + 0.18 * z(avg_views / followers)      <span class="c"># 도달 효율</span>
+ + 0.14 * z(post_freq_30d)
+ + 0.10 * z(gmv_signal)                  <span class="c"># 커머스(있으면)</span>
+ - penalty )
+penalty = 0.5*step_growth_flag           <span class="c"># 계단형 급증(가짜)</span>
+        + 0.3*(sponsor_ratio_90d > 0.4)  <span class="c"># 협찬 과다</span>
+        + 0.4*(days_since_last_post > 45) <span class="c"># 휴면</span></div>
+<h4>7.2 접촉 우선순위 스코어</h4>
+<div class="code">contact = influence
+        + 20*(email_status=='valid')
+        + 10*has(whatsapp|zalo|line)
+        + 15*category_match(brand_profile)  <span class="c"># 브랜드 붙었을 때</span></div>
+<h4>7.3 등급 컷 (조정 가능)</h4>
+<table>
+<tr><th>등급</th><th>팔로워</th><th>처리(§P)</th></tr>
+<tr><td>mega</td><td>1M+</td><td>이메일 DB 전량·1:1·사람</td></tr>
+<tr><td>macro</td><td>100K~1M</td><td>이메일 DB·에이전시</td></tr>
+<tr><td>mid</td><td>20K~100K</td><td>이메일 심화·자동 아웃리치</td></tr>
+<tr><td>micro</td><td>5K~20K</td><td>자동 아웃리치 주력</td></tr>
+<tr><td>nano</td><td>~5K</td><td>보관·인게이지 상위만 심화</td></tr>
+</table>
+</section>
+
+<section id="s8"><span class="sn">08</span><h2>처리량 · 비용 워크드 예제 (100만 계정)</h2>
+<p>한 국가 파드가 母 DB 100만을 채우는 단계별 볼륨·비용(설계 기준값, 협상 전 공개 단가).</p>
+<table>
+<tr><th style="width:150px">단계</th><th>볼륨</th><th>단가</th><th>비용(개략)</th></tr>
+<tr><td>L2 라이선스 스냅샷</td><td>50만 계정</td><td>계약(대량)</td><td>협상 · fetch 스킵</td></tr>
+<tr><td>Discover(해시태그·키워드)</td><td>영상 500만 조회</td><td>$1/1K</td><td>~$5,000</td></tr>
+<tr><td>Fetch 프로필(신규 50만)</td><td>50만 req</td><td>$0.99/1K</td><td>~$495</td></tr>
+<tr><td>그래프 확장(댓글·추천)</td><td>1,500만 호출</td><td>$1/1K</td><td>~$15,000</td></tr>
+<tr><td>link-in-bio 크롤(상위 40만)</td><td>40만 크롤</td><td>$2/1K</td><td>~$800</td></tr>
+<tr><td>이메일 DB 조인(상위 25만)</td><td>25만 조회</td><td>크레딧</td><td>중간 비중</td></tr>
+<tr><td>이메일 검증(30만)</td><td>30만</td><td>~$0.5/1K</td><td>~$150</td></tr>
+<tr><td>프록시·인프라·큐</td><td>—</td><td>월 고정+가변</td><td>월 운영비</td></tr>
+<tr><td colspan="3"><b class="big">API 직접비 합계(개략)</b></td><td><b class="big">~$21,000~35,000 + 라이선스</b></td></tr>
+</table>
+<div class="ok"><b>계정당 원가</b> — 위 합계 / 100만 ≈ <b>25~50원</b>(API 직접비). 라이선스·인프라 포함해도 목표 <b>30~120원</b> 안. 핵심 지렛대는 ①L2로 50만의 fetch·discover를 통째로 생략, ②그래프가 최대 비용이니 <span class="mono">fanout_cap</span>·일일예산으로 조인다.</div>
+<div class="warn"><b>비용 급증 포인트</b> — 그래프 확장(§8 최대 항목)이 통제 안 되면 수백만 호출로 폭주한다. 반드시 <b>수렴 판정으로 조기 종료</b> + <b>국가·카테고리 일일 예산 상한</b>. 이게 "비용 들어도 최대한"을 <b>낭비 없이</b> 실현하는 방법.</div>
+</section>
+
+<section id="s9"><span class="sn">09</span><h2>에러 · 재시도 매트릭스</h2>
+<table>
+<tr><th style="width:170px">에러</th><th>단계</th><th>대응</th></tr>
+<tr><td>429 Rate limit</td><td>Fetch/Discover</td><td>토큰버킷 감속 → 다음 벤더 → 재큐</td></tr>
+<tr><td>402/쿼터 소진</td><td>벤더</td><td>해당 벤더 비활성 → 폴백 → 알림</td></tr>
+<tr><td>404/삭제 계정</td><td>Fetch</td><td>재시도 안 함 · <span class="mono">EXCLUDED</span></td></tr>
+<tr><td>비공개 계정</td><td>Fetch</td><td>공개 필드만 저장 · 심화 스킵</td></tr>
+<tr><td>bio 파싱 실패</td><td>Enrich</td><td>이메일 없음 처리 · 보강 큐 재시도</td></tr>
+<tr><td>링크 크롤 타임아웃</td><td>Enrich</td><td>2회 재시도 후 스킵</td></tr>
+<tr><td>이메일 반송(bounce)</td><td>Outreach</td><td><span class="mono">email_status=invalid</span> · 억제 목록</td></tr>
+<tr><td>dedup 모호(0.6~1.0)</td><td>Dedup</td><td>사람 검토 큐 · 자동 병합 안 함</td></tr>
+<tr><td>3벤더 전부 실패</td><td>Fetch</td><td class="mono">dead_letter · 일 1회 재처리</td></tr>
+</table>
+</section>
+
+<section id="s10"><span class="sn">10</span><h2>지속 루프 스케줄 (증분)</h2>
+<table>
+<tr><th style="width:150px">잡</th><th style="width:90px">주기</th><th>내용 · 비용 특성</th></tr>
+<tr><td>신규 발견 델타</td><td>매일 02:00</td><td>카테고리별 신규 해시태그·신규 어필리에이트·신규 참여자만. seen 스킵 → 저비용</td></tr>
+<tr><td>트렌드 트리거</td><td>실시간</td><td>급상승 해시태그·사운드 감지 시 즉시 해당 참여자 수집</td></tr>
+<tr><td>경쟁사 워치</td><td>매일</td><td>경쟁 브랜드 태그·멘션 신규 계정 적재</td></tr>
+<tr><td>지표 리프레시</td><td>7일(상위)/30일(하위)</td><td>등급 높을수록 자주. 죽은 계정 <span class="mono">DORMANT</span> 강등</td></tr>
+<tr><td>연락처 보강</td><td>주간</td><td>이메일 미확보 상위 재시도(bio 갱신·새 링크)</td></tr>
+<tr><td>이메일 재검증</td><td>90일</td><td>오래된 valid 재확인 · 반송 반영</td></tr>
+<tr><td>커뮤니티 파싱</td><td>매일</td><td>FB·Threads·Zalo 신규 KOC 글</td></tr>
+<tr><td>학습 채점</td><td>주간</td><td>초대→완주 라벨로 가중치 갱신(브라이어)</td></tr>
+</table>
+<div class="note"><b>증분이 싼 이유</b> — 母 DB가 클수록 "이미 seen" 비율이 올라가 <b>신규 발견 단가만</b> 남는다. 초기 대량 적재가 $2만이면 지속 유지는 월 <b>한 자릿수 %</b> 수준.</div>
+</section>
+
+<section id="s11"><span class="sn">11</span><h2>모니터링 지표 (대시보드)</h2>
+<table>
+<tr><th style="width:190px">지표</th><th>의미 · 경보 조건</th></tr>
+<tr><td class="mono">accounts_added / day</td><td>일일 순증 · 급락 시 소스 점검</td></tr>
+<tr><td class="mono">new_rate by (country,cat)</td><td>수렴 추적 · &lt;3% 지속 = 전수 근접</td></tr>
+<tr><td class="mono">cost_per_account (blended)</td><td>목표 30~120원 · 초과 시 그래프 예산 점검</td></tr>
+<tr><td class="mono">vendor_fail_rate</td><td>벤더별 실패율 · 임계 초과 시 라우팅 조정</td></tr>
+<tr><td class="mono">email_coverage by grade</td><td>상위 등급 60%+ 목표</td></tr>
+<tr><td class="mono">dedup_merge_rate</td><td>병합률 급변 = 매칭 규칙 이상</td></tr>
+<tr><td class="mono">dead_letter_depth</td><td>적체 = 벤더·파서 장애</td></tr>
+<tr><td class="mono">queue_lag</td><td>단계별 지연 · 워커 스케일 신호</td></tr>
+<tr><td class="mono">completion_CAC by channel</td><td>완주 CAC(유입 아님) · 채널 배분 근거</td></tr>
+</table>
+</section>
+
+<footer>CONNECTION · 수집 엔진 구현 상세 명세 v1.0 · 2026-08-26 · 숫자는 설계 기준값(운영 캘리브레이션) · 짝 문서: 기술 스택 명세 · 수집 엔진 설계 · 국가 플레이북</footer>
+</div></body></html>

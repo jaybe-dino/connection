@@ -1,0 +1,248 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>수집 엔진 기술 스택 명세</title>
+<style>
+:root{
+--n0:#FFFFFF;--n50:#FAF8F4;--n100:#F3EFE7;--n150:#EDE7DC;--n200:#E4DCCF;--n300:#D3C8B6;
+--n400:#A89C8A;--n500:#8A7E6C;--n600:#6E6355;--n700:#544B40;--n900:#2C2620;
+--t50:#FCF2EE;--t100:#F7DDD4;--t300:#DE8C74;--t500:#C2543C;--t700:#853427;
+--s50:#EFF4F0;--s700:#3E6E4E;--a700:#8A6215;--c50:#FBEFEA;--c500:#B0472E;
+--d900:#141319;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Pretendard Variable',Pretendard,-apple-system,'Noto Sans KR',sans-serif;
+ background:var(--n100);color:var(--n900);line-height:1.7;font-size:13.5px}
+.wrap{max-width:940px;margin:0 auto;padding:44px 28px 80px}
+.cover{background:var(--d900);border-radius:18px;padding:34px 38px;margin-bottom:22px;color:#fff}
+.lg{display:flex;align-items:center;gap:9px;margin-bottom:16px}
+.lg .sym{width:30px;height:14px;position:relative;display:inline-block}
+.lg .sym i{position:absolute;border-radius:50%;width:8px;height:8px;top:3px}
+.lg .sym i.a{left:0;background:#fff}.lg .sym i.b{right:0;background:var(--t500)}
+.lg .sym i.c{width:30px;height:1.4px;left:0;top:6.5px;border-radius:0;background:#4E4A58}
+.lg span{font-size:10px;font-weight:900;letter-spacing:.24em;color:#E8B294}
+h1{font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1.35;margin-bottom:12px}
+.cover p{color:#C6C1D0;max-width:680px;font-size:13px}
+.toc{background:var(--n0);border:1px solid var(--n200);border-radius:14px;padding:20px 26px;margin-bottom:22px}
+.toc .tt{font-size:9.4px;font-weight:900;letter-spacing:.16em;color:var(--n600);margin-bottom:10px}
+.toc a{display:inline-block;font-size:11.6px;font-weight:700;color:var(--n700);text-decoration:none;
+ background:var(--n100);border-radius:8px;padding:5px 12px;margin:0 4px 6px 0}
+.toc a:hover{background:var(--t50);color:var(--t700)}
+section{background:var(--n0);border:1px solid var(--n200);border-radius:16px;padding:26px 30px;margin-bottom:18px}
+.sn{font-family:var(--mono);font-size:10.5px;font-weight:700;color:var(--t700);background:var(--t50);
+ padding:2px 9px;border-radius:6px;display:inline-block;margin-bottom:8px}
+h2{font-size:19px;font-weight:800;letter-spacing:-.015em;margin-bottom:6px}
+h3{font-size:13.5px;font-weight:800;margin:20px 0 8px}
+h4{font-size:11.6px;font-weight:800;margin:14px 0 5px;color:var(--t700)}
+p{margin-bottom:10px}p b{color:var(--n900)}p,li,td{color:var(--n700)}
+ul{margin:6px 0 10px 18px}li{margin-bottom:4px}
+table{width:100%;border-collapse:collapse;margin:10px 0 14px;font-size:11.4px}
+th{background:var(--n50);text-align:left;font-size:9px;font-weight:900;letter-spacing:.04em;
+ color:var(--n600);padding:7px 8px;border-bottom:1.5px solid var(--n200)}
+td{padding:7px 8px;border-bottom:1px solid var(--n150);vertical-align:top;line-height:1.5}
+td b{color:var(--n900)}
+.mono{font-family:var(--mono);font-size:10.4px}
+.pill{display:inline-block;font-size:8.6px;font-weight:800;padding:2px 7px;border-radius:5px;margin-right:2px}
+.buy{background:#EDE9F3;color:#6B4E7E}.build{background:var(--s50);color:var(--s700)}.hybrid{background:#F6EBD7;color:var(--a700)}
+.note{background:var(--t50);border:1px solid var(--t100);border-radius:11px;padding:12px 16px;font-size:12px;color:var(--n700);margin:12px 0}
+.note b{color:var(--t700)}
+.ok{background:var(--s50);border:1px solid #CBDDD1;border-radius:11px;padding:12px 16px;font-size:12px;color:var(--n700);margin:12px 0}
+.ok b{color:var(--s700)}
+.warn{background:var(--c50);border:1px solid #EDC8BC;border-radius:11px;padding:12px 16px;font-size:12px;color:var(--n700);margin:12px 0}
+.warn b{color:var(--c500)}
+.pipe{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:12px 0}
+.pipe span{font-size:10.4px;font-weight:800;background:var(--t50);color:var(--t700);border:1px solid var(--t100);padding:5px 10px;border-radius:8px}
+.pipe i{color:var(--n400);font-style:normal;font-weight:700}
+.code{background:var(--d900);color:#D8D4DE;border-radius:11px;padding:14px 17px;font-family:var(--mono);
+ font-size:10.6px;line-height:1.7;overflow-x:auto;margin:10px 0;white-space:pre}
+.code .k{color:#E8B294}.code .c{color:#6E6A78}.code .s{color:#9DC3A6}
+.stage{border:1px solid var(--n200);border-radius:13px;padding:16px 19px;margin:12px 0;background:var(--n50)}
+.stage .sh{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.stage .sh .no{font-family:var(--mono);font-size:11px;font-weight:800;color:#fff;background:var(--t500);
+ width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.stage .sh h3{margin:0;font-size:14px}
+footer{text-align:center;font-size:10.6px;color:var(--n400);margin-top:26px}
+</style></head><body><div class="wrap">
+
+<div class="cover">
+ <div class="lg"><span class="sym"><i class="c"></i><i class="a"></i><i class="b"></i></span><span>CONNECTION · HARVEST STACK SPEC</span></div>
+ <h1>수집 엔진 기술 스택 명세<br>어떤 API · 어떤 기술이 어디에 붙는가</h1>
+ <p>母 DB 파이프라인을 <b>구성요소 단위로</b> 분해해, 각 단계에 필요한 실제 API·서비스·기술과 그 역할·엔드포인트·단가·대안을 명시한다.
+  단가는 2026년 8월 공개 기준(협상 전). <span class="pill build">직접 구축</span> <span class="pill buy">외부 구매</span> <span class="pill hybrid">혼합</span>으로 구축/구매 판단을 표기했다.</p>
+</div>
+
+<div class="toc"><div class="tt">목차</div>
+ <a href="#s1">1 전체 스택 지도</a><a href="#s2">2 Discover</a><a href="#s3">3 Fetch</a>
+ <a href="#s4">4 Enrich</a><a href="#s5">5 Dedup·Store</a><a href="#s6">6 인프라</a>
+ <a href="#s7">7 아웃리치</a><a href="#s8">8 벤더 비교표</a><a href="#s9">9 구축 순서 · MVP</a>
+</div>
+
+<section id="s1"><span class="sn">01</span><h2>전체 스택 지도</h2>
+<div class="pipe"><span>Discover</span><i>→</i><span>Fetch</span><i>→</i><span>Enrich</span><i>→</i><span>Normalize</span><i>→</i>
+<span>Dedup</span><i>→</i><span>Score</span><i>→</i><span>Store(母 DB)</span><i>→</i><span>Serve</span></div>
+<table>
+<tr><th style="width:120px">계층</th><th>기술 요소</th><th style="width:130px">대표 선택</th></tr>
+<tr><td><b>데이터 소스</b></td><td>공식 API · 상업 스크래핑 API · 라이선스 DB · 커뮤니티</td><td>TikTok Shop · EnsembleData · Apify · influencers.club</td></tr>
+<tr><td><b>오케스트레이션</b></td><td>작업 큐 · 워커 · 스케줄러 · 레이트 리미터</td><td>Redis/SQS · Temporal/Celery · cron</td></tr>
+<tr><td><b>네트워크</b></td><td>프록시 풀 · 재시도/백오프 · 벤더 라우터</td><td>주거용 프록시 · 자체 라우터</td></tr>
+<tr><td><b>심화</b></td><td>정규식 · 링크 크롤러 · 이메일 검증 · 국가 판정</td><td>자체 + 이메일 DB 조인</td></tr>
+<tr><td><b>저장·검색</b></td><td>母 DB · 아이덴티티 그래프 · 벡터/전문 검색</td><td>Postgres + 파생 인덱스</td></tr>
+<tr><td><b>아웃리치</b></td><td>발송(메일·DM) · 도메인 관리 · 회신 파싱</td><td>ESP + TopView/Glovek(문서)</td></tr>
+</table>
+</section>
+
+<section id="s2"><span class="sn">02</span><h2>단계 1 · Discover — 계정 후보 발견</h2>
+<p>목적: 핸들/ID 후보를 큐에 쏟아붓는다. 정확도보다 <b>양</b>. 소스별 어댑터가 같은 <span class="mono">handle</span> 출력을 낸다.</p>
+
+<div class="stage"><div class="sh"><div class="no">D1</div><h3>해시태그 · 키워드 검색</h3><span class="pill buy">구매</span></div>
+<table>
+<tr><th style="width:150px">API</th><th>엔드포인트/기능</th><th style="width:130px">단가(공개)</th></tr>
+<tr><td><b>EnsembleData</b></td><td><span class="mono">hashtag/posts</span> · <span class="mono">keyword/search</span> → 영상+작성자</td><td>유닛제 · 월 최소 ~$100</td></tr>
+<tr><td><b>ScrapeCreators</b></td><td>해시태그·검색·프로필</td><td><b>$0.99~1.88 / 1K</b> (대량 최저가)</td></tr>
+<tr><td><b>Apify TikTok Scraper</b></td><td>해시태그·검색 액터</td><td>$2~6 / 1K + 월 $49</td></tr>
+<tr><td>TikTok Research API</td><td><span class="mono">/query/videos</span> 해시태그·키워드</td><td>무료 · 1,000 req/일 · 비상업</td></tr>
+</table>
+<div class="code"><span class="c"># 카테고리 해시태그 → 작성자 후보</span>
+<span class="k">GET</span> ensembledata: /tt/hashtag/posts?name=ครีมกันแดด&cursor=..
+  <span class="c">→ [{author.unique_id, video_id, stats}]</span>
+enqueue(unique_id) <span class="k">for</span> each post</div></div>
+
+<div class="stage"><div class="sh"><div class="no">D2</div><h3>그래프 확장 — 댓글러·추천유저·같은 사운드</h3><span class="pill buy">구매</span></div>
+<table>
+<tr><th style="width:150px">신호</th><th>엔드포인트</th></tr>
+<tr><td>영상 댓글러</td><td><span class="mono">post/comments</span> → 관심 신호 강한 계정</td></tr>
+<tr><td>추천/유사 유저</td><td><span class="mono">user/suggested</span> · <span class="mono">followings</span> → BFS 확장</td></tr>
+<tr><td>같은 사운드 작성자</td><td><span class="mono">music/posts</span> → 트렌드 참여자</td></tr>
+</table>
+<div class="note"><b>이게 전수 수렴의 엔진</b> — D1이 씨앗, D2가 확장. 신규 발견률 &lt;3%까지 BFS. 대부분의 볼륨과 <b>고유성</b>이 여기서 나온다.</div></div>
+
+<div class="stage"><div class="sh"><div class="no">D3</div><h3>커머스 그물 — TikTok Shop Affiliate</h3><span class="pill hybrid">공식·자격</span></div>
+<table><tr><th style="width:150px">API</th><th>기능</th></tr>
+<tr><td><b>TikTok Shop Partner (Affiliate/Seller) API</b></td><td>카테고리별 어필리에이트 크리에이터 목록 · GMV·실적 · 초대 발송</td></tr></table>
+<p>제품·카테고리별 <b>실제 판매한 계정</b>을 공식 통로로. 자격(Shop 파트너) 필요. 문서의 어필리에이트 전략과 직결.</p></div>
+
+<div class="stage"><div class="sh"><div class="no">D4</div><h3>커뮤니티 파싱 — FB·Threads·Zalo</h3><span class="pill build">구축</span></div>
+<p>문서의 채널. 그룹 게시·자기소개 글에서 핸들·연락처 추출. 공식 API 제한적이라 <b>현지 리드 수동 + 반자동 파싱</b> 혼합. Meta Graph API(공개 그룹 한정)·Threads는 제한적.</p></div>
+</section>
+
+<section id="s3"><span class="sn">03</span><h2>단계 2 · Fetch — 프로필 상세 조회</h2>
+<p>핸들 → 팔로워·게시·bio·지역·링크. <b>벤더 라우터</b>가 우선순위/폴백을 관리한다(한 벤더 실패 시 다음).</p>
+<table>
+<tr><th style="width:150px">API</th><th>반환 필드</th><th style="width:130px">단가</th></tr>
+<tr><td><b>EnsembleData</b> <span class="mono">user/info</span></td><td>팔로워·팔로잉·좋아요·<b>bio·공개 연락처</b>·지역·인증</td><td>유닛제</td></tr>
+<tr><td><b>ScrapeCreators</b></td><td>프로필 메타 전반</td><td>$0.99~1.88/1K</td></tr>
+<tr><td><b>Lamatok</b></td><td>TikTok 전용 · 프로필·검색·추천</td><td>요청당</td></tr>
+<tr><td><b>Apify</b> 프로필 액터</td><td>프로필·최근 영상·통계</td><td>$2~6/1K</td></tr>
+</table>
+<div class="code"><span class="c">// 벤더 라우터 (폴백)</span>
+<span class="k">async</span> fetchProfile(handle):
+  <span class="k">for</span> v <span class="k">in</span> [ensemble, scrapecreators, lamatok, apify]:
+    <span class="k">try</span>: <span class="k">return</span> normalize(<span class="k">await</span> v.userInfo(handle))
+    <span class="k">catch</span> RateLimit|NotFound: <span class="k">continue</span>
+  <span class="k">return</span> null <span class="c">// dead_letter 큐로</span></div>
+<div class="note"><b>비용 최적화</b> — Fetch가 계정당 비용의 대부분. ① L2 <b>라이선스 스냅샷</b>으로 대량 계정은 fetch 자체를 스킵(가장 큼). ② 대량 구간은 ScrapeCreators($0.99/1K)로, 정밀 필드는 EnsembleData로 분리 라우팅.</div>
+</section>
+
+<section id="s4"><span class="sn">04</span><h2>단계 3 · Enrich — bio · 이메일 · 국가</h2>
+
+<h4>E1 · 이메일 추출 3단</h4>
+<table>
+<tr><th style="width:150px">단</th><th>기술</th><th style="width:130px">비고</th></tr>
+<tr><td>bio 직접 파싱</td><td>정규식 <span class="mono">[\w.+-]+@[\w-]+\.[\w.-]+</span> + 연락 패턴</td><td>무료 · 커버리지 15~30%</td></tr>
+<tr><td>link-in-bio 크롤</td><td>Linktree/Beacons/사이트 크롤 → 연락 페이지 이메일 (Apify 전용 액터 존재)</td><td>커버리지 크게↑</td></tr>
+<tr><td>이메일 DB 조인</td><td><b>influencers.club</b>(18M·검증 이메일) 등 핸들 조인</td><td>유료 · 고커버리지 · <b>상위 등급만</b></td></tr>
+</table>
+
+<h4>E2 · 이메일 검증</h4>
+<p>발송 전 필수 — 반송률이 도메인 평판을 죽인다.</p>
+<table><tr><th style="width:150px">기술</th><th>기능</th></tr>
+<tr><td>구문·MX 체크</td><td>정규식 + DNS MX 조회 (자체)</td></tr>
+<tr><td>ZeroBounce · NeverBounce · Bouncer</td><td>실재·수신 가능·역할 계정 판별 <span class="pill buy">구매</span></td></tr></table>
+
+<h4>E3 · 국가 판정 (다신호 합의)</h4>
+<div class="code">signals = [account_region, lang_detect(bio),
+           lang_detect(captions), phone_country(bio),
+           active_hour_tz]
+country, confidence = weighted_vote(signals)
+<span class="k">if</span> confidence &lt; 0.6: enqueue(recheck)</div>
+<p>언어 감지는 <span class="mono">fastText/lid</span> 또는 CLD3(자체). 전화 국번은 <span class="mono">libphonenumber</span>.</p>
+</section>
+
+<section id="s5"><span class="sn">05</span><h2>단계 4·5 · Dedup · Store — 유니크 계정 원장</h2>
+<h4>Dedup — 아이덴티티 그래프</h4>
+<table><tr><th style="width:160px">기술</th><th>역할</th></tr>
+<tr><td>블로킹 키</td><td>핸들·이메일·외부 링크·표시명 정규화로 후보 그룹핑(전수 비교 회피)</td></tr>
+<tr><td>매칭 규칙 → ML</td><td>초기 규칙 기반(동일 이메일/링크=동일인), 이후 확률 매칭</td></tr>
+<tr><td>그래프 저장</td><td>계정 노드 + "동일인" 엣지. 소스별 확인 횟수 = 신뢰도</td></tr></table>
+<h4>Store — 母 DB</h4>
+<table><tr><th style="width:160px">저장소</th><th>용도</th></tr>
+<tr><td><b>PostgreSQL</b> (주 원장)</td><td>계정 레코드 · 상태(POOL/DORMANT) · 이벤트 · append-only 로그</td></tr>
+<tr><td>파생 인덱스 (OpenSearch/pgvector)</td><td>국가·카테고리·영향력 필터 검색 · 콘텐츠 유사도 매칭</td></tr>
+<tr><td>객체 스토리지(S3)</td><td>원본 응답 스냅샷 · 감사 추적</td></tr></table>
+<div class="code"><span class="c">-- creator_pool 핵심 인덱스</span>
+CREATE INDEX ON creator_pool (country, category, influence_score DESC);
+CREATE INDEX ON creator_pool (email) WHERE email IS NOT NULL;
+CREATE UNIQUE INDEX ON creator_pool (platform, platform_uid);</div>
+</section>
+
+<section id="s6"><span class="sn">06</span><h2>인프라 · 오케스트레이션</h2>
+<table>
+<tr><th style="width:160px">요소</th><th>선택지</th><th style="width:120px">역할</th></tr>
+<tr><td><b>작업 큐</b></td><td>Redis Streams · AWS SQS · RabbitMQ</td><td>단계 간 버퍼 · 백프레셔</td></tr>
+<tr><td><b>워커/워크플로</b></td><td>Temporal · Celery · BullMQ</td><td>재시도·상태관리·수평 확장</td></tr>
+<tr><td><b>스케줄러</b></td><td>cron · Temporal schedule</td><td>지속 수집 루프(§V)</td></tr>
+<tr><td><b>레이트 리미터</b></td><td>토큰 버킷(벤더별)</td><td>ToS·쿼터 준수</td></tr>
+<tr><td><b>프록시</b></td><td>주거용/모바일 프록시 풀 (Bright Data·Oxylabs 등)</td><td>차단 회피 <span class="pill buy">구매</span></td></tr>
+<tr><td><b>모니터링</b></td><td>Prometheus/Grafana · Sentry</td><td>벤더 실패율·단가·수렴률</td></tr>
+</table>
+<div class="warn"><b>레이트·프록시 원칙</b> — 상업 벤더가 프록시·차단 리스크를 대신 지게 하는 게 1순위(그래서 벤더 우선). 자체 스크래핑은 최소화하고, 하더라도 공개 데이터·레이트 준수·주거용 프록시로. §9(법률)의 선을 넘지 않는다.</div>
+</section>
+
+<section id="s7"><span class="sn">07</span><h2>단계 6 · Outreach — 발송 · 회신</h2>
+<table>
+<tr><th style="width:160px">요소</th><th>기술</th></tr>
+<tr><td><b>메일 발송(ESP)</b></td><td>문서의 <b>TopView 벌크</b> · <b>Glovek 메일</b>(<span class="mono">creator@glovek.space</span>) · 또는 Amazon SES/SendGrid + 도메인 워밍업</td></tr>
+<tr><td>도메인·인증</td><td>SPF·DKIM·DMARC · 서브도메인 분리 · 워밍업 스케줄</td></tr>
+<tr><td>틱톡 DM</td><td>정책상 <b>초안까지</b> · 발송은 셀러 계정 수동(에이전트 규칙)</td></tr>
+<tr><td>연락 채널 전환</td><td>메일→링크트리→<b>왓츠앱(WhatsApp Business API)/Zalo/LINE</b>→가입 (문서 검증 루트)</td></tr>
+<tr><td>회신 파싱</td><td>IMAP/웹훅 → 분류(관심/거절/부재/수신거부) → 母 DB 라벨</td></tr>
+<tr><td>수신거부·억제</td><td>unsubscribe · suppression list · 90일 재접촉 금지 (에이전트 clean 담당)</td></tr>
+</table>
+<div class="note"><b>게이트 연결</b> — 모든 발송은 커넥션 <b>OUTBOUND 게이트</b>를 거친다. 母 DB에 이메일이 있다고 자동 발송하지 않는다 — 일일 상한·워밍업·unsub·게이트 승인이 앞에 있다.</div>
+</section>
+
+<section id="s8"><span class="sn">08</span><h2>벤더 비교표 (2026-08 공개 기준)</h2>
+<table>
+<tr><th>벤더</th><th style="width:130px">역할</th><th style="width:150px">단가</th><th>메모</th></tr>
+<tr><td><b>ScrapeCreators</b></td><td>대량 fetch·검색</td><td><b>$0.99~1.88 / 1K</b></td><td>대량 최저가 · 볼륨 구간 주력</td></tr>
+<tr><td><b>EnsembleData</b></td><td>검색·프로필·bio</td><td>유닛제 · 월 최소 ~$100</td><td>clean JSON · 멀티플랫폼 · 정밀 필드</td></tr>
+<tr><td><b>Apify</b></td><td>액터(bio·링크·해시태그)</td><td>$2~6 / 1K + 월 $49</td><td>link-in-bio·이메일 액터 유용</td></tr>
+<tr><td><b>Bright Data</b></td><td>데이터셋·프록시</td><td>$500+/월 · $1.5~3/1K</td><td>엔터프라이즈 규모·프록시 겸용</td></tr>
+<tr><td><b>TikAPI</b></td><td>프로필·피드</td><td>$15~99/월(5K~100K req)</td><td>소규모·프로토타입</td></tr>
+<tr><td><b>CreatorCrawl</b></td><td>크레딧형 API</td><td>$29~299(5K~100K)</td><td>$2.99/1K(스케일)</td></tr>
+<tr><td><b>influencers.club</b></td><td>라이선스 DB·이메일</td><td>플랜/크레딧</td><td>18M+·검증 이메일 · <b>베이스라인·심화</b></td></tr>
+<tr><td>TikTok Research API</td><td>공식 쿼리</td><td>무료 · 1K/일</td><td>비상업·승인 필요 · 보조</td></tr>
+<tr><td>TikTok Shop Partner API</td><td>어필리에이트·커머스</td><td>자격 기반</td><td>제품별 전수의 공식 통로</td></tr>
+</table>
+<div class="ok"><b>추천 조합</b> — 베이스라인 <b>influencers.club 라이선스</b>(뼈대) + 대량 fetch <b>ScrapeCreators</b>(최저가) + 정밀·bio <b>EnsembleData</b> + link-in-bio/이메일 <b>Apify 액터</b> + 커머스 <b>TikTok Shop API</b>. 이메일 검증은 <b>ZeroBounce류</b>. 프록시는 벤더 내장 우선, 필요 시 <b>Bright Data</b>.</div>
+</section>
+
+<section id="s9"><span class="sn">09</span><h2>구축 순서 · MVP</h2>
+<table>
+<tr><th style="width:90px">단계</th><th>구축</th><th style="width:150px">쓰는 기술</th></tr>
+<tr><td><b>MVP (2~3주)</b></td><td>단일 국가·단일 카테고리로 D1(해시태그)→Fetch→bio 이메일→Postgres 저장. 벤더 1~2개.</td><td>ScrapeCreators + 정규식 + Postgres + cron</td></tr>
+<tr><td><b>확장 (4~6주)</b></td><td>D2 그래프 확장 · 벤더 라우터·폴백 · link-in-bio·이메일 DB 조인 · dedup 그래프 · 큐/워커</td><td>+EnsembleData +Apify +influencers.club +Redis/Temporal</td></tr>
+<tr><td><b>규모화 (6주+)</b></td><td>L2 라이선스 스냅샷 대량 적재 · 지속 증분 루프 · 국가 파드 복제 · 아웃리치(ESP·게이트) · 학습 루프</td><td>+ESP +프록시 +모니터링 +평가 하네스</td></tr>
+</table>
+<div class="code"><span class="c"># MVP 최소 구성 (한 파일로도 시작 가능)</span>
+seeds = ["ครีมกันแดด", "รีวิวสกินแคร์"]        <span class="c"># 태국 선케어</span>
+<span class="k">for</span> tag <span class="k">in</span> seeds:
+  <span class="k">for</span> post <span class="k">in</span> scrapecreators.hashtag(tag, pages=50):
+    u = scrapecreators.user(post.author)         <span class="c"># fetch</span>
+    email = regex(u.bio) <span class="k">or</span> crawl(u.links)      <span class="c"># enrich</span>
+    upsert_pool(u.handle, u.followers, email,     <span class="c"># store</span>
+                country=detect(u), score=influence(u))</div>
+<div class="note"><b>판단 원칙</b> — <span class="pill buy">구매</span>가 기본이다. 스크래핑 인프라·프록시·차단 대응을 직접 짓는 건 벤더보다 느리고 리스크가 크다.
+<span class="pill build">직접 구축</span>은 우리 고유 가치인 <b>그래프 확장 로직·dedup·母 DB·스코어링·학습 루프</b>에 집중한다. "비용 들어도 최대한"은 <b>벤더에 더 쓰고 우리는 로직에 집중</b>으로 실현한다.</div>
+</section>
+
+<footer>CONNECTION · 수집 엔진 기술 스택 명세 v1.0 · 2026-08-26 · 단가는 공개 기준(협상 전) · 짝 문서: 수집 엔진 설계 · 국가 플레이북</footer>
+</div></body></html>

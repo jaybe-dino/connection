@@ -1,0 +1,166 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>커넥션 개발 인계 · README</title>
+<style>
+:root{--n0:#FFF;--n50:#FAF8F4;--n100:#F3EFE7;--n150:#EDE7DC;--n200:#E4DCCF;--n300:#D3C8B6;
+--n400:#A89C8A;--n500:#8A7E6C;--n600:#6E6355;--n700:#544B40;--n900:#2C2620;
+--t50:#FCF2EE;--t100:#F7DDD4;--t500:#C2543C;--t700:#853427;--s50:#EFF4F0;--s700:#3E6E4E;
+--a700:#8A6215;--c50:#FBEFEA;--c500:#B0472E;--d900:#141319;--mono:ui-monospace,Menlo,monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Pretendard Variable',Pretendard,-apple-system,'Noto Sans KR',sans-serif;
+background:var(--n100);color:var(--n900);line-height:1.7;font-size:13.5px}
+.wrap{max-width:900px;margin:0 auto;padding:44px 28px 80px}
+.cover{background:var(--d900);border-radius:18px;padding:34px 38px;margin-bottom:20px;color:#fff}
+.lg{display:flex;align-items:center;gap:9px;margin-bottom:16px}
+.lg .sym{width:30px;height:14px;position:relative;display:inline-block}
+.lg .sym i{position:absolute;border-radius:50%;width:8px;height:8px;top:3px}
+.lg .sym i.a{left:0;background:#fff}.lg .sym i.b{right:0;background:var(--t500)}
+.lg .sym i.c{width:30px;height:1.4px;left:0;top:6.5px;border-radius:0;background:#4E4A58}
+.lg span{font-size:10px;font-weight:900;letter-spacing:.24em;color:#E8B294}
+h1{font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1.35;margin-bottom:10px}
+.cover p{color:#C6C1D0;max-width:660px;font-size:13px}
+section{background:var(--n0);border:1px solid var(--n200);border-radius:16px;padding:26px 30px;margin-bottom:16px}
+.sn{font-family:var(--mono);font-size:10.5px;font-weight:700;color:var(--t700);background:var(--t50);
+padding:2px 9px;border-radius:6px;display:inline-block;margin-bottom:8px}
+h2{font-size:18px;font-weight:800;letter-spacing:-.015em;margin-bottom:10px}
+h3{font-size:13.5px;font-weight:800;margin:18px 0 7px}
+p{margin-bottom:10px}p b{color:var(--n900)}p,li,td{color:var(--n700)}
+ul{margin:6px 0 10px 18px}li{margin-bottom:5px}
+table{width:100%;border-collapse:collapse;margin:10px 0 14px;font-size:12px}
+th{background:var(--n50);text-align:left;font-size:9.4px;font-weight:900;letter-spacing:.05em;
+color:var(--n600);padding:8px 10px;border-bottom:1.5px solid var(--n200)}
+td{padding:9px 10px;border-bottom:1px solid var(--n150);vertical-align:top;line-height:1.55}
+td b{color:var(--n900)}
+.mono{font-family:var(--mono);font-size:11px;color:var(--t700)}
+.file{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--n100)}
+.file:last-child{border-bottom:none}
+.file .ic{width:30px;height:30px;border-radius:8px;background:var(--t50);color:var(--t700);
+display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.file .bd{flex:1}
+.file .nm{font-size:12.6px;font-weight:800}
+.file .pth{font-family:var(--mono);font-size:9.6px;color:var(--n400);margin-top:1px}
+.file .ds{font-size:11.4px;color:var(--n600);margin-top:3px;line-height:1.55}
+.note{background:var(--t50);border:1px solid var(--t100);border-radius:11px;padding:12px 16px;font-size:12px;color:var(--n700);margin:12px 0}
+.note b{color:var(--t700)}
+.ok{background:var(--s50);border:1px solid #CBDDD1;border-radius:11px;padding:12px 16px;font-size:12px;color:var(--n700);margin:12px 0}
+.ok b{color:var(--s700)}
+.warn{background:var(--c50);border:1px solid #EDC8BC;border-radius:11px;padding:12px 16px;font-size:12px;color:var(--n700);margin:12px 0}
+.warn b{color:var(--c500)}
+.chip{display:inline-block;font-size:9px;font-weight:800;padding:2px 8px;border-radius:6px;margin-right:3px}
+.p0{background:var(--c50);color:var(--c500)}.p1{background:#F6EBD7;color:var(--a700)}.p2{background:var(--n150);color:var(--n600)}
+footer{text-align:center;font-size:10.6px;color:var(--n400);margin-top:24px}
+</style></head><body><div class="wrap">
+
+<div class="cover">
+ <div class="lg"><span class="sym"><i class="c"></i><i class="a"></i><i class="b"></i></span><span>CONNECTION · DEV HANDOFF</span></div>
+ <h1>커넥션 개발 인계 문서<br>README · 이 폴더를 어떻게 읽는가</h1>
+ <p>브랜드가 소유하는 글로벌 크리에이터 커뮤니티를 에이전트가 운영하는 서비스, <b>커넥션</b>의 전체 설계 패키지.
+  기획·화면·수집엔진을 한 번에 넘긴다. 개발 착수 전 이 README부터 읽고, 아래 <b>읽는 순서</b>를 따르면 된다.</p>
+</div>
+
+<section><span class="sn">START</span><h2>5분 요약 — 커넥션이 뭔가</h2>
+<p>K-뷰티 브랜드는 해외 크리에이터 운영(모집·커뮤니티·검수·정산)을 사람 노가다로 한다. 커넥션은 브랜드마다
+전담 <b>운영 에이전트(아리)</b>를 붙여 이 전 과정을 대신 굴린다. 크리에이터는 <b>계정 하나(패스)</b>로 여러 브랜드
+커뮤니티(<b>셀</b>)에 소속되고, 밖으로 나가는 모든 행동(발송·정산·개인정보)은 <b>게이트</b>로 사람이 승인한다.</p>
+<p>이 서비스가 성립하려면 앞단에 <b>크리에이터를 대량으로 확보하는 수집 엔진(母 DB)</b>이 필요하다.
+목표는 국가·카테고리·제품별 <b>50만~100만 계정</b>. 그래서 이 패키지는 <b>① 서비스 ② 수집엔진</b> 두 축으로 나뉜다.</p>
+<table>
+<tr><th style="width:150px">핵심 개념</th><th>한 줄 정의</th></tr>
+<tr><td><b>패스(Pass)</b></td><td>크리에이터 계정 1개 = N개 브랜드 멤버십. 재가입 없음.</td></tr>
+<tr><td><b>셀(Cell)</b></td><td>브랜드가 소유하는 크리에이터 커뮤니티 방. 상한 없음·자동 번역·브랜드 동석.</td></tr>
+<tr><td><b>아리(Ari)</b></td><td>브랜드별 운영 에이전트. 담당자 8종(발굴·수집)이 목표·KPI·실패조건을 가짐.</td></tr>
+<tr><td><b>게이트(Gate)</b></td><td>PII·정산·외부발송·공개게시 — 자율등급 무관하게 사람 승인.</td></tr>
+<tr><td><b>母 DB</b></td><td>수집 엔진이 채우는 전 브랜드 공유 크리에이터 원장. 母 DB→판정→초대→가입.</td></tr>
+</table>
+</section>
+
+<section><span class="sn">ORDER</span><h2>읽는 순서</h2>
+<ol style="margin-left:18px">
+<li><b>이 README</b> (지금)</li>
+<li><b>01_프로토타입/클릭데모</b> — 먼저 브라우저로 열어 <b>실제로 클릭</b>해 본다. 말보다 빠르다.</li>
+<li><b>02_서비스기획/1_서비스기획안</b> — 무엇을·왜. 기능 명세 전체 + 갭 분석(P0/P1).</li>
+<li><b>02_서비스기획/2_페이지맵</b> — 어떤 화면이 몇 개, 어디에 붙는가.</li>
+<li><b>03_수집엔진/1~4</b> — 설계 → 국가전략 → 기술스택 → 구현상세 순으로 깊어짐.</li>
+<li><b>04_원본자료</b> — 기획 근거가 된 시딩 회의·에이전시·베트남 채널 원본.</li>
+</ol>
+</section>
+
+<section><span class="sn">FILES</span><h2>파일 안내</h2>
+
+<h3>01_프로토타입</h3>
+<div class="file"><div class="ic">◎</div><div class="bd">
+ <div class="nm">커넥션_프로토타입_클릭데모.html</div>
+ <div class="pth">01_프로토타입/</div>
+ <div class="ds">전 화면 클릭 가능한 단일 HTML 데모(순수 JS, 빌드 불필요). 상단 4탭 — <b>크리에이터 앱 · 브랜드 콘솔 · 브랜드 가입 · 핵심 기획</b>.
+  브라우저로 바로 열림. 상태가 서로 연결돼 있어(게이트 승인→크리에이터 앱 변화 등) 실제 흐름을 그대로 재현. <b>개발 시 화면 스펙의 정본.</b></div></div></div>
+
+<h3>02_서비스기획</h3>
+<div class="file"><div class="ic">1</div><div class="bd">
+ <div class="nm">서비스기획안 v1.0</div><div class="pth">02_서비스기획/</div>
+ <div class="ds">9장 — 서비스 정의·사용자 여정·구조·<b>기능 명세 전체</b>(가입/학습/에이전트8종/셀/캠페인/DB/게이트/번역/크로스노출)·데이터 4층·수익모델·<b>갭 분석(빠진 기능 P0/P1/P2)</b>·로드맵·오픈이슈.</div></div></div>
+<div class="file"><div class="ic">2</div><div class="bd">
+ <div class="nm">서비스 전체 페이지맵</div><div class="pth">02_서비스기획/</div>
+ <div class="ds">4개 표면의 모든 화면 + P0/P1 예정 화면 + 공통 시스템 레이어. 화면마다 구현/예정 태그. <b>스프린트 백로그의 뼈대.</b></div></div></div>
+
+<h3>03_수집엔진</h3>
+<div class="file"><div class="ic">1</div><div class="bd">
+ <div class="nm">수집엔진 설계</div><div class="pth">03_수집엔진/</div>
+ <div class="ds">소스 5계층(공식API·상업DB·시드그래프·커뮤니티·에이전시) · 파이프라인 · 전수 수집 로직 · 이메일 심화 · 영향력 스코어링 · 비용경제학 · 지속수집 · 법률 · 커넥션 연동.</div></div></div>
+<div class="file"><div class="ic">2</div><div class="bd">
+ <div class="nm">국가별 A→Z 플레이북</div><div class="pth">03_수집엔진/</div>
+ <div class="ds">한 국가 파드를 세워 첫 완주까지 <b>26단계(A~Z)</b> · 베트남/미국/태국 파라미터 시트 · 90일 캘린더 · 확장 순서 · KPI.</div></div></div>
+<div class="file"><div class="ic">3</div><div class="bd">
+ <div class="nm">기술스택 명세</div><div class="pth">03_수집엔진/</div>
+ <div class="ds">단계별 API·엔드포인트·<b>실제 단가</b>(2026-08 공개) · 벤더 비교표 8종 · 구축/구매 판단 · MVP 구축 순서.</div></div></div>
+<div class="file"><div class="ic">4</div><div class="bd">
+ <div class="nm">구현상세 명세</div><div class="pth">03_수집엔진/</div>
+ <div class="ds"><b>母 DB 필드 스키마 30+</b> · 큐/이벤트 계약 · 파라미터·재시도 · 국가판정 가중치 · dedup 점수표 · 영향력 공식 · <b>100만 계정 비용 워크드</b> · 에러 매트릭스 · 스케줄 · 모니터링. 엔지니어 티켓용.</div></div></div>
+
+<h3>04_원본자료</h3>
+<div class="file"><div class="ic">◔</div><div class="bd">
+ <div class="nm">시딩 참고자료 (텍스트)</div><div class="pth">04_원본자료/</div>
+ <div class="ds">기획 근거가 된 Notion 원본 3건 — 시딩 회의록 · 에이전시 문의(Picky·누리라운지·VIPStreamers 단가) · 베트남 KOL/KOC 채널 현황. 수집엔진 소스 계층의 출처.</div></div></div>
+</section>
+
+<section><span class="sn">DEV</span><h2>개발 착수 가이드</h2>
+<h3>먼저 지을 것 (P0 · 없으면 운영 불가)</h3>
+<table>
+<tr><th style="width:170px">항목</th><th>측</th><th style="width:60px">우선</th></tr>
+<tr><td>크리에이터 OAuth 가입(틱톡·인스타)</td><td>크리에이터 앱</td><td><span class="chip p0">P0</span></td></tr>
+<tr><td>셀·담당자·캠페인·제출·정산·내패스</td><td>크리에이터 앱</td><td><span class="chip p0">P0</span></td></tr>
+<tr><td>브랜드 가입 위저드 + 아리 학습</td><td>브랜드 가입</td><td><span class="chip p0">P0</span></td></tr>
+<tr><td>콘솔: 브리핑·승인함(게이트)·셀·DB·캠페인·정산</td><td>브랜드 콘솔</td><td><span class="chip p0">P0</span></td></tr>
+<tr><td>알림(크리에이터 알림함 + 브랜드 승인 외부알림)</td><td>공통</td><td><span class="chip p0">P0</span></td></tr>
+<tr><td>배송 추적/관리 · 정산 온보딩 · 신고차단 · 팀권한</td><td>공통</td><td><span class="chip p0">P0</span></td></tr>
+<tr><td>수집엔진 MVP(단일국가·단일카테고리)</td><td>수집엔진</td><td><span class="chip p0">P0</span></td></tr>
+</table>
+<p>P1/P2 및 상세는 <b>서비스기획안 §7 갭 분석</b>과 <b>페이지맵</b> 참조.</p>
+
+<h3>기술 스택 요지</h3>
+<ul>
+<li><b>프로토타입</b>은 순수 HTML/JS 데모다 — 프로덕션 프레임워크(React 등)는 팀 선택. 데모는 <b>동작·화면 스펙</b>의 정본으로만 쓴다.</li>
+<li><b>크리에이터 앱 = PWA</b>(같은 URL·홈화면 설치·푸시). <b>콘솔 = 데스크톱 웹</b>(나란히 구조).</li>
+<li><b>수집엔진</b>: 구매 우선(ScrapeCreators·EnsembleData·Apify·influencers.club·TikTok Shop API) + 자체 로직(그래프확장·dedup·스코어·학습). PostgreSQL 원장 + 큐(Redis/SQS) + 워커(Temporal/Celery).</li>
+<li><b>공통 레이어</b>: 인증(패스) · 번역 · 게이트 엔진 · append-only 원장 · 브랜드 프로필 · 평가 하네스 · 알림.</li>
+</ul>
+
+<div class="warn"><b>법률·컴플라이언스 선</b> — 수집은 공개 데이터·공식 API·라이선스 DB까지. 로그인 우회·CAPTCHA 무력화 안 함.
+개인정보는 공개 비즈니스 연락처만, 국가별 규제(PDPA·PDPD·GDPR·州법) 처리근거·수신거부·삭제 대응 필수. 발송은 전부 게이트.</div>
+
+<div class="ok"><b>한 줄 인계</b> — <b>프로토타입으로 화면을 이해하고, 기획안으로 규칙을 이해하고, 수집엔진 4종으로 데이터 파이프라인을 짓는다.</b>
+막히면 각 문서의 결정 로그·갭 분석·오픈 이슈를 먼저 본다.</div>
+</section>
+
+<section><span class="sn">Q&A</span><h2>알아둘 것</h2>
+<table>
+<tr><th style="width:190px">질문</th><th>답</th></tr>
+<tr><td>프로토타입 그대로 쓰나?</td><td>아니오. 화면·흐름 <b>스펙의 정본</b>. 프로덕션은 다시 구현.</td></tr>
+<tr><td>수집엔진과 앱은 같이 짓나?</td><td>병행 가능하되 <b>독립</b>. 수집엔진 MVP는 앱과 별개로 먼저 돌릴 수 있다(연결점은 母 DB→후보큐).</td></tr>
+<tr><td>반출·라이선스 기능은?</td><td>이번 범위에서 <b>제외</b>. 수익은 구독+검증가입 과금.</td></tr>
+<tr><td>번역은 어떻게?</td><td>크리에이터는 무조건 자기 언어(원문 칩), 브랜드는 본국어. 캠페인은 게시 시 일괄 번역.</td></tr>
+<tr><td>단가 숫자는 확정인가?</td><td>2026-08 <b>공개 기준(협상 전)</b>. 계약 시 재산정.</td></tr>
+</table>
+</section>
+
+<footer>CONNECTION · 개발 인계 패키지 · 2026-08-26 · 문서 8종 + 프로토타입 + 원본자료 · 작성 jay(DINOSTUDIO)</footer>
+</div></body></html>

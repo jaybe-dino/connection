@@ -1,6 +1,9 @@
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Badge, Card, RewardBadge, SectionTitle, StepTracker } from "@connection/ui";
-import { mockCampaigns } from "@connection/shared/mock";
+import type { Campaign } from "@connection/shared";
+import { api } from "@connection/shared/api";
+import { mockCampaigns, mockMe } from "@connection/shared/mock";
 
 const MY_STATUS_LABEL: Record<string, [string, string]> = {
   applied: ["지원 완료", "amber"],
@@ -13,7 +16,27 @@ const MY_STATUS_LABEL: Record<string, [string, string]> = {
 export default function CampaignsScreen() {
   const { id } = useParams();
   const nav = useNavigate();
-  const detail = id ? mockCampaigns.find((c) => c.id === id) : undefined;
+  const [campaigns, setCampaigns] = useState<Campaign[]>(mockCampaigns);
+  const [live, setLive] = useState(false);
+
+  useEffect(() => {
+    api
+      .campaigns(mockMe.id)
+      .then((rows) => {
+        setCampaigns(rows);
+        setLive(true);
+      })
+      .catch(() => setLive(false));
+  }, []);
+
+  const apply = async (campaignId: string) => {
+    setCampaigns((cs) =>
+      cs.map((c) => (c.id === campaignId ? { ...c, myStatus: "applied" } : c))
+    );
+    if (live) await api.applyCampaign(campaignId, mockMe.id).catch(() => {});
+  };
+
+  const detail = id ? campaigns.find((c) => c.id === id) : undefined;
 
   if (detail) {
     const st = detail.myStatus && MY_STATUS_LABEL[detail.myStatus];
@@ -57,7 +80,10 @@ export default function CampaignsScreen() {
         )}
 
         {detail.myStatus === "none" && (
-          <button style={{ width: "100%", marginTop: 14, padding: 13, border: "none", borderRadius: "var(--radius)", background: "var(--t500)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+          <button
+            onClick={() => void apply(detail.id)}
+            style={{ width: "100%", marginTop: 14, padding: 13, border: "none", borderRadius: "var(--radius)", background: "var(--t500)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}
+          >
             지원하기
           </button>
         )}
@@ -71,7 +97,7 @@ export default function CampaignsScreen() {
         캠페인
       </SectionTitle>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {mockCampaigns.map((c) => {
+        {campaigns.map((c) => {
           const st = c.myStatus && c.myStatus !== "none" ? MY_STATUS_LABEL[c.myStatus] : null;
           return (
             <Card key={c.id} onClick={() => nav(`/campaigns/${c.id}`)}>

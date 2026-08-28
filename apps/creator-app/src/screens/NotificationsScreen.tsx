@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, SectionTitle } from "@connection/ui";
-import type { NotifType } from "@connection/shared";
-import { mockNotifications } from "@connection/shared/mock";
+import type { AppNotification, NotifType } from "@connection/shared";
+import { api } from "@connection/shared/api";
+import { mockMe, mockNotifications } from "@connection/shared/mock";
 
 const TYPE_LABEL: Record<NotifType, string> = {
   selected: "캠페인 선정",
@@ -17,6 +18,23 @@ export default function NotificationsScreen() {
     selected: true, shipping: true, review_result: true, payout: true, deadline_d3: true,
   });
   const [read, setRead] = useState<Set<string>>(new Set());
+  const [items, setItems] = useState<AppNotification[]>(mockNotifications);
+  const [live, setLive] = useState(false);
+
+  useEffect(() => {
+    api
+      .notifications(mockMe.id)
+      .then((rows) => {
+        setItems(rows.map((r) => ({ ...r, at: new Date(r.at).toLocaleString("ko", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) })));
+        setLive(true);
+      })
+      .catch(() => setLive(false));
+  }, []);
+
+  const markRead = (id: string) => {
+    setRead((s) => new Set(s).add(id));
+    if (live) void api.readNotification(id).catch(() => {});
+  };
 
   return (
     <div>
@@ -29,10 +47,10 @@ export default function NotificationsScreen() {
 
       <SectionTitle>알림</SectionTitle>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {mockNotifications.map((n) => {
+        {items.map((n) => {
           const isRead = n.read || read.has(n.id);
           return (
-            <Card key={n.id} onClick={() => setRead((s) => new Set(s).add(n.id))} style={{ opacity: isRead ? 0.55 : 1 }}>
+            <Card key={n.id} onClick={() => markRead(n.id)} style={{ opacity: isRead ? 0.55 : 1 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
                 {!isRead && <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--t500)", flexShrink: 0 }} />}
                 <div style={{ flex: 1 }}>

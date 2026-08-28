@@ -33,10 +33,11 @@ connection/
 │   │   └── 04_원본자료/
 │   └── DEVELOPMENT.md     # 개발 계획 · P0 백로그 · 스택 결정
 ├── db/
-│   └── migrations/        # PostgreSQL 스키마 (001 母 DB · 002 공통 레이어)
+│   └── migrations/        # PostgreSQL 스키마 (001 母 DB · 002 공통 레이어 · 003 앱)
 ├── services/
 │   ├── harvest/           # 수집 엔진 (Python) — 파이프라인 + 벤더 어댑터 + 워커
-│   └── core/              # 공통 레이어 (Python) — 게이트 · 원장 · 동의 · 브랜드 프로필 · 알림
+│   ├── core/              # 공통 레이어 (Python) — 게이트 · 원장 · 동의 · 브랜드 프로필 · 알림
+│   └── api/               # 백엔드 API (FastAPI + Postgres) — 앱 3표면의 실서버
 ├── packages/
 │   ├── shared/            # 도메인 타입 + 목데이터 (TS)
 │   └── ui/                # 디자인 토큰 + 공용 컴포넌트 (React)
@@ -48,15 +49,24 @@ connection/
 
 ## 시작하기
 
-### 앱 (apps/)
+### 풀스택 (API + 앱)
 
 ```bash
+# 1) Postgres 준비 후 (마이그레이션·시드는 서버 기동 시 자동)
+pip install -e services/core -e "services/api[dev]"
+export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/connection
+uvicorn api.main:app --port 8000 --app-dir services/api
+
+# 2) 앱 — API가 켜져 있으면 실서버 연동, 없으면 목데이터 데모로 자동 폴백
 pnpm install
 pnpm dev:creator    # :5173 크리에이터 PWA
-pnpm dev:console    # :5174 브랜드 콘솔
+pnpm dev:console    # :5174 브랜드 콘솔 (승인=실행·원장 기록)
 pnpm dev:signup     # :5175 가입 위저드
 pnpm build          # 전체 타입체크 + 빌드
 ```
+
+번역·아리 실동작은 `ANTHROPIC_API_KEY` 설정 시 활성화(claude-opus-5),
+없으면 명시적 폴백(`[번역대기]` 태그 · 아리 미연동 안내)으로 동작한다.
 
 ### 수집 엔진 (services/harvest) · 공통 레이어 (services/core)
 

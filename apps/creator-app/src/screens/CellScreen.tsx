@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge, Card, EmptyState, OriginalChip } from "@connection/ui";
-import type { CellChannel } from "@connection/shared";
+import type { CellChannel, CellMessage } from "@connection/shared";
+import { api } from "@connection/shared/api";
 import { mockCells } from "@connection/shared/mock";
 import { useAppState } from "../state";
 
@@ -15,7 +16,16 @@ export default function CellScreen() {
   const [channel, setChannel] = useState<CellChannel>("chat");
   const [reportTarget, setReportTarget] = useState<string | null>(null);
   const cell = mockCells.find((c) => c.brandId === activeBrandId) ?? mockCells[0];
-  const messages = cell.messages.filter((m) => m.channel === channel);
+  const [remote, setRemote] = useState<CellMessage[] | null>(null);
+
+  useEffect(() => {
+    api
+      .cellMessages(cell.id)
+      .then(setRemote)
+      .catch(() => setRemote(null));
+  }, [cell.id]);
+
+  const messages = (remote ?? cell.messages).filter((m) => m.channel === channel);
 
   return (
     <div>

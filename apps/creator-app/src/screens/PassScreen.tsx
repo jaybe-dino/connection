@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge, Card, SectionTitle } from "@connection/ui";
 import { LOCALE_LABEL, type Locale } from "@connection/shared";
+import { api } from "@connection/shared/api";
 import { mockMe } from "@connection/shared/mock";
 import { useAppState } from "../state";
 
@@ -15,6 +16,32 @@ export default function PassScreen() {
     bank: "PingPong 연결됨",
   });
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [live, setLive] = useState(false);
+
+  useEffect(() => {
+    api
+      .me(mockMe.id)
+      .then((me) => {
+        setFields((f) => ({
+          address: me.fields.address?.value ?? f.address,
+          phone: me.fields.phone?.value ?? f.phone,
+          skinType: me.fields.skinType?.value ?? f.skinType,
+          bank: me.fields.bank?.value ?? f.bank,
+        }));
+        setLive(true);
+      })
+      .catch(() => setLive(false));
+  }, []);
+
+  const saveField = (key: string, value: string) => {
+    setSavedAt(new Date().toLocaleTimeString("ko", { hour: "2-digit", minute: "2-digit" }));
+    if (live) void api.updateField(mockMe.id, key, value).catch(() => {});
+  };
+
+  const changeLocale = (l: Locale) => {
+    setLocale(l);
+    if (live) void api.updateLocale(mockMe.id, l).catch(() => {});
+  };
 
   return (
     <div>
@@ -44,7 +71,7 @@ export default function PassScreen() {
           {(Object.keys(LOCALE_LABEL) as Locale[]).map((l) => (
             <button
               key={l}
-              onClick={() => setLocale(l)}
+              onClick={() => changeLocale(l)}
               style={{
                 padding: "6px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer",
                 border: "1px solid", borderColor: locale === l ? "var(--t500)" : "var(--n200)",
@@ -72,10 +99,8 @@ export default function PassScreen() {
             <div style={{ fontSize: 11, fontWeight: 700, color: "var(--n500)", marginBottom: 3 }}>{label}</div>
             <input
               value={fields[key]}
-              onChange={(e) => {
-                setFields((f) => ({ ...f, [key]: e.target.value }));
-                setSavedAt(new Date().toLocaleTimeString("ko", { hour: "2-digit", minute: "2-digit" }));
-              }}
+              onChange={(e) => setFields((f) => ({ ...f, [key]: e.target.value }))}
+              onBlur={(e) => saveField(key, e.target.value)}
               style={{ width: "100%", padding: "9px 11px", border: "1px solid var(--n200)", borderRadius: 9, fontSize: 13, background: "var(--n50)" }}
             />
           </div>

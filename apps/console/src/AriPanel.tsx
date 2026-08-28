@@ -21,16 +21,28 @@ export default function AriPanel() {
   ]);
   const [draft, setDraft] = useState("");
 
-  const send = () => {
-    const q = draft.trim();
-    if (!q) return;
-    setDraft("");
-    const reply: Msg = q.includes("캠페인")
+  const cannedReply = (q: string): Msg =>
+    q.includes("캠페인")
       ? { who: "ari", text: "톤업 선세럼 캠페인은 지원 14 · 선정 10 · 배송 중 8이에요. 제출 마감은 9/15.", jump: { label: "캠페인 보기", to: "/campaigns" } }
       : q.includes("셀") || q.includes("커뮤니티")
         ? { who: "ari", text: "태국 셀 침묵 감지 없음 · 이번 주 목요일 미니 챌린지가 예정돼 있어요.", jump: { label: "셀 보기", to: "/cells" } }
         : { who: "ari", text: "확인했어요. 관련 데이터를 정리해 브리핑에 올려둘게요.", jump: { label: "브리핑", to: "/briefing" } };
-    setMsgs((m) => [...m, { who: "me", text: q }, reply]);
+
+  const send = async () => {
+    const q = draft.trim();
+    if (!q) return;
+    setDraft("");
+    setMsgs((m) => [...m, { who: "me", text: q }]);
+    try {
+      const { api } = await import("@connection/shared/api");
+      const history = msgs
+        .filter((m) => !m.text.startsWith("지금은 AI 미연동"))
+        .map((m) => ({ role: m.who === "me" ? "user" : "assistant", content: m.text }));
+      const r = await api.ariChat(q, history);
+      setMsgs((m) => [...m, { who: "ari", text: r.reply, jump: r.ai ? undefined : { label: "브리핑", to: "/briefing" } }]);
+    } catch {
+      setMsgs((m) => [...m, cannedReply(q)]); // API 다운 — 시나리오 응답
+    }
   };
 
   return (

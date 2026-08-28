@@ -7,7 +7,7 @@ const KINDS: (GateKind | "ALL")[] = ["ALL", "PII", "PAYOUT", "OUTBOUND", "PUBLIS
 
 /** 승인함 — 게이트 4종. 누르기 전엔 아무 일도 일어나지 않는다. */
 export default function Approvals() {
-  const { gates, decide } = useGates();
+  const { gates, decide, live } = useGates();
   const [filter, setFilter] = useState<GateKind | "ALL">("ALL");
   const open = gates.filter(
     (g) =>
@@ -21,6 +21,7 @@ export default function Approvals() {
       <h1 style={{ fontSize: 20, fontWeight: 900, margin: "0 0 4px" }}>승인함</h1>
       <div style={{ fontSize: 12, color: "var(--n500)" }}>
         자율 등급과 무관하게 — 밖으로 나가는 건 전부 여기서 사람이 승인해요
+        {live ? " · 서버 연결됨(승인=실행·원장 기록)" : " · 오프라인 데모"}
       </div>
 
       <div style={{ display: "flex", gap: 6, margin: "14px 0" }}>

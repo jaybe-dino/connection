@@ -143,6 +143,129 @@
     }
   } catch (e) {}
 
+  /* ── 캠페인 게시 → 실서버 등록 (공지 자동 번역 게시 포함) ── */
+  if (window.pubCamp) {
+    var _pubCamp = window.pubCamp;
+    window.pubCamp = function () {
+      var nm = (document.getElementById("ncn") || {}).value || "9월 진정 앰플 · 태국";
+      var prod = (document.getElementById("ncp") || {}).value || "시카 진정 앰플";
+      var t = (window.ST && ST.nc && ST.nc.type) || "paid";
+      _pubCamp();
+      fire("POST", "/campaigns", {
+        name: nm, product: prod,
+        reward_type: t, reward_amount: t === "paid" ? 38000 : 0,
+        usp: "48시간 진정 테스트 완료 · 무향 · 민감성 전용",
+        conditions: ["15초 이상", "제품 3초 노출", "#ad 표기"],
+        capacity: 30, deadline: "2026-10-05",
+      });
+    };
+  }
+
+  /* ── 콘솔 검수 통과 → 실서버 review (정산 대기 반영) ── */
+  if (window.doPass2) {
+    var _doPass2 = window.doPass2;
+    window.doPass2 = function () {
+      _doPass2();
+      req("GET", "/submissions?creator=c-mai&status=in_review")
+        .then(function (subs) {
+          if (!subs.length) return;
+          fire("POST", "/submissions/" + subs[0].submissionId + "/review",
+               { result: "passed", reviewer: "kim" });
+        }).catch(function () {});
+    };
+  }
+
+  /* ── 크리에이터 신고 ⚑ → 실서버 접수 (SLA 큐 → 어드민) ── */
+  window.reportFlag = function () {
+    toast("신고", "이 방에서 문제가 되는 메시지를 신고합니다." +
+      " <b>스팸·광고</b>는 72시간, <b>괴롭힘</b>은 24시간 안에 사람이 처리해요." +
+      "<br><div style='margin-top:7px'>" +
+      '<span class="cbt" onclick="sendReport(\'spam\')">스팸·광고</span> ' +
+      '<span class="cbt" onclick="sendReport(\'harassment\')">괴롭힘·혐오</span> ' +
+      '<span class="cbt no" onclick="sendReport(\'other\')">기타</span></div>');
+  };
+  window.sendReport = function (reason) {
+    req("POST", "/reports", {
+      cell_id: "cell-glowlab-th", reporter: "c-mai", reason: reason,
+      detail: "셀 대화에서 신고 (⚑)",
+    }).then(function (r) {
+      toast("신고 접수됨", "접수번호가 발급됐어요. <b>" +
+        (reason === "harassment" ? "24시간" : "72시간") +
+        " 안에</b> 사람이 확인하고 결과를 알려드립니다.");
+    }).catch(function () {
+      toast("신고 접수됨", "접수됐습니다. 처리 결과는 알림으로 알려드려요.");
+    });
+  };
+
+  /* ── 알림 🔔 → 실서버 알림함 ── */
+  window.notifMenu = function () {
+    req("GET", "/notifications?user=c-mai").then(function (list) {
+      if (!list.length) return toast("알림", "새 알림이 없어요.");
+      var rows = list.slice(0, 5).map(function (n) {
+        return "<div style='margin:6px 0'><b>" + n.title + "</b><br>" +
+          "<span style='color:var(--n600)'>" + (n.body || "") + "</span></div>";
+      }).join("");
+      toast("알림 " + list.length + "건", rows);
+    }).catch(function () {
+      toast("알림", "서버에 연결되면 정산·검수·셀 소식이 여기로 모여요.");
+    });
+  };
+
+  /* ── 콘솔: 아리 검토(컴플라이언스) · AI 브리프 → 실서버 ── */
+  window.ariReview = function () {
+    var nm = (document.getElementById("ncn") || {}).value || "9월 진정 앰플";
+    var text = nm + " — 48시간 진정 테스트 완료 · 무향 · 민감성 전용 · #ad 표기";
+    req("POST", "/compliance/check", {
+      text: text, country: "TH",
+      banned_words: ["미백", "최고"], require_disclosure: true,
+    }).then(function (r) {
+      if (r.ok && !r.violations.length)
+        return toast("아리 검토 · 통과", "금지어·의학적 표현·광고 표기 모두 문제 없어요. 게시해도 됩니다.");
+      var rows = r.violations.map(function (v) {
+        return "<div style='margin:5px 0'>" +
+          (v.severity === "block" ? "⛔" : "⚠️") + " <b>" + v.term + "</b> — " +
+          v.message + (v.fix ? "<br><span style='color:var(--n600)'>→ " + v.fix + "</span>" : "") +
+          "</div>";
+      }).join("");
+      toast(r.ok ? "아리 검토 · 주의 " + r.violations.length + "건"
+                 : "아리 검토 · 게시 불가", rows);
+    }).catch(function () {
+      toast("아리 검토", "문구를 아리가 먼저 봅니다 — <b>금지어 검사</b>와 국가별 광고 표기 규정 체크를 통과해야 게시돼요.");
+    });
+  };
+  window.briefGen = function () {
+    toast("브리프 생성 중", "브랜드 프로필 · 제품 USP · 크리에이터 언어를 모아서 만드는 중…");
+    req("POST", "/campaigns/cmp-1/briefs", { creator_id: "c-mai" })
+      .then(function (b) {
+        var hooks = (b.hooks || []).slice(0, 2).map(function (h) {
+          return "<div style='margin:4px 0'>· " + h + "</div>";
+        }).join("");
+        toast("브리프 생성됨 · @" + (b.creator_handle || "ploy"),
+          "<b>후크 제안</b>" + hooks +
+          "<div style='margin-top:6px;color:var(--n600)'>고지 문구·금지어·필수 조건이 포함된 브리프가 " +
+          "크리에이터 담당자 대화로 전달됩니다.</div>");
+      }).catch(function () {
+        toast("브리프", "서버 연결 시 캠페인·브랜드 프로필 기반 브리프가 생성됩니다.");
+      });
+  };
+  try {
+    if (typeof CV !== "undefined" && CV.camp) {
+      var _camp = CV.camp;
+      CV.camp = function () {
+        var v = _camp();
+        if (v.b) {
+          v.b = v.b.replace(
+            /onclick="toast\('아리 검토'[\s\S]*?\)"(?=>아리 검토 먼저)/,
+            'onclick="ariReview()"');
+          v.b = v.b.replace(
+            '>아리 검토 먼저</button>',
+            '>아리 검토 먼저</button><button class="btn line" onclick="briefGen()">AI 브리프</button>');
+        }
+        return v;
+      };
+    }
+  } catch (e) {}
+
   /* ── 브랜드 가입 완료 → 신청 접수 (어드민 승인 큐로) ── */
   if (window.bjDone) {
     var _bjDone = window.bjDone;

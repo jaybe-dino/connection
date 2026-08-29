@@ -7,9 +7,18 @@ const BASE: string =
 
 const ADMIN_ID = "jay";
 
+// 간이 키 인증: ?key=… 로 접속하면 저장되고, 서버에 ADMIN_KEY 가 설정돼 있으면 검증된다.
+const keyParam = new URLSearchParams(location.search).get("key");
+if (keyParam) localStorage.setItem("CONNECTION_ADMIN_KEY", keyParam);
+const ADMIN_KEY = localStorage.getItem("CONNECTION_ADMIN_KEY") || "";
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", "X-Admin-Id": ADMIN_ID },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Id": ADMIN_ID,
+      ...(ADMIN_KEY ? { "X-Admin-Key": ADMIN_KEY } : {}),
+    },
     ...init,
   });
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);

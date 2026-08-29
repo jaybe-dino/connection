@@ -363,6 +363,82 @@ def db_creators(brand: str = "glowlab") -> list[dict]:
     ]
 
 
+# ── 컴플라이언스 · 콘텐츠 브리프 ─────────────────────────────────
+
+class ComplianceReq(BaseModel):
+    text: str
+    country: str = "KR"
+    banned_words: list[str] = []
+    functional_claims: list[str] = []
+    require_disclosure: bool = True
+
+
+@app.post("/compliance/check")
+def compliance_check(body: ComplianceReq) -> dict:
+    from .compliance import check_content
+
+    violations = check_content(
+        body.text, body.country, body.banned_words,
+        body.functional_claims, body.require_disclosure,
+    )
+    return {
+        "ok": not any(v.severity == "block" for v in violations),
+        "violations": [
+            {"kind": v.kind, "severity": v.severity.value, "term": v.term,
+             "message": v.message, "fix": v.fix}
+            for v in violations
+        ],
+    }
+
+
+class BriefReq(BaseModel):
+    creator_id: str
+    functional_claims: list[str] = []
+
+
+@app.post("/campaigns/{campaign_id}/briefs")
+def create_brief(campaign_id: str, body: BriefReq) -> dict:
+    from .content_agent import BriefInput, generate_brief
+
+    with connect() as conn:
+        camp = conn.execute(
+            "SELECT * FROM campaigns WHERE campaign_id=%s", (campaign_id,)).fetchone()
+        if not camp:
+            raise HTTPException(404, "campaign not found")
+        creator = conn.execute(
+            "SELECT * FROM creators WHERE creator_id=%s", (body.creator_id,)).fetchone()
+        if not creator:
+            raise HTTPException(404, "creator not found")
+        profile = conn.execute(
+            "SELECT fields FROM brand_profile_versions WHERE brand_id=%s"
+            " ORDER BY version DESC LIMIT 1", (camp["brand_id"],)).fetchone()
+
+    fields = (profile or {}).get("fields") or {}
+
+    def fval(name: str, default: str = "") -> str:
+        f = fields.get(name)
+        return f.get("value", default) if isinstance(f, dict) else default
+
+    country = {"th": "TH", "vi": "VN", "ko": "KR", "en": "US"}.get(
+        creator["locale"], "US")
+    banned = [w.strip() for w in fval("banned_words").split(",") if w.strip()]
+    customer_lang = [w.strip() for w in fval("customer_language").split(",") if w.strip()]
+
+    brief = generate_brief(BriefInput(
+        campaign_name=camp["name"], product=camp["product"], usp=camp["usp"],
+        customer_language=customer_lang or [camp["usp"]],
+        conditions=camp["conditions"], tone=fval("voice"),
+        banned_words=banned, functional_claims=body.functional_claims,
+        creator_handle=creator["handle"], creator_locale=creator["locale"],
+        creator_country=country, creator_grade=creator["grade"],
+    ))
+    with connect() as conn:
+        ledger_append(conn, f"ari:{camp['brand_id']}", "BRIEF_GENERATED",
+                      body.creator_id,
+                      {"campaign": campaign_id, "ai": brief.ai_generated})
+    return brief.to_dict()
+
+
 # ── 아리 채팅 ────────────────────────────────────────────────────
 
 class AriChat(BaseModel):

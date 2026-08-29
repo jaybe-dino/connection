@@ -35,6 +35,11 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
 
+from .routes_ops import admin as _admin_router, public as _public_router  # noqa: E402
+
+app.include_router(_public_router)
+app.include_router(_admin_router)
+
 ALL_LOCALES = ["ko", "th", "en", "vi"]
 
 

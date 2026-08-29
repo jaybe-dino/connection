@@ -2042,7 +2042,7 @@ function render(){
       ${(ST.c==='cell'||ST.c==='agent'||ST.c==='hub')?'<div class="a av"></div>':''}
       <div style="flex:1;min-width:0"><div class="n">${v.hd[0]}</div><div class="s">${v.hd[1]}</div></div>
       ${ST.c==='cell'?`<span class="hbt" onclick="toast('링크 복사됨','<b>connection.app/${(ST.me.cur||'glowlab').toLowerCase()}</b> — 받은 사람은 <b>커넥션 패스 로그인</b>을 거쳐 바로 이 방으로 들어옵니다.')">↗ 공유</span>
-       <span class="hbt soft" onclick="toast('내 언어','<b>ไทย · IP 기준 자동</b>. 다른 언어는 태국어로 자동 번역돼 보여요.')">ไทย</span>`:''}</div>`:''}
+       <span class="hbt soft" onclick="langMenu()">${window.__LANG_LABEL||'ไทย'}</span>`:''}</div>`:''}
     ${body}
     ${tabs&&!ST.pwa?`<div class="pwab"><div><b>앱으로 쓰기</b><span>같은 URL · 홈 화면 아이콘 · 셀 알림</span></div>
       <button class="btn" style="padding:6px 13px;font-size:11px" onclick="doInstall()">설치</button>

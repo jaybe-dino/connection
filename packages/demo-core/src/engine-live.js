@@ -73,6 +73,76 @@
     };
   }
 
+  /* ── 언어 자동 매핑 + 개별 설정 (기획 §4.8) ─────────────────
+     우선순위: 본인 저장 설정 > IP 국가(서버 감지) > 브라우저 언어 > en.
+     변경은 즉시 저장(localStorage) + 서버 동기화(PUT /me/locale). */
+  var LANGS = [["th", "ไทย"], ["ko", "한국어"], ["en", "English"], ["vi", "Tiếng Việt"]];
+  function langLabel(l) {
+    var f = LANGS.find(function (x) { return x[0] === l; });
+    return f ? f[1] : l;
+  }
+  function applyLang(l, silent) {
+    window.__USER_LANG = l;
+    window.__LANG_LABEL = langLabel(l);
+    if (window.ST) { ST.myLang = l; }
+    try { localStorage.setItem("CONNECTION_LANG", l); } catch (e) {}
+    if (window.render) render();
+    if (!silent && window.toast)
+      toast("언어 변경됨", "이제 셀 대화·캠페인이 <b>" + langLabel(l) +
+        "</b>로 보입니다. 원문은 언제든 칩으로 열려요.");
+  }
+  window.setMyLang = function (l) {
+    applyLang(l, false);
+    fire("PUT", "/me/c-mai/locale", { locale: l });
+  };
+  window.langMenu = function () {
+    var cur = window.__USER_LANG || "th";
+    var btns = LANGS.map(function (x) {
+      return '<span class="cbt' + (x[0] === cur ? "" : " no") +
+        '" style="margin:2px 3px 0 0" onclick="setMyLang(\'' + x[0] + '\')">' +
+        x[1] + "</span>";
+    }).join("");
+    toast("내 언어", "처음엔 <b>접속 국가(IP)·브라우저 언어</b>로 자동 설정돼요." +
+      " 바꾸면 저장되고 어디서 로그인해도 유지됩니다.<br><div style='margin-top:7px'>" +
+      btns + "</div>");
+  };
+  (function initLang() {
+    var saved = null;
+    try { saved = localStorage.getItem("CONNECTION_LANG"); } catch (e) {}
+    if (saved) return applyLang(saved, true);
+    req("GET", "/locale/detect").then(function (r) {
+      applyLang(r.locale || "en", true);
+    }).catch(function () {
+      var nav = ((navigator.language || "en").slice(0, 2));
+      applyLang(["th", "ko", "en", "vi"].indexOf(nav) >= 0 ? nav : "en", true);
+    });
+  })();
+
+  /* 내 패스 화면에 '언어' 섹션 주입 (동의 설정 위) */
+  try {
+    if (typeof CA !== "undefined" && CA.pass) {
+      var _pass = CA.pass;
+      CA.pass = function () {
+        var v = _pass();
+        var marker = '<div class="cc" style="margin-top:12px;background:var(--n50)"><div class="t">동의 설정</div>';
+        var cur = window.__USER_LANG || "th";
+        var section =
+          '<div style="font-size:9.6px;font-weight:900;letter-spacing:.14em;color:var(--n600);margin:16px 0 8px">언어</div>' +
+          '<div class="cc"><div class="t">내 언어 — ' + langLabel(cur) + "</div>" +
+          "<p>처음엔 <b>접속 국가(IP)·브라우저 언어</b>로 자동 설정돼요. 셀 대화·캠페인·담당자 대화가 이 언어로 보입니다.</p>" +
+          '<div style="display:flex;gap:5px;margin-top:9px;flex-wrap:wrap">' +
+          LANGS.map(function (x) {
+            return '<span class="cbt' + (x[0] === cur ? "" : " no") +
+              '" onclick="setMyLang(\'' + x[0] + '\')">' + x[1] + "</span>";
+          }).join("") +
+          "</div></div>";
+        if (v.body && v.body.indexOf(marker) >= 0)
+          v.body = v.body.replace(marker, section + marker);
+        return v;
+      };
+    }
+  } catch (e) {}
+
   /* ── 브랜드 가입 완료 → 신청 접수 (어드민 승인 큐로) ── */
   if (window.bjDone) {
     var _bjDone = window.bjDone;

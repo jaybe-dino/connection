@@ -9,7 +9,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -48,6 +48,40 @@ def health() -> dict:
     with connect() as conn:
         conn.execute("SELECT 1")
     return {"ok": True, "ai": ai.ai_available()}
+
+
+# ── 언어 자동 매핑 (기획 §4.8: 크리에이터 언어 = IP 초기값, 수동 변경 가능) ──
+
+_COUNTRY_TO_LOCALE = {"TH": "th", "VN": "vi", "KR": "ko", "US": "en"}
+_SUPPORTED = ("ko", "th", "en", "vi")
+
+
+@app.get("/locale/detect")
+def detect_locale(request: Request) -> dict:
+    """접속 유저의 초기 언어 판정.
+
+    우선순위: ① 엣지 지오 헤더(IP 국가 — Vercel/Cloudflare/프록시)
+              ② Accept-Language  ③ en 폴백.
+    저장된 본인 설정이 항상 이보다 우선한다(클라이언트에서 처리).
+    """
+    country = (
+        request.headers.get("x-vercel-ip-country")
+        or request.headers.get("cf-ipcountry")
+        or request.headers.get("x-country-code")
+        or ""
+    ).upper()
+    if country in _COUNTRY_TO_LOCALE:
+        return {"locale": _COUNTRY_TO_LOCALE[country], "country": country,
+                "source": "ip"}
+
+    accept = request.headers.get("accept-language", "")
+    for part in accept.split(","):
+        code = part.split(";")[0].strip().lower()[:2]
+        if code in _SUPPORTED:
+            country = next((c for c, l in _COUNTRY_TO_LOCALE.items() if l == code), "")
+            return {"locale": code, "country": country, "source": "accept-language"}
+
+    return {"locale": "en", "country": "", "source": "default"}
 
 
 # ── 게이트 (승인함) ──────────────────────────────────────────────

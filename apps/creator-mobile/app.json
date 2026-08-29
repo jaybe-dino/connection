@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "커넥션",
+    "slug": "connection-creator",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#faf8f4"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.connection.creator"
+    },
+    "android": {
+      "package": "app.connection.creator",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#c2543c"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

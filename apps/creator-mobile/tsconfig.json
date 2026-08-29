@@ -1,0 +1,11 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@connection/shared": ["../../packages/shared/src/index.ts"],
+      "@connection/shared/mock": ["../../packages/shared/src/mock.ts"]
+    }
+  },
+  "include": ["App.tsx", "index.ts", "src", "../../packages/shared/src"]
+}

@@ -6,7 +6,8 @@ pnpm workspace + Vite + React 18 + TypeScript. **화면·흐름 스펙의 정본
 
 | 표면 | 경로 | 형태 | 화면 (페이지맵 기준) |
 |------|------|------|---------------------|
-| 크리에이터 앱 | `creator-app/` | PWA · 모바일 (`connection.app/{brand}`) | 온보딩(OAuth) · 셀 · 담당자 · 캠페인 · 제출 · 정산 · 내 패스 · 알림함(P0) |
+| **크리에이터 앱 (정본)** | `creator-mobile/` | **Expo(React Native) — iOS·Android·웹 단일 코드**. 지금은 웹으로만 서비스(`expo export -p web`), 스토어 앱은 같은 코드로 `eas build`만 켠다 | 셀 · 담당자 · 캠페인(배송 추적) · 제출 · 정산 · 내 패스 · 알림함 |
+| 크리에이터 앱 (웹 구현, 참조) | `creator-app/` | PWA · 모바일 웹 — creator-mobile이 정본이 되면서 참조/백업용 | 동일 |
 | 브랜드 콘솔 | `console/` | 데스크톱 웹 (`console.connection.app`) | 아리 채팅 패널 + 브리핑 · 승인함(게이트4) · 발굴수집 · 셀 · DB · 캠페인 · 검수 · 정산원장 · 설정(팀권한 P0) |
 | 브랜드 가입 | `signup/` | 위저드 (`connection.app/for-brands`) | 사업자 → 프로필·슬러그 → 플랜 → 아리 학습 → 완료 |
 

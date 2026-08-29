@@ -6,10 +6,28 @@
     <meta name="theme-color" content="#faf8f4" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/demo.css" />
+    <link rel="stylesheet" href="/product.css" />
+    <link rel="stylesheet" href="/mobile.css" />
     <title>커넥션</title>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div class="svcbar">
+      <span class="bm">CONNECTION</span>
+      <div class="apps">
+        <button id="ac"></button><button id="ab"></button>
+        <button id="abj"></button><button id="ap"></button>
+      </div>
+      <span class="hint" id="hint"></span>
+    </div>
+    <div class="stage" id="stage"></div>
+    <div id="toastWrap"></div>
+    <script>window.__SURFACE = "creator";</script>
+    <script src="/engine.js"></script>
+    <script src="/engine-live.js"></script>
+    <script>
+      if ("serviceWorker" in navigator && location.protocol === "https:")
+        navigator.serviceWorker.register("/sw.js");
+    </script>
   </body>
 </html>

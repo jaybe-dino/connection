@@ -33,6 +33,24 @@ python -m harvest.cli country --region TH --bio-lang th
 python -m harvest.cli emails --bio "contact: jay(at)dino(dot)studio"
 ```
 
+## 추가 구현 (2차)
+
+| 모듈 | 내용 | 명세 |
+|------|------|------|
+| `pipeline.EnrichWorker` | 풀 심화 — 이메일(정규식→링크크롤→검증) · 전화/메신저(TH→LINE·VN→Zalo) · 언어감지 · 국가 합의 · 스코어/등급 → 母 DB 반영 | §5 |
+| `enrich/langdetect.py` | 스크립트 휴리스틱 언어감지 (th·ko·vi·ja·en) | §5.3 |
+| `outreach/` | **메일링 엔진** — ESP 어댑터(SendGrid 동작·SES 계약·DryRun) · 3단 시퀀스(0/+3/+7일) · 일 80건 상한 · 워밍업(20→×1.2/일) · 스팸 3.0↑ 자동 중단 · 억제 목록(수신거부→90일 재접촉 금지) · 회신 분류(다국어 규칙+LLM 승급) · **발송은 build_batch→게이트 승인→send_batch만** | §4.3·스택§7 |
+| `judgment.py` | 4축 판정(진짜 사람·제품 적합·협찬 과다→과금 제외·중복) → invite/hold/billing_excluded/reject + 완주 예측 확률 | 기획§4.3 |
+| `scheduler.py` | 지속 루프 잡 레지스트리 — 델타(02:00)·리프레시(7/30일)·보강(주간)·재검증(90일)·채점(주간), 잡 실패 격리 | §10 |
+| `metrics.py` | 지표 수집기 + 경보(원가>120원·커버리지<60%·수렴<3%·dead_letter 적체) | §11 |
+| `vendors` 추가 | ZeroBounce(검증) · influencers.club(이메일 조인) · TikTok Shop(D3 어필리에이트) | 스택§8 |
+
+짝 모듈: `core/evaluation.py` — 30일 브라이어 채점·L2 승격 컷·가중치 갱신 원장 기록.
+
+```bash
+python -m harvest.cli outreach-demo   # 시퀀스·게이트·회신분류 실연 (드라이런)
+```
+
 ## 남은 것 (벤더 계약 후)
 
 1. ~~HTTP 벤더 어댑터~~ 완료 — `vendors/adapters.py` + `http.py`(토큰 버킷·재시도).

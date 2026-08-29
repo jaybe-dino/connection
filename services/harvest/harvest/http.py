@@ -29,6 +29,10 @@ class Transport(Protocol):
             headers: Mapping[str, str] | None = None,
             timeout: float = 30.0) -> HttpResponse: ...
 
+    def post(self, url: str, json_body: Any = None,
+             headers: Mapping[str, str] | None = None,
+             timeout: float = 30.0) -> HttpResponse: ...
+
 
 class UrllibTransport:
     """프로덕션 기본 트랜스포트 — 환경 프록시(HTTPS_PROXY)를 그대로 따른다."""
@@ -40,6 +44,18 @@ class UrllibTransport:
             qs = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
             url = f"{url}?{qs}"
         req = urllib.request.Request(url, headers=dict(headers or {}))
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return HttpResponse(resp.status, resp.read().decode("utf-8", "replace"))
+        except urllib.error.HTTPError as e:
+            return HttpResponse(e.code, e.read().decode("utf-8", "replace"))
+
+    def post(self, url: str, json_body: Any = None,
+             headers: Mapping[str, str] | None = None,
+             timeout: float = 30.0) -> HttpResponse:
+        data = json.dumps(json_body or {}).encode("utf-8")
+        hdrs = {"Content-Type": "application/json", **dict(headers or {})}
+        req = urllib.request.Request(url, data=data, headers=hdrs, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return HttpResponse(resp.status, resp.read().decode("utf-8", "replace"))

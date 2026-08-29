@@ -93,6 +93,29 @@ def _demo() -> None:
     print(f"dedup 예시: {m.verdict.value} (score={m.score}, hits={list(m.rule_hits)})")
 
 
+def _outreach_demo() -> None:
+    from .outreach import DryRunEsp, OutreachEngine
+
+    eng = OutreachEngine()
+    esp = DryRunEsp()
+    for email, name in [("mai@work.co", "Mai"), ("linh@glow.vn", "Linh"),
+                        ("nong@skin.th", "Nong")]:
+        eng.enroll(email, name, context={"brand": "GLOWLAB"})
+
+    batch = eng.build_batch()
+    print(f"배치 생성: {len(batch.steps)}통 — OUTBOUND 게이트 승인 대기")
+    print("  (승인 전에는 아무것도 발송되지 않는다)")
+    sent = eng.send_batch(batch.batch_id, esp)   # ← 게이트 승인 시점
+    print(f"게이트 승인 → {sent}통 발송 (드라이런)")
+
+    print("\n회신 처리:")
+    for email, body in [("mai@work.co", "สนใจค่ะ ขอรายละเอียด"),
+                        ("linh@glow.vn", "unsubscribe please")]:
+        kind = eng.record_reply(email, body)
+        print(f"  {email}: {kind.value}")
+    print(f"\n상태: {eng.stats()}")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="harvest", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -115,6 +138,7 @@ def main(argv: list[str] | None = None) -> None:
     p_emails.add_argument("--bio", required=True)
 
     sub.add_parser("demo", help="픽스처로 파이프라인 실연")
+    sub.add_parser("outreach-demo", help="메일 시퀀스 엔진 실연 (드라이런 · 게이트 흐름)")
 
     args = parser.parse_args(argv)
 
@@ -143,6 +167,8 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(extract_emails(args.bio), ensure_ascii=False))
     elif args.cmd == "demo":
         _demo()
+    elif args.cmd == "outreach-demo":
+        _outreach_demo()
 
 
 if __name__ == "__main__":

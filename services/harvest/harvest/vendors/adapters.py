@@ -220,3 +220,62 @@ class Lamatok(_HttpVendor):
         data = self._get(f"{self.base}/user/by/username",
                          params={"username": handle, "access_key": self.api_key})
         return EnsembleData.normalize(data)
+
+
+class ZeroBounce(_HttpVendor):
+    """이메일 검증 (§5.2 verify_api) — enrich.email_verify.VerifyApi 구현."""
+
+    name = "zerobounce"
+    env_key = "ZEROBOUNCE_API_KEY"
+    base = "https://api.zerobounce.net/v2"
+
+    # ZeroBounce status → 우리 3분류
+    _MAP = {
+        "valid": "valid",
+        "catch-all": "risky", "unknown": "risky", "do_not_mail": "risky",
+        "invalid": "invalid", "spamtrap": "invalid", "abuse": "invalid",
+    }
+
+    def verify(self, email: str) -> str:
+        data = self._get(f"{self.base}/validate",
+                         params={"api_key": self.api_key, "email": email})
+        return self._MAP.get(str(data.get("status", "")).lower(), "risky")
+
+
+class InfluencersClub(_HttpVendor):
+    """라이선스 DB 조인 (§5.1 3단) — 핸들→검증 이메일. 상위 등급(mid+)만 유료 조회."""
+
+    name = "influencers_club"
+    env_key = "INFLUENCERS_CLUB_KEY"
+    base = "https://api.influencers.club/v1"
+
+    def lookup_email(self, handle: str, platform: str = "tiktok") -> str | None:
+        data = self._get(f"{self.base}/creators/lookup",
+                         params={"handle": handle, "platform": platform},
+                         headers={"Authorization": f"Bearer {self.api_key}"})
+        email = (data.get("creator") or data).get("email")
+        return str(email) if email else None
+
+
+class TikTokShop(_HttpVendor):
+    """D3 커머스 그물 — Shop Partner Affiliate API (자격 승인 후).
+
+    카테고리별 '실제 판매한 계정'을 공식 통로로. 요청 서명(HMAC)은
+    파트너 승인 후 앱 시크릿으로 구현 — 미설정 시 명확히 실패한다.
+    """
+
+    name = "tiktokshop"
+    env_key = "TIKTOKSHOP_APP_KEY"
+    base = "https://open-api.tiktokglobalshop.com"
+
+    def affiliate_creators(self, shop_category_id: str, page: int = 1) -> Iterator[dict]:
+        data = self._get(
+            f"{self.base}/affiliate_creator/202405/creators/search",
+            params={"category_id": shop_category_id, "page_number": page,
+                    "app_key": self.api_key})
+        for c in (data.get("data") or {}).get("creators", []):
+            yield {
+                "author_handle": c.get("handle") or c.get("username"),
+                "gmv_signal": c.get("gmv") or c.get("units_sold"),
+                "follower_count": c.get("follower_count"),
+            }

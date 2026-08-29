@@ -19,6 +19,10 @@ class Pool(Protocol):
     def is_fresh(self, platform: str, handle: str) -> bool: ...
     def upsert(self, profile: CreatorProfile, source: str) -> str: ...
     def set_state(self, creator_id: str, state: PoolState) -> None: ...
+    def get(self, creator_id: str) -> dict[str, Any] | None: ...
+    def update_enrichment(self, e: Any) -> None:
+        """pipeline.Enrichment 반영 (이메일·국가·스코어·등급)."""
+        ...
 
 
 class InMemoryPool:
@@ -59,6 +63,11 @@ class InMemoryPool:
             bio=profile.bio,
             links=list(profile.links),
             account_region=profile.account_region,
+            avg_views=profile.avg_views,
+            engagement_rate=profile.engagement_rate,
+            post_freq_30d=profile.post_freq_30d,
+            sponsor_ratio_90d=profile.sponsor_ratio_90d,
+            gmv_signal=profile.gmv_signal,
             last_refreshed=now,
         )
         rec["sources"].append({"vendor": source, "seen_at": now.isoformat()})
@@ -67,8 +76,18 @@ class InMemoryPool:
     def set_state(self, creator_id: str, state: PoolState) -> None:
         self._by_id[creator_id]["state"] = state
 
-    def get(self, creator_id: str) -> dict[str, Any]:
-        return self._by_id[creator_id]
+    def get(self, creator_id: str) -> dict[str, Any] | None:
+        return self._by_id.get(creator_id)
+
+    def update_enrichment(self, e: Any) -> None:
+        rec = self._by_id[e.creator_id]
+        rec.update(
+            email=e.email, email_status=e.email_status.value,
+            country=e.country, country_conf=e.country_conf,
+            lang=[e.lang] if e.lang else [],
+            influence_score=e.influence, contact_score=e.contact,
+            grade=e.grade.value, **e.messenger,
+        )
 
     def __len__(self) -> int:
         return len(self._by_id)
@@ -148,4 +167,30 @@ class PostgresPool:
             cur.execute(
                 "UPDATE creator_pool SET state=%s WHERE creator_id=%s",
                 (state.value, creator_id),
+            )
+
+    def get(self, creator_id: str) -> dict[str, Any] | None:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT creator_id, platform, handle, bio, links, followers,"
+                " avg_views, engagement_rate, post_freq_30d, sponsor_ratio_90d,"
+                " gmv_signal, country AS account_region"
+                " FROM creator_pool WHERE creator_id=%s", (creator_id,))
+            row = cur.fetchone()
+            if row is None:
+                return None
+            cols = [d[0] for d in cur.description]
+            return dict(zip(cols, row))
+
+    def update_enrichment(self, e: Any) -> None:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE creator_pool SET email=%s, email_status=%s, country=%s,"
+                " country_conf=%s, lang=%s, influence_score=%s, contact_score=%s,"
+                " grade=%s, whatsapp=%s, zalo=%s, line=%s, last_refreshed=now()"
+                " WHERE creator_id=%s",
+                (e.email, e.email_status.value, e.country, e.country_conf,
+                 [e.lang] if e.lang else [], e.influence, e.contact, e.grade.value,
+                 e.messenger.get("whatsapp"), e.messenger.get("zalo"),
+                 e.messenger.get("line"), e.creator_id),
             )

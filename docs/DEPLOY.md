@@ -23,21 +23,19 @@
 
 같은 리포를 **3번 Import** (vercel.com → Add New → Project):
 
-| 프로젝트 이름 | Root Directory | Preset | 환경변수 | 용도 |
-|---|---|---|---|---|
-| **connection-creator** | `apps/creator-mobile` | **Other** (아래 수동 설정) | `EXPO_PUBLIC_API_URL` | 크리에이터 앱 (Expo 웹 — 앱과 단일 코드) |
-| connection-console | `apps/console` | Vite | `VITE_API_URL` | 브랜드 콘솔 |
-| connection-signup | `apps/signup` | Vite | `VITE_API_URL` | 브랜드 가입 위저드 |
+**UI 정본 = 프로토타입 클릭데모 엔진**(packages/demo-core)이 3표면에 그대로 이식돼 있다.
+네 프로젝트 전부 **Vite 프리셋 + 기본 빌드 설정**이면 된다:
 
-**connection-creator (Expo)만 Build 설정 수동 입력**:
-- Framework Preset: `Other`
-- Build Command: `npx expo export -p web`
-- Output Directory: `dist`
-- Install Command: `npm install`
+| 프로젝트 이름 | Root Directory | Preset | 용도 |
+|---|---|---|---|
+| connection-creator | `apps/creator-app` | Vite | 크리에이터 앱 (데모 100% · 모바일 풀스크린) |
+| connection-console | `apps/console` | Vite | 브랜드 콘솔 (데모 100%) |
+| connection-signup | `apps/signup` | Vite | 브랜드 가입 위저드 (데모 100%) |
+| **connection-admin** | `apps/admin` | Vite | **어드민** — 브랜드 신청 승인 · 신고 · 분쟁 · 검수. 환경변수 `VITE_API_URL` 필요 |
 
-Vite 두 개는 기본값 그대로 (pnpm 워크스페이스 자동 인식).
-환경변수 값은 셋 다 1-6에서 복사한 Railway 주소 (예: `https://xxx.up.railway.app`, 끝 `/` 없이).
-`apps/creator-app`(웹 전용 구버전)은 배포하지 않는다 — creator-mobile이 정본.
+API 주소 연결: 데모 엔진 3표면은 배포 후 주소 뒤에 **`?api=https://xxx.up.railway.app`**
+한 번 붙여 열면 저장된다(localStorage). 어드민만 `VITE_API_URL` 환경변수로 지정.
+`apps/creator-mobile`(Expo)은 향후 스토어 앱용 코드베이스 — 지금은 배포하지 않는다.
 
 미설정 시에도 앱은 뜨지만 "오프라인 데모"(목데이터)로 돈다.
 `VITE_API_URL`을 나중에 넣었으면 **Redeploy** 해야 반영된다 (빌드타임 변수).

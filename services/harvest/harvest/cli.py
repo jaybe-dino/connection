@@ -116,6 +116,30 @@ def _outreach_demo() -> None:
     print(f"\n상태: {eng.stats()}")
 
 
+def _runner_tick(api: str | None, auto_approve: bool) -> None:
+    from .runner import HttpGateClient, MemoryGateClient, Runner
+
+    if api:
+        gates = HttpGateClient(api)
+        mode = f"실서버 게이트 ({api})"
+    else:
+        gates = MemoryGateClient(auto_approve=auto_approve)
+        mode = "드라이런 게이트" + (" · 자동 승인" if auto_approve else "")
+    runner = Runner(gates=gates)
+    for email, name in [("mai@work.co", "Mai"), ("linh@glow.vn", "Linh")]:
+        runner.outreach.enroll(email, name, context={"brand": "GLOWLAB"})
+
+    print(f"러너 1틱 — {mode}")
+    for job in runner.tick():
+        print(f"  실행: {job}")
+    for msg in runner.poll_gates():
+        print(f"  폴링: {msg}")
+    for line in runner.log:
+        print(f"  · {line}")
+    if not api and not auto_approve:
+        print("  (승인 대기 중 — 실서비스에선 콘솔 게이트에서 사람이 승인)")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="harvest", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -139,6 +163,12 @@ def main(argv: list[str] | None = None) -> None:
 
     sub.add_parser("demo", help="픽스처로 파이프라인 실연")
     sub.add_parser("outreach-demo", help="메일 시퀀스 엔진 실연 (드라이런 · 게이트 흐름)")
+
+    p_runner = sub.add_parser(
+        "runner", help="에이전트 러너 1틱 실행 (기본 드라이런, --api 로 실서버 게이트)")
+    p_runner.add_argument("--api", help="API 베이스 URL — 주면 실서버 게이트에 접수")
+    p_runner.add_argument("--auto-approve", action="store_true",
+                          help="드라이런 전용: 게이트 자동 승인으로 전체 루프 실연")
 
     args = parser.parse_args(argv)
 
@@ -169,6 +199,8 @@ def main(argv: list[str] | None = None) -> None:
         _demo()
     elif args.cmd == "outreach-demo":
         _outreach_demo()
+    elif args.cmd == "runner":
+        _runner_tick(api=args.api, auto_approve=args.auto_approve)
 
 
 if __name__ == "__main__":

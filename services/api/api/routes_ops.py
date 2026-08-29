@@ -23,7 +23,15 @@ def _j(v) -> str:
     return json.dumps(v, ensure_ascii=False)
 
 
-def require_admin(x_admin_id: str = Header(default="")) -> dict:
+def require_admin(x_admin_id: str = Header(default=""),
+                  x_admin_key: str = Header(default="")) -> dict:
+    """간이 인증 — ADMIN_KEY 환경변수를 설정하면 X-Admin-Key 헤더까지 검사.
+    오픈 전 실인증(2FA)으로 교체 필수 (ADMIN_PLAN §6)."""
+    import os
+
+    required_key = os.environ.get("ADMIN_KEY", "")
+    if required_key and x_admin_key != required_key:
+        raise HTTPException(401, "어드민 키 불일치 (X-Admin-Key)")
     with connect() as conn:
         row = conn.execute(
             "SELECT * FROM admin_users WHERE admin_id=%s AND active",

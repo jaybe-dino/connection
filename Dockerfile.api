@@ -9,9 +9,10 @@ WORKDIR /app
 # 마이그레이션은 기동 시 자동 적용되므로 db/ 가 이미지 안에 있어야 한다
 COPY db/ db/
 COPY services/core/ services/core/
+COPY services/harvest/ services/harvest/
 COPY services/api/ services/api/
 
-RUN pip install --no-cache-dir ./services/core ./services/api
+RUN pip install --no-cache-dir ./services/core ./services/harvest ./services/api
 
 # Railway가 PORT를 주입한다 (기본 8000)
 ENV PORT=8000

@@ -40,6 +40,8 @@ class EventType(StrEnum):
     DISPUTE_RESOLVED = "DISPUTE_RESOLVED"
     # 브랜드 프로필
     BRAND_PROFILE_VERSIONED = "BRAND_PROFILE_VERSIONED"
+    # L3 규범 메모리 (커뮤니티별 학습된 규칙)
+    NORM_UPDATED = "NORM_UPDATED"
 
 
 GENESIS_HASH = "0" * 64

@@ -27,6 +27,9 @@ async def _lifespan(app: FastAPI):
         log.info("migrations applied: %s", applied)
     if seed():
         log.info("GLOWLAB seed inserted")
+    from . import runner_daemon
+    if runner_daemon.start_if_enabled():
+        log.info("agent runner enabled")
     yield
 
 
@@ -50,6 +53,12 @@ def health() -> dict:
     with connect() as conn:
         conn.execute("SELECT 1")
     return {"ok": True, "ai": ai.ai_available()}
+
+
+@app.get("/runner/status")
+def runner_status() -> dict:
+    from . import runner_daemon
+    return runner_daemon.status()
 
 
 # ── 언어 자동 매핑 (기획 §4.8: 크리에이터 언어 = IP 초기값, 수동 변경 가능) ──

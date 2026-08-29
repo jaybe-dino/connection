@@ -1,4 +1,12 @@
-# 배포 가이드 — Vercel(프론트 3) + Railway(API + Postgres)
+# 배포 가이드 — Vercel(프론트 4) + Railway(API + Postgres)
+
+## 0. 지금 남은 건 이것뿐 (체크리스트)
+
+- [ ] Railway: 리포 연결 → Root `/` → Postgres 추가 → Variables 5개(§1) → 도메인 생성
+- [ ] Vercel: 4개 프로젝트 Import (전부 Vite 프리셋, §2 표대로)
+- [ ] 어드민에 `VITE_API_URL` 넣고 Redeploy, 3표면은 `?api=` 한 번 붙여 접속
+- [ ] `ANTHROPIC_API_KEY` 발급(console.anthropic.com) → Railway에 등록 → 실번역 켜짐
+- [ ] (여유될 때) SendGrid 키 → 실메일 / 벤더 키 → 실수집 / 커스텀 도메인 (§4, SETUP_EXTERNAL.md)
 
 설정 파일은 리포에 준비돼 있다: `Dockerfile.api` · `railway.json` · `apps/*/vercel.json`.
 아래는 클릭 단위 절차. 순서대로 하면 된다 (Railway 먼저 — 프론트가 API 주소를 필요로 함).
@@ -15,6 +23,11 @@
 5. API 서비스 → **Variables**:
    - `DATABASE_URL` = Postgres 서비스의 `DATABASE_URL` 참조 (Add Reference로 연결)
    - `ANTHROPIC_API_KEY` = (있으면 — 번역·아리 실동작. 없어도 서버는 뜸)
+   - `ADMIN_KEY` = 아무 비밀 문자열 (어드민 간이 인증 — 어드민 접속 시 `?key=같은값`)
+   - `RUNNER_ENABLED` = `1` (에이전트 러너 상시 가동 — 메일·지급을 게이트에 자동 접수)
+   - `RUNNER_INTERVAL_SEC` = `60` (선택 · 틱 간격)
+   - `SENDGRID_API_KEY` = (있으면 실메일 발송. 없으면 드라이런 — 게이트 흐름은 동일)
+   러너 상태는 `https://…/runner/status` 에서 언제든 확인.
 6. Deploy → 성공 후 **Settings → Networking → Generate Domain**
    → `https://xxx.up.railway.app` 주소 복사. `/health` 열어서 `{"ok":true}` 확인
    (첫 기동 때 마이그레이션 + GLOWLAB 데모 시드가 자동 적용된다)

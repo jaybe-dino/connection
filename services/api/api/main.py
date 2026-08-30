@@ -20,13 +20,23 @@ from .seed import seed
 log = logging.getLogger(__name__)
 
 
+_startup_error: str | None = None
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    applied = run_migrations()
-    if applied:
-        log.info("migrations applied: %s", applied)
-    if seed():
-        log.info("GLOWLAB seed inserted")
+    # DB가 아직 없어도 서버는 뜬다 — /health 가 원인을 말해주도록.
+    global _startup_error
+    try:
+        applied = run_migrations()
+        if applied:
+            log.info("migrations applied: %s", applied)
+        if seed():
+            log.info("GLOWLAB seed inserted")
+        _startup_error = None
+    except Exception as e:
+        _startup_error = f"{type(e).__name__}: {e}"
+        log.exception("DB 초기화 실패 — 서버는 뜨고 /health 에 원인 표시")
     from . import runner_daemon
     if runner_daemon.start_if_enabled():
         log.info("agent runner enabled")
@@ -50,9 +60,20 @@ ALL_LOCALES = ["ko", "th", "en", "vi"]
 
 @app.get("/health")
 def health() -> dict:
-    with connect() as conn:
-        conn.execute("SELECT 1")
-    return {"ok": True, "ai": ai.ai_available()}
+    import os
+    try:
+        with connect() as conn:
+            conn.execute("SELECT 1")
+        db = "ok"
+    except Exception as e:
+        db = f"연결 실패: {type(e).__name__}"
+    return {
+        "ok": db == "ok",
+        "db": db,
+        "db_url_set": bool(os.environ.get("DATABASE_URL")),
+        "startup_error": _startup_error,
+        "ai": ai.ai_available(),
+    }
 
 
 @app.get("/runner/status")

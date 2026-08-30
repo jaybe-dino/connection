@@ -1,0 +1,28 @@
+# Render.com 블루프린트 — New → Blueprint 로 리포를 선택하면
+# API 서버 + PostgreSQL + 환경변수가 이 파일대로 한 번에 생성된다.
+# (Railway 대안 · 플랫폼 어디든 Dockerfile 하나로 동일하게 돈다)
+
+services:
+  - type: web
+    name: connection-api
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: connection-db
+          property: connectionString
+      - key: RUNNER_ENABLED
+        value: "1"
+      - key: ADMIN_KEY
+        generateValue: true          # 자동 생성 — 대시보드 Environment에서 값 확인
+      - key: ANTHROPIC_API_KEY
+        sync: false                  # 대시보드에서 직접 입력 (비밀키)
+      - key: PORT
+        value: "8000"
+
+databases:
+  - name: connection-db
+    plan: basic-256mb

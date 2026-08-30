@@ -19,8 +19,10 @@
 2. **Source** 섹션:
    - **Root Directory**: 비어있거나 `services/api`로 돼 있으면 → `/` 로 변경
    - **Branch**: `claude/dev-progress-prep-6n810t` 로 변경 (main에는 코드가 없다!)
-3. Build 설정은 건드릴 필요 없음 — 리포 루트의 `railway.json`이
-   Dockerfile(`Dockerfile.api`)과 헬스체크(`/health`)를 자동 지정한다
+3. **Build 섹션에서 직접 지정** (Railway가 설정 파일 방식을 폐기해서 수동 지정 필요):
+   - Builder: `Dockerfile` · Dockerfile Path: `Dockerfile.api`
+   - Deploy 섹션 Start Command: `uvicorn api.main:app --app-dir services/api --host 0.0.0.0 --port $PORT`
+   - Deploy 섹션 Healthcheck Path: `/health`
 
 ### 1-3. PostgreSQL 추가
 1. 프로젝트 캔버스(카드들 보이는 화면)에서 **+ New** 또는 우클릭 → **Database** → **Add PostgreSQL**

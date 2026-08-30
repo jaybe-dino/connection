@@ -8,7 +8,7 @@
 - [ ] `ANTHROPIC_API_KEY` 발급(console.anthropic.com) → Railway에 등록 → 실번역 켜짐
 - [ ] (여유될 때) SendGrid 키 → 실메일 / 벤더 키 → 실수집 / 커스텀 도메인 (§4, SETUP_EXTERNAL.md)
 
-설정 파일은 리포에 준비돼 있다: `Dockerfile.api` · `railway.json` · `apps/*/vercel.json`.
+설정 파일은 리포에 준비돼 있다: `Dockerfile.api` · `apps/*/vercel.json`.
 아래는 클릭 단위 절차. 순서대로 하면 된다 (Railway 먼저 — 프론트가 API 주소를 필요로 함).
 
 ## 1. Railway — API 서버 + DB (약 10분)
@@ -18,7 +18,8 @@
    (`services/core`는 라이브러리 — 배포 대상 아님. `apps/*`는 Vercel로)
 3. 생성된 서비스 → **Settings**:
    - **Root Directory**: `/` (리포 루트로 변경 — 중요! core·마이그레이션이 루트에 있음)
-   - Build는 루트의 `railway.json`이 자동 적용 (Dockerfile.api · 헬스체크 /health)
+   - **Build**: Builder `Dockerfile` + Dockerfile Path `Dockerfile.api` 직접 지정
+   - **Deploy**: Start Command `uvicorn api.main:app --app-dir services/api --host 0.0.0.0 --port $PORT` · Healthcheck `/health`
 4. 같은 프로젝트에 **+ New → Database → PostgreSQL** 추가
 5. API 서비스 → **Variables**:
    - `DATABASE_URL` = Postgres 서비스의 `DATABASE_URL` 참조 (Add Reference로 연결)

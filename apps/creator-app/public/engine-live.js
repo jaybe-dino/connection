@@ -84,7 +84,7 @@
   function applyLang(l, silent) {
     window.__USER_LANG = l;
     window.__LANG_LABEL = langLabel(l);
-    if (window.ST) { ST.myLang = l; }
+    if (typeof ST !== "undefined") { ST.myLang = l; }
     try { localStorage.setItem("CONNECTION_LANG", l); } catch (e) {}
     if (window.render) render();
     if (!silent && window.toast)
@@ -149,7 +149,7 @@
     window.pubCamp = function () {
       var nm = (document.getElementById("ncn") || {}).value || "9월 진정 앰플 · 태국";
       var prod = (document.getElementById("ncp") || {}).value || "시카 진정 앰플";
-      var t = (window.ST && ST.nc && ST.nc.type) || "paid";
+      var t = (typeof ST !== "undefined" && ST.nc && ST.nc.type) || "paid";
       _pubCamp();
       fire("POST", "/campaigns", {
         name: nm, product: prod,
@@ -266,11 +266,109 @@
     }
   } catch (e) {}
 
+  /* ── 브랜드 발신 이메일 (트랙 B 도메인 인증) — 콘솔 '발굴·수집' 탭 카드 ── */
+  window.__SENDERS = null;
+  function loadSenders(silent) {
+    req("GET", "/brands/glowlab/senders").then(function (l) {
+      window.__SENDERS = l;
+      if (typeof ST !== "undefined" && ST.b === "src" && window.render) render();
+    }).catch(function () {});
+  }
+  window.copyTxt = function (el) {
+    var v = decodeURIComponent(el.getAttribute("data-v") || "");
+    if (navigator.clipboard) navigator.clipboard.writeText(v);
+    toast("복사됨", "도메인 업체(가비아·카페24 등) DNS 관리 화면에 붙여넣으세요.");
+  };
+  window.senderRegister = function () {
+    var el = document.getElementById("sndEmail");
+    var v = el && el.value.trim();
+    if (!v) return toast("발신 이메일", "회사 이메일 주소를 입력해 주세요.");
+    req("POST", "/brands/glowlab/senders", { email: v }).then(function (r) {
+      loadSenders();
+      toast("인증 코드 발송", r.demoCode
+        ? "데모 모드 — 인증 코드: <b>" + r.demoCode + "</b>. 아래 칸에 입력하세요."
+        : "<b>" + v + "</b> 메일함으로 6자리 코드를 보냈어요.");
+    }).catch(function (e) {
+      toast("등록 실패", e === 409 ? "이미 등록된 이메일입니다." : "주소 형식을 확인해 주세요.");
+    });
+  };
+  window.senderVerify = function (id) {
+    var el = document.getElementById("sndCode");
+    req("POST", "/senders/" + id + "/verify", { code: el ? el.value.trim() : "" })
+      .then(function () {
+        loadSenders();
+        toast("소유 확인 완료", "이제 아래 <b>DNS 레코드 3개</b>를 도메인 관리 화면에 등록한 뒤 [DNS 확인]을 누르세요.");
+      }).catch(function () { toast("코드 불일치", "코드를 다시 확인해 주세요."); });
+  };
+  window.senderDns = function (id) {
+    req("POST", "/senders/" + id + "/check-dns").then(function (r) {
+      loadSenders();
+      toast(r.dnsOk ? "도메인 인증 완료 🎉" : "아직 반영 전",
+        r.dnsOk ? "워밍업 시작 — 오늘은 <b>" + r.todayCap + "통</b>부터, 2~4주에 걸쳐 자동으로 늘어납니다."
+                : (r.hint || "잠시 후 다시 확인해 주세요."));
+    }).catch(function () {});
+  };
+  window.senderResume = function (id) {
+    req("POST", "/senders/" + id + "/resume").then(function () {
+      loadSenders(); toast("재개됨", "발송이 다시 시작됩니다. 리스트 품질을 먼저 점검하세요.");
+    }).catch(function () {});
+  };
+  function senderCard() {
+    var L = window.__SENDERS, inner;
+    var esc = function (s) { return encodeURIComponent(s); };
+    if (L === null) {
+      inner = '<p style="font-size:10.6px;color:var(--n600)">서버에 연결되면 브랜드 발신 이메일을 등록할 수 있어요.</p>';
+    } else if (!L.length) {
+      inner = "<p>메일 에이전트가 <b>회사 이메일 이름으로</b> 보내도록 등록하세요. " +
+        "발신 평판이 브랜드별로 분리되고, 회신은 그 메일함으로 직행합니다.</p>" +
+        '<div style="display:flex;gap:6px;margin-top:9px"><input id="sndEmail" placeholder="marketing@brand.com" style="flex:1">' +
+        '<span class="cbt" onclick="senderRegister()">등록</span></div>';
+    } else {
+      var s = L[L.length - 1];
+      if (s.state === "unverified") {
+        inner = "<p><b>" + s.email + "</b> — 메일함의 6자리 코드로 소유를 확인하세요.</p>" +
+          '<div style="display:flex;gap:6px;margin-top:9px"><input id="sndCode" placeholder="6자리 코드" style="flex:1">' +
+          '<span class="cbt" onclick="senderVerify(\'' + s.senderId + '\')">확인</span></div>';
+      } else if (s.state === "dns_pending") {
+        var rows = (s.dnsRecords || []).map(function (r) {
+          return "<tr><td class=\"mono\" style=\"font-size:9.6px\">" + r.type + "</td>" +
+            "<td class=\"mono\" style=\"font-size:9.6px\">" + r.host + "</td>" +
+            "<td class=\"mono\" style=\"font-size:9.6px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">" + r.value + "</td>" +
+            '<td><span class="cbt no" data-v="' + esc(r.value) + '" onclick="copyTxt(this)">복사</span></td></tr>';
+        }).join("");
+        inner = "<p><b>" + s.email + "</b> 확인 완료 — 아래 3개를 도메인 DNS에 등록하세요 " +
+          "(SPF=보낼 자격 · DKIM=위조 방지 · DMARC=정책).</p>" +
+          '<table style="margin-top:8px"><tr><th style="width:52px">유형</th><th style="width:110px">호스트</th><th>값</th><th style="width:48px"></th></tr>' + rows + "</table>" +
+          '<div style="margin-top:9px"><span class="cbt" onclick="senderDns(\'' + s.senderId + '\')">DNS 확인</span></div>';
+      } else if (s.state === "paused") {
+        inner = "<p>⚠️ <b>" + s.email + "</b> — 반송·신고율 임계 초과로 <b>자동 정지</b>됐습니다. " +
+          "리스트를 점검한 뒤 재개하세요. (원장에 기록됨)</p>" +
+          '<div style="margin-top:9px"><span class="cbt" onclick="senderResume(\'' + s.senderId + '\')">확인했어요 · 재개</span></div>';
+      } else {
+        inner = "<p>✅ <b>" + s.email + "</b> 활성 — 오늘 발송 가능 <b>" + s.todayCap + "통</b> " +
+          "(워밍업 자동 증가 중). 회신은 " + (s.replyTo || s.email) + " 로 갑니다.</p>";
+      }
+    }
+    return '<div class="cc" style="margin-bottom:12px"><div class="t">발신 이메일 — 브랜드 명의로 보내기</div>' + inner + "</div>";
+  }
+  try {
+    if (window.srcView) {      // 발굴·수집 탭 본문은 srcView()가 그린다 (raw:2)
+      var _srcView = window.srcView;
+      window.srcView = function () {
+        var h = _srcView();
+        if (typeof ST !== "undefined" && ST.srcTab === "mail")
+          h = '<div class="cvbd" style="padding-bottom:0">' + senderCard() + "</div>" + h;
+        return h;
+      };
+      loadSenders();
+    }
+  } catch (e) {}
+
   /* ── 브랜드 가입 완료 → 신청 접수 (어드민 승인 큐로) ── */
   if (window.bjDone) {
     var _bjDone = window.bjDone;
     window.bjDone = function () {
-      var B = (window.ST || {}).bj || {};
+      var B = (typeof ST !== "undefined" && ST.bj) || {};
       fire("POST", "/applications", {
         slug: (B.slug || "glowlab") + "-" + Date.now().toString(36).slice(-4),
         name: "GLOWLAB", biz_no: "123-45-67890", category: "스킨케어",

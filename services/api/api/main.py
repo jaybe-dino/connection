@@ -50,12 +50,14 @@ app.add_middleware(
 
 from .routes_agents import router as _agents_router  # noqa: E402
 from .routes_ops import admin as _admin_router, public as _public_router  # noqa: E402
+from .routes_dispatch import router as _dispatch_router  # noqa: E402
 from .routes_senders import router as _senders_router  # noqa: E402
 
 app.include_router(_public_router)
 app.include_router(_admin_router)
 app.include_router(_agents_router)
 app.include_router(_senders_router)
+app.include_router(_dispatch_router)
 
 ALL_LOCALES = ["ko", "th", "en", "vi"]
 

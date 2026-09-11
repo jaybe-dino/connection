@@ -351,6 +351,83 @@
     }
     return '<div class="cc" style="margin-bottom:12px"><div class="t">발신 이메일 — 브랜드 명의로 보내기</div>' + inner + "</div>";
   }
+  /* ── 틱톡샵 대량 발송 P0 (반자동) — 발굴·수집 '틱톡샵' 탭 카드 ── */
+  window.__DISPATCH = null;
+  function loadDispatch() {
+    req("GET", "/brands/glowlab/dispatch-batches").then(function (l) {
+      window.__DISPATCH = l;
+      if (typeof ST !== "undefined" && ST.b === "src" && window.render) render();
+    }).catch(function () {});
+  }
+  window.dispCreate = function () {
+    var prod = (document.getElementById("dspProd") || {}).value || "";
+    var cap = parseInt((document.getElementById("dspCap") || {}).value, 10) || 30;
+    if (!prod.trim()) return toast("발송 배치", "틱톡샵 상품명(또는 ID)을 입력해 주세요.");
+    req("POST", "/brands/glowlab/dispatch-batches", {
+      product_ref: prod.trim(), commission_pct: 12, unit_cost: 9000,
+      capacity: cap, deadline_days: 14,
+    }).then(function (b) {
+      loadDispatch();
+      toast("발송 배치 접수", b.funnel.invited + "명 선정 · <b>승인함(OUTBOUND)</b>에 올라갔어요." +
+        " 승인 전에는 아무것도 나가지 않습니다.");
+    }).catch(function (e) {
+      toast("배치 실패", e === 400 ? "대상이 없거나 상한(100명) 초과예요. 90일 내 발송자는 자동 제외됩니다." : "입력을 확인해 주세요.");
+    });
+  };
+  window.dispRefresh = function (id) {
+    req("GET", "/dispatch-batches/" + id).then(function () { loadDispatch(); }).catch(function () {});
+  };
+  window.dispImport = function (input, id) {
+    if (!input.files || !input.files[0]) return;
+    var fd = new FormData();
+    fd.append("file", input.files[0]);
+    fetch(API + "/dispatch-batches/" + id + "/import", { method: "POST", body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        loadDispatch();
+        toast("결과 반영", "업데이트 <b>" + r.updated + "건</b>" +
+          (r.skipped.length ? " · 매칭 안 됨 " + r.skipped.length + "건" : ""));
+      }).catch(function () { toast("업로드 실패", "CSV 형식(handle,status,…)을 확인해 주세요."); });
+  };
+  function funnelBar(f) {
+    var steps = [["초대", f.invited], ["수락", f.accepted], ["배송", f.shipped],
+                 ["도착", f.delivered], ["게시", f.posted]];
+    return '<div style="display:flex;gap:10px;margin-top:6px">' + steps.map(function (s) {
+      return "<span style='font-size:10.2px'><b>" + s[1] + "</b> " + s[0] + "</span>";
+    }).join("<span style='color:var(--n400)'>→</span>") +
+    (f.noShow ? " <span style='font-size:10.2px;color:var(--bd,#8E3B2A)'>노쇼 " + f.noShow + "</span>" : "") + "</div>";
+  }
+  function dispatchCard() {
+    var L = window.__DISPATCH, inner;
+    if (L === null) {
+      inner = '<p style="font-size:10.6px;color:var(--n600)">서버 연결 시 셀 멤버에게 틱톡샵 무료 샘플 협업을 대량 발송할 수 있어요.</p>';
+    } else {
+      var items = L.slice(0, 3).map(function (b) {
+        var act = "";
+        if (b.state === "PENDING_GATE")
+          act = ' <span class="cbt no" onclick="dispRefresh(\'' + b.batchId + '\')">승인 확인</span>' +
+                ' <span style="font-size:10px;color:var(--n600)">— 승인함에서 결정하세요</span>';
+        else if (b.state === "SENDING" || b.state === "DONE")
+          act = ' <a class="cbt" style="text-decoration:none" href="' + API + "/dispatch-batches/" + b.batchId + '/export.csv" target="_blank">셀러센터 CSV</a>' +
+                ' <label class="cbt no" style="cursor:pointer">결과 업로드<input type="file" accept=".csv" style="display:none" onchange="dispImport(this,\'' + b.batchId + '\')"></label>';
+        else if (b.state === "HELD")
+          act = ' <span style="font-size:10px;color:var(--n600)">보류됨 — 외부 무통지</span>';
+        return "<div style='margin-top:9px;padding-top:9px;border-top:1px solid var(--n100,#eee)'>" +
+          "<b>" + b.product + "</b> · " + b.commissionPct + "% · " +
+          "<span class='mono' style='font-size:10px'>" + b.state + "</span>" + act +
+          funnelBar(b.funnel) +
+          (b.gmv ? "<div style='font-size:10.2px;margin-top:3px'>판매 <b>₩" + b.gmv.toLocaleString() + "</b> · 커미션 ₩" + b.commission.toLocaleString() + "</div>" : "") +
+          "</div>";
+      }).join("");
+      inner = "<p>셀 멤버를 선정해 <b>무료 샘플 + 커미션 협업</b>을 셀러센터로 대량 발송합니다. " +
+        "발송은 항상 <b>승인함</b>을 거치고, 90일 내 재발송은 자동 제외돼요.</p>" +
+        '<div style="display:flex;gap:6px;margin-top:9px"><input id="dspProd" placeholder="틱톡샵 상품명 또는 ID" style="flex:2">' +
+        '<input id="dspCap" placeholder="정원" value="30" style="width:64px">' +
+        '<span class="cbt" onclick="dispCreate()">배치 만들기</span></div>' + items;
+    }
+    return '<div class="cc" style="margin-bottom:12px"><div class="t">샘플 대량 발송 — 틱톡샵 타겟 협업</div>' + inner + "</div>";
+  }
+
   try {
     if (window.srcView) {      // 발굴·수집 탭 본문은 srcView()가 그린다 (raw:2)
       var _srcView = window.srcView;
@@ -358,9 +435,12 @@
         var h = _srcView();
         if (typeof ST !== "undefined" && ST.srcTab === "mail")
           h = '<div class="cvbd" style="padding-bottom:0">' + senderCard() + "</div>" + h;
+        if (typeof ST !== "undefined" && ST.srcTab === "tkshop")
+          h = '<div class="cvbd" style="padding-bottom:0">' + dispatchCard() + "</div>" + h;
         return h;
       };
       loadSenders();
+      loadDispatch();
     }
   } catch (e) {}
 

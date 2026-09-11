@@ -50,13 +50,36 @@ class DbGateClient:
         return r["state"] if r else "REJECTED"
 
 
+class BrandGmailEsp:
+    """브랜드에 연결된 지메일이 있으면 그 주소로 발송, 없으면 내부 ESP로 폴백.
+
+    지메일 트랙은 1:1 아웃리치용 — 일일 한도(워밍업 곡선) 초과 시에도 폴백한다.
+    """
+
+    def __init__(self, inner, brand_id: str = "glowlab") -> None:
+        self.inner, self.brand_id = inner, brand_id
+        self.name = f"gmail+{inner.name}"
+
+    def send(self, email) -> str:
+        from .routes_gmail import send_via_brand_gmail
+        try:
+            with connect() as conn:
+                sent = send_via_brand_gmail(conn, self.brand_id, email.to,
+                                            email.subject, email.body_text)
+            if sent:
+                return f"{sent['via']}:{sent['fromEmail']}"
+        except Exception:
+            log.exception("지메일 발송 실패 — 기본 ESP로 폴백")
+        return self.inner.send(email)
+
+
 def _make_esp():
     from harvest.outreach import DryRunEsp
     key = os.environ.get("SENDGRID_API_KEY", "")
     if key:
         from harvest.outreach.esp import SendGridEsp
-        return SendGridEsp(api_key=key), "sendgrid"
-    return DryRunEsp(), "dryrun"
+        return BrandGmailEsp(SendGridEsp(api_key=key)), "gmail+sendgrid"
+    return BrandGmailEsp(DryRunEsp()), "gmail+dryrun"
 
 
 def _enroll_from_pool(runner) -> int:

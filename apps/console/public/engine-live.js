@@ -351,6 +351,117 @@
     }
     return '<div class="cc" style="margin-bottom:12px"><div class="t">발신 이메일 — 브랜드 명의로 보내기</div>' + inner + "</div>";
   }
+  /* ── 지메일 연동 — 브랜드 명의 발송(구글 OAuth) + 답장 인박스 ── */
+  window.__GMAIL = null;
+  window.__INBOX = null;
+  window.__INBOX_OPEN = null;   // 펼친 스레드 {id, data}
+  function loadGmail() {
+    req("GET", "/brands/glowlab/gmail").then(function (g) {
+      window.__GMAIL = g;
+      if (typeof ST !== "undefined" && ST.b === "src" && window.render) render();
+    }).catch(function () {});
+  }
+  function loadInbox() {
+    req("GET", "/brands/glowlab/inbox").then(function (l) {
+      window.__INBOX = l;
+      if (typeof ST !== "undefined" && ST.b === "src" && window.render) render();
+    }).catch(function () {});
+  }
+  window.gmailConnect = function () {
+    var g = window.__GMAIL;
+    if (g && !g.demo) {          // 실모드 — 구글 동의 화면으로
+      req("POST", "/brands/glowlab/gmail/connect", {}).then(function (r) {
+        if (r.authUrl) window.open(r.authUrl, "_blank");
+        toast("구글 로그인", "새 창에서 회사 지메일로 로그인하고 허용을 누르세요. 끝나면 [새로고침]을 눌러주세요.");
+      }).catch(function () {});
+      return;
+    }
+    var el = document.getElementById("gmEmail");
+    var v = el && el.value.trim();
+    if (!v) return toast("지메일 연결", "연결할 회사 지메일 주소를 입력해 주세요.");
+    req("POST", "/brands/glowlab/gmail/connect", { email: v }).then(function () {
+      loadGmail();
+      toast("연결 완료 (데모)", "실서비스에선 구글 로그인 창이 뜹니다. 이제 아리가 <b>" + v + "</b> 명의로 보냅니다.");
+    }).catch(function () {});
+  };
+  window.gmailDisconnect = function (id) {
+    req("DELETE", "/gmail/accounts/" + id).then(function () {
+      loadGmail(); toast("연결 해제", "이 지메일로는 더 이상 발송하지 않습니다.");
+    }).catch(function () {});
+  };
+  window.inboxOpen = function (id) {
+    if (window.__INBOX_OPEN && window.__INBOX_OPEN.id === id) {
+      window.__INBOX_OPEN = null;
+      if (window.render) render();
+      return;
+    }
+    req("GET", "/inbox/threads/" + id).then(function (t) {
+      window.__INBOX_OPEN = { id: id, data: t };
+      if (window.render) render();
+    }).catch(function () {});
+  };
+  window.inboxReply = function (id) {
+    var el = document.getElementById("ibxBody");
+    var v = el && el.value.trim();
+    if (!v) return toast("답장", "내용을 입력해 주세요.");
+    req("POST", "/inbox/threads/" + id + "/reply", { body: v }).then(function () {
+      window.inboxOpen(id); window.inboxOpen(id);   // 닫고 다시 로드
+      loadInbox();
+      toast("답장 접수", "<b>승인함(OUTBOUND)</b>에 올라갔어요. 승인해야 실제로 나갑니다.");
+    }).catch(function () {});
+  };
+  var ARI_LABELS = { interested: ["관심 있음", "var(--gr,#2E7D51)"],
+                     declined: ["거절", "var(--n600)"],
+                     question: ["질문", "var(--am,#8A6D1A)"],
+                     other: ["기타", "var(--n600)"] };
+  function gmailCard() {
+    var g = window.__GMAIL, inner;
+    if (g === null) {
+      inner = '<p style="font-size:10.6px;color:var(--n600)">서버에 연결되면 회사 지메일을 연동할 수 있어요.</p>';
+    } else if (!g.accounts.length) {
+      inner = "<p><b>회사 지메일로 직접 발송</b> — 구글 로그인 한 번이면 아리가 그 주소 명의로 보냅니다. " +
+        "비밀번호는 저장하지 않고, 구글 계정 설정에서 언제든 해제할 수 있어요.</p>" +
+        (g.demo
+          ? '<div style="display:flex;gap:6px;margin-top:9px"><input id="gmEmail" placeholder="hello@brand.com" style="flex:1">' +
+            '<span class="cbt" onclick="gmailConnect()">구글로 연결 (데모)</span></div>'
+          : '<div style="margin-top:9px"><span class="cbt" onclick="gmailConnect()">🔐 구글로 연결</span>' +
+            ' <span class="cbt no" onclick="location.reload()">새로고침</span></div>');
+    } else {
+      var a = g.accounts[g.accounts.length - 1];
+      inner = "<p>✅ <b>" + a.email + "</b> 연결됨 — 오늘 " + a.sentToday + "/" + a.todayCap + "통 " +
+        "(워밍업 자동 증가). 답장은 아래 <b>인박스</b>로 들어옵니다.</p>" +
+        '<div style="margin-top:8px"><span class="cbt no" onclick="gmailDisconnect(\'' + a.accountId + '\')">연결 해제</span></div>';
+    }
+    return '<div class="cc" style="margin-bottom:12px"><div class="t">지메일 연동 — 구글 로그인으로 브랜드 명의 발송</div>' + inner + "</div>";
+  }
+  function inboxCard() {
+    var L = window.__INBOX;
+    if (L === null || !L.length) return "";
+    var open = window.__INBOX_OPEN;
+    var items = L.slice(0, 6).map(function (t) {
+      var lb = ARI_LABELS[t.ariLabel] || ARI_LABELS.other;
+      var row = "<div style='margin-top:8px;padding-top:8px;border-top:1px solid var(--n100,#eee);cursor:pointer' onclick=\"inboxOpen('" + t.threadId + "')\">" +
+        "<b>@" + (t.handle || t.creatorEmail) + "</b> " +
+        "<span style='font-size:9.6px;padding:1px 6px;border-radius:8px;border:1px solid " + lb[1] + ";color:" + lb[1] + "'>아리: " + lb[0] + "</span>" +
+        (t.lastDirection === "in" ? " <span style='font-size:9.6px;color:var(--bd,#8E3B2A)'>● 답장 옴</span>" : "") +
+        "</div>";
+      if (open && open.id === t.threadId && open.data) {
+        var msgs = open.data.messages.map(function (m) {
+          var mine = m.direction === "out";
+          var st = m.state === "pending_gate" ? " · <i>승인 대기</i>" : m.state === "held" ? " · <i>보류됨</i>" : "";
+          return "<div style='margin:5px 0;text-align:" + (mine ? "right" : "left") + "'>" +
+            "<span style='display:inline-block;max-width:82%;padding:6px 9px;border-radius:9px;font-size:10.6px;" +
+            (mine ? "background:var(--n100,#eee)" : "background:var(--sand,#F4EDE3)") + "'>" +
+            m.body + "<span style='font-size:9px;color:var(--n600)'>" + st + "</span></span></div>";
+        }).join("");
+        row += "<div style='margin-top:6px'>" + msgs +
+          '<div style="display:flex;gap:6px;margin-top:7px"><input id="ibxBody" placeholder="답장 쓰기 — 승인함을 거쳐 발송됩니다" style="flex:1">' +
+          '<span class="cbt" onclick="inboxReply(\'' + t.threadId + '\')">답장</span></div></div>';
+      }
+      return row;
+    }).join("");
+    return '<div class="cc" style="margin-bottom:12px"><div class="t">인박스 — 크리에이터 답장 (아리 분류)</div>' + items + "</div>";
+  }
   /* ── 틱톡샵 대량 발송 P0 (반자동) — 발굴·수집 '틱톡샵' 탭 카드 ── */
   window.__DISPATCH = null;
   function loadDispatch() {
@@ -434,13 +545,15 @@
       window.srcView = function () {
         var h = _srcView();
         if (typeof ST !== "undefined" && ST.srcTab === "mail")
-          h = '<div class="cvbd" style="padding-bottom:0">' + senderCard() + "</div>" + h;
+          h = '<div class="cvbd" style="padding-bottom:0">' + gmailCard() + inboxCard() + senderCard() + "</div>" + h;
         if (typeof ST !== "undefined" && ST.srcTab === "tkshop")
           h = '<div class="cvbd" style="padding-bottom:0">' + dispatchCard() + "</div>" + h;
         return h;
       };
       loadSenders();
       loadDispatch();
+      loadGmail();
+      loadInbox();
     }
   } catch (e) {}
 

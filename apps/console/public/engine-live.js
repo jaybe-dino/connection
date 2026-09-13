@@ -7,8 +7,10 @@
     if (q) localStorage.setItem("CONNECTION_API_URL", q);
   } catch (e) {}
   var API = (function () {
-    try { return localStorage.getItem("CONNECTION_API_URL") || "http://localhost:8000"; }
-    catch (e) { return "http://localhost:8000"; }
+    var fallback = /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+      ? "http://localhost:8000" : "https://api.theprlist.net";
+    try { return localStorage.getItem("CONNECTION_API_URL") || fallback; }
+    catch (e) { return fallback; }
   })();
   window.__API_URL = API;
 

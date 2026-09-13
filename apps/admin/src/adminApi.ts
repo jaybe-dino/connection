@@ -3,7 +3,9 @@
 const BASE: string =
   (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL ||
   new URLSearchParams(location.search).get("api") ||
-  "http://localhost:8000";
+  (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+    ? "http://localhost:8000"
+    : "https://api.theprlist.net");
 
 const ADMIN_ID = "jay";
 

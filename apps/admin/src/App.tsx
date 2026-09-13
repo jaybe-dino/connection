@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { adminApi, type Summary } from "./adminApi";
+import { adminApi, authApi, setJwt, clearJwt, type Summary } from "./adminApi";
 import Dashboard from "./screens/Dashboard";
 import Applications from "./screens/Applications";
 import Reports from "./screens/Reports";
@@ -15,19 +15,114 @@ const RAIL = [
   { to: "/submissions", label: "검수 현황", icon: "◑", badge: "inReviewSubmissions" },
 ] as const;
 
+/** 실인증 게이트 — 최초 1회 부트스트랩 → 이후 이메일+비밀번호(+OTP) 로그인.
+ *  AUTH_REQUIRED 전이면 "키 모드로 계속" 우회가 남는다 (전환기 호환). */
+function AuthGate({ onDone }: { onDone: () => void }) {
+  const [mode, setMode] = useState<"loading" | "login" | "bootstrap" | "otp">("loading");
+  const [allowSkip, setAllowSkip] = useState(false);
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [code, setCode] = useState("");
+  const [pending, setPending] = useState("");
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    authApi.status()
+      .then((s) => {
+        setAllowSkip(!s.authRequired);
+        setMode(s.hasAdmin ? "login" : "bootstrap");
+      })
+      .catch(() => { setAllowSkip(true); setMode("login"); });
+  }, []);
+
+  const submit = async () => {
+    setErr("");
+    try {
+      if (mode === "bootstrap") {
+        const r = await authApi.bootstrap(email.trim(), pw);
+        setJwt(r.token); onDone(); return;
+      }
+      if (mode === "otp") {
+        const r = await authApi.otpVerify(pending, code.trim());
+        setJwt(r.token); onDone(); return;
+      }
+      const r = await authApi.login(email.trim(), pw);
+      if (r.needOtp) { setPending(r.token); setMode("otp"); return; }
+      setJwt(r.token); onDone();
+    } catch (e) {
+      setErr(mode === "otp" ? "OTP 코드가 일치하지 않습니다"
+        : mode === "bootstrap" ? "생성 실패 — 비밀번호 10자 이상, 어드민 키 확인"
+        : "이메일 또는 비밀번호가 올바르지 않습니다");
+    }
+  };
+
+  if (mode === "loading") return null;
+  const S = { width: "100%", padding: "10px 12px", borderRadius: 9, marginBottom: 8,
+    border: "1px solid var(--n300)", fontSize: 13, boxSizing: "border-box" as const };
+  return (
+    <div style={{ height: "100dvh", display: "grid", placeItems: "center", background: "var(--d800)" }}>
+      <div style={{ width: 330, background: "var(--n0)", borderRadius: 14, padding: "26px 26px 20px" }}>
+        <div style={{ fontWeight: 900, fontSize: 17, marginBottom: 2 }}>The PR List 어드민</div>
+        <div style={{ fontSize: 11.5, color: "var(--n600)", marginBottom: 16 }}>
+          {mode === "bootstrap" ? "최초 어드민 계정을 만듭니다 (1회)"
+            : mode === "otp" ? "OTP 앱의 6자리 코드를 입력하세요"
+            : "이메일과 비밀번호로 로그인하세요"}
+        </div>
+        {mode !== "otp" && (<>
+          <input style={S} placeholder="이메일" value={email} autoComplete="username"
+            onChange={(e) => setEmail(e.target.value)} />
+          <input style={S} placeholder={mode === "bootstrap" ? "비밀번호 (10자 이상)" : "비밀번호"}
+            type="password" value={pw} autoComplete="current-password"
+            onChange={(e) => setPw(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()} />
+        </>)}
+        {mode === "otp" && (
+          <input style={S} placeholder="123456" value={code} inputMode="numeric"
+            onChange={(e) => setCode(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()} />
+        )}
+        {err && <div style={{ color: "var(--c500,#b00)", fontSize: 11.5, marginBottom: 8 }}>{err}</div>}
+        <button onClick={submit} style={{ width: "100%", padding: "10px 0", borderRadius: 9,
+          border: "none", background: "var(--d800)", color: "#fff", fontWeight: 800,
+          fontSize: 13, cursor: "pointer" }}>
+          {mode === "bootstrap" ? "어드민 만들기" : mode === "otp" ? "확인" : "로그인"}
+        </button>
+        {allowSkip && (
+          <div onClick={onDone} style={{ marginTop: 12, fontSize: 11, color: "var(--n600)",
+            textAlign: "center", cursor: "pointer", textDecoration: "underline" }}>
+            나중에 — 키 모드로 계속 (실인증 강제 전까지만)
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [live, setLive] = useState(true);
+  const [authed, setAuthed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const t = localStorage.getItem("CONNECTION_JWT");
+    if (!t) { setAuthed(false); return; }
+    authApi.me().then(() => setAuthed(true))
+      .catch(() => { clearJwt(); setAuthed(false); });
+  }, []);
 
   const refresh = () =>
     adminApi.summary().then((s) => { setSummary(s); setLive(true); })
       .catch(() => setLive(false));
 
   useEffect(() => {
+    if (!authed) return;
     refresh();
     const t = setInterval(refresh, 15000);
     return () => clearInterval(t);
-  }, []);
+  }, [authed]);
+
+  if (authed === null) return null;
+  if (authed === false) return <AuthGate onDone={() => setAuthed(true)} />;
 
   return (
     <div style={{ display: "flex", height: "100dvh", background: "var(--n50)" }}>

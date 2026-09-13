@@ -21,6 +21,8 @@
     try {
       var ak = localStorage.getItem("CONNECTION_ADMIN_KEY");
       if (ak) h["X-Admin-Key"] = ak;   // 민감 API(지메일 연결 등) 간이 인증
+      var jt = localStorage.getItem("CONNECTION_JWT");
+      if (jt) h["Authorization"] = "Bearer " + jt;   // 실계정 세션
     } catch (e) {}
     return fetch(API + path, {
       method: method,
@@ -593,4 +595,101 @@
       _bjDone();
     };
   }
+
+  /* ── 실인증 — 브랜드 로그인 · 초대 수락 · 크리에이터 매직링크 ── */
+  function jwtGet() { try { return localStorage.getItem("CONNECTION_JWT") || ""; } catch (e) { return ""; } }
+  function jwtSet(t) { try { localStorage.setItem("CONNECTION_JWT", t); } catch (e) {} }
+  function jwtClear() { try { localStorage.removeItem("CONNECTION_JWT"); } catch (e) {} }
+  window.__ME = null;
+
+  function authPanel(html) {
+    var old = document.getElementById("authPanel");
+    if (old) old.remove();
+    if (!html) return;
+    var d = document.createElement("div");
+    d.id = "authPanel";
+    d.style.cssText = "position:fixed;bottom:64px;left:14px;z-index:9999;width:250px;" +
+      "background:#fff;color:#22272b;border:1px solid #d8d2c7;border-radius:12px;" +
+      "padding:14px;box-shadow:0 8px 28px rgba(0,0,0,.18);font-size:12px";
+    d.innerHTML = html;
+    document.body.appendChild(d);
+  }
+  function authChip() {
+    var old = document.getElementById("authChip");
+    if (old) old.remove();
+    var d = document.createElement("div");
+    d.id = "authChip";
+    d.style.cssText = "position:fixed;bottom:14px;left:14px;z-index:9999;cursor:pointer;" +
+      "background:#22272b;color:#fff;border-radius:999px;padding:7px 13px;" +
+      "font-size:11px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.25)";
+    d.textContent = window.__ME ? "🔐 " + window.__ME.email : "🔐 로그인";
+    d.onclick = function () {
+      if (document.getElementById("authPanel")) return authPanel(null);
+      if (window.__ME) {
+        authPanel("<b>" + window.__ME.email + "</b><br><span style='color:#5a6560'>" +
+          (window.__ME.kind === "brand" ? "브랜드 · " + (window.__ME.brandId || "") : window.__ME.kind) +
+          "</span><div style='margin-top:9px'><span class='cbt no' onclick=\"authLogout()\">로그아웃</span></div>");
+      } else if (window.__SURFACE === "creator") {
+        authPanel("<b>이메일로 로그인</b><div style='margin-top:8px;display:flex;gap:5px'>" +
+          "<input id='axEmail' placeholder='you@email.com' style='flex:1;padding:6px'>" +
+          "<span class='cbt' onclick='authMagic()'>보내기</span></div>" +
+          "<div style='margin-top:6px;color:#5a6560'>받은 링크를 누르면 바로 로그인돼요.</div>");
+      } else {
+        authPanel("<b>브랜드 로그인</b><div style='margin-top:8px'>" +
+          "<input id='axEmail' placeholder='이메일' style='width:100%;padding:6px;margin-bottom:5px;box-sizing:border-box'>" +
+          "<input id='axPw' type='password' placeholder='비밀번호' style='width:100%;padding:6px;box-sizing:border-box'>" +
+          "<div style='margin-top:8px'><span class='cbt' onclick='authLogin()'>로그인</span></div></div>");
+      }
+    };
+    document.body.appendChild(d);
+  }
+  window.authLogout = function () { jwtClear(); window.__ME = null; authPanel(null); authChip(); toast("로그아웃", "다시 로그인할 때까지 데모 권한으로 동작합니다."); };
+  window.authLogin = function () {
+    var em = (document.getElementById("axEmail") || {}).value || "";
+    var pw = (document.getElementById("axPw") || {}).value || "";
+    req("POST", "/auth/login", { email: em.trim(), password: pw }).then(function (r) {
+      jwtSet(r.token); window.__ME = r.user; authPanel(null); authChip();
+      toast("로그인 완료", "<b>" + r.user.email + "</b> — 이제 브랜드 권한으로 동작합니다.");
+    }).catch(function () { toast("로그인 실패", "이메일 또는 비밀번호를 확인하세요."); });
+  };
+  window.authMagic = function () {
+    var em = (document.getElementById("axEmail") || {}).value || "";
+    req("POST", "/auth/magic", { email: em.trim() }).then(function (r) {
+      authPanel(null);
+      toast("메일을 확인하세요", r.demoLink
+        ? "데모 모드 — <a href='" + r.demoLink.replace("https://theprlist.net/", location.origin + "/") + "'>이 링크로 로그인</a> (15분 유효)"
+        : "받은편지함의 로그인 링크를 눌러주세요 (15분 유효).");
+    }).catch(function () { toast("전송 실패", "이메일 주소를 확인해 주세요."); });
+  };
+
+  try {
+    var sp = new URLSearchParams(location.search);
+    var inviteTok = sp.get("invite"), magicTok = sp.get("magic");
+    if (inviteTok) {
+      authPanel("<b>브랜드 계정 만들기</b><div style='margin-top:6px;color:#5a6560'>초대를 수락하고 비밀번호를 정하세요 (10자 이상).</div>" +
+        "<input id='axPw' type='password' placeholder='새 비밀번호' style='width:100%;padding:6px;margin-top:8px;box-sizing:border-box'>" +
+        "<div style='margin-top:8px'><span class='cbt' onclick='authAccept(\"" + inviteTok + "\")'>수락하고 시작</span></div>");
+    }
+    window.authAccept = function (tk) {
+      var pw = (document.getElementById("axPw") || {}).value || "";
+      req("POST", "/auth/accept", { token: tk, password: pw }).then(function (r) {
+        jwtSet(r.token); window.__ME = r.user; authPanel(null); authChip();
+        history.replaceState(null, "", location.pathname);
+        toast("계정 생성 완료 🎉", "<b>" + r.user.email + "</b> — 콘솔(console.theprlist.net)에서 이 계정으로 로그인하세요.");
+      }).catch(function () { toast("수락 실패", "링크가 만료됐을 수 있어요 — 초대를 다시 요청하세요. 비밀번호는 10자 이상."); });
+    };
+    if (magicTok) {
+      req("POST", "/auth/magic/verify", { token: magicTok }).then(function (r) {
+        jwtSet(r.token); window.__ME = r.user; authChip();
+        history.replaceState(null, "", location.pathname);
+        toast("로그인 완료 ✅", r.user.email);
+      }).catch(function () { toast("로그인 실패", "링크가 만료됐어요 — 다시 요청해 주세요."); });
+    }
+    if (jwtGet()) {
+      req("GET", "/auth/me").then(function (u) { window.__ME = u; authChip(); })
+        .catch(function () { jwtClear(); authChip(); });
+    } else if (window.__SURFACE === "brand" || window.__SURFACE === "creator" || inviteTok) {
+      authChip();
+    }
+  } catch (e) {}
 })();

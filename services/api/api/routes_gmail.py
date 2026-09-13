@@ -32,14 +32,10 @@ GMAIL_HARD_CAP, WARMUP_START, WARMUP_GROWTH = 450, 20, 1.2
 REPLY_DOMAIN = os.environ.get("REPLY_DOMAIN", "reply.theprlist.net")
 
 
-def _require_key(key: str) -> None:
-    """간이 인증 — ADMIN_KEY 환경변수가 있으면 X-Admin-Key 헤더까지 검사.
-
-    실인증(브랜드 로그인) 전까지 연결·해제 같은 민감 동작을 보호한다.
-    """
-    required = os.environ.get("ADMIN_KEY", "")
-    if required and key != required:
-        raise HTTPException(401, "인증 키 불일치 (X-Admin-Key)")
+def _guard(brand_id: str, authorization: str, x_admin_key: str) -> None:
+    """민감 동작 가드 — 브랜드/어드민 JWT 또는(전환기) 간이 키."""
+    from . import auth as _auth
+    _auth.require_brand(brand_id, authorization, x_admin_key)
 
 
 def _state_secret() -> str:
@@ -135,9 +131,10 @@ class ConnectIn(BaseModel):
 
 @router.post("/brands/{brand_id}/gmail/connect")
 def connect_gmail(brand_id: str, body: ConnectIn,
+                  authorization: str = Header(default=""),
                   x_admin_key: str = Header(default="")) -> dict:
     """실모드: 구글 동의 화면 URL 반환. 데모 모드: 즉시 연결."""
-    _require_key(x_admin_key)
+    _guard(brand_id, authorization, x_admin_key)
     if not _demo_mode():
         redirect = os.environ.get(
             "GOOGLE_REDIRECT_URI",
@@ -204,15 +201,18 @@ def gmail_callback(code: str = "", state: str = "", error: str = "") -> HTMLResp
 
 @router.delete("/gmail/accounts/{account_id}")
 def disconnect_gmail(account_id: str,
+                     authorization: str = Header(default=""),
                      x_admin_key: str = Header(default="")) -> dict:
-    _require_key(x_admin_key)
     with connect() as conn:
+        pre = conn.execute("SELECT brand_id FROM gmail_accounts"
+                           " WHERE account_id=%s", (account_id,)).fetchone()
+        if not pre:
+            raise HTTPException(404, "account not found")
+        _guard(pre["brand_id"], authorization, x_admin_key)
         r = conn.execute(
             "UPDATE gmail_accounts SET state='revoked', access_token='',"
             " refresh_token='' WHERE account_id=%s RETURNING *",
             (account_id,)).fetchone()
-        if not r:
-            raise HTTPException(404, "account not found")
         ledger_append(conn, f"brand:{r['brand_id']}", "GMAIL_DISCONNECTED",
                       account_id, {"email": r["email"]})
     return {"ok": True}

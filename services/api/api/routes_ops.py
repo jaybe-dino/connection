@@ -24,11 +24,23 @@ def _j(v) -> str:
 
 
 def require_admin(x_admin_id: str = Header(default=""),
-                  x_admin_key: str = Header(default="")) -> dict:
-    """간이 인증 — ADMIN_KEY 환경변수를 설정하면 X-Admin-Key 헤더까지 검사.
-    오픈 전 실인증(2FA)으로 교체 필수 (ADMIN_PLAN §6)."""
+                  x_admin_key: str = Header(default=""),
+                  authorization: str = Header(default="")) -> dict:
+    """어드민 인증 — 실계정 JWT(2FA 통과) 우선, 전환기엔 간이 키 병행.
+
+    AUTH_REQUIRED=1 이면 JWT만 허용된다 (간이 키 경로 차단).
+    """
     import os
 
+    from . import auth as _auth
+
+    u = _auth.current_user(authorization)
+    if u is not None:
+        if u.get("kind") != "admin" or u.get("otp") == "pending":
+            raise HTTPException(401, "어드민 로그인이 필요합니다")
+        return {"admin_id": u.get("sub"), "name": "admin", "jwt": True}
+    if _auth.auth_required():
+        raise HTTPException(401, "어드민 로그인이 필요합니다 (AUTH_REQUIRED)")
     required_key = os.environ.get("ADMIN_KEY", "")
     if required_key and x_admin_key != required_key:
         raise HTTPException(401, "어드민 키 불일치 (X-Admin-Key)")
@@ -136,7 +148,29 @@ def approve_application(app_id: str, admin_user: dict = Depends(require_admin)) 
             " decided_at=now() WHERE app_id=%s", (admin_user["admin_id"], app_id))
         ledger_append(conn, f"admin:{admin_user['admin_id']}", "BRAND_APPROVED",
                       app_row["slug"], {"app_id": app_id, "plan": app_row["plan"]})
-    return {"ok": True, "brandId": app_row["slug"]}
+        # 승인 = 계정 발급: 담당자 이메일로 초대 토큰(72시간) 생성
+        invite_link = None
+        contact = (app_row["contact"] or "").strip().lower()
+        if "@" in contact:
+            import os as _os
+
+            from . import auth as _auth
+            target = conn.execute("SELECT * FROM users WHERE email=%s",
+                                  (contact,)).fetchone() or conn.execute(
+                "INSERT INTO users (kind, email, brand_id)"
+                " VALUES ('brand',%s,%s) RETURNING *",
+                (contact, app_row["slug"])).fetchone()
+            raw = _auth.one_time_token(conn, target["user_id"], "invite",
+                                       60 * 72)
+            ledger_append(conn, "system", "BRAND_INVITED",
+                          str(target["user_id"]),
+                          {"email": contact, "brand": app_row["slug"]})
+            site = _os.environ.get("SITE_URL", "https://theprlist.net")
+            invite_link = f"{site}/?invite={raw}"
+    out = {"ok": True, "brandId": app_row["slug"]}
+    if invite_link:
+        out["inviteLink"] = invite_link   # 어드민이 전달(실모드 전환 시 메일 발송)
+    return out
 
 
 class Reject(BaseModel):

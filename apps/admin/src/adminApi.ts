@@ -14,18 +14,50 @@ const keyParam = new URLSearchParams(location.search).get("key");
 if (keyParam) localStorage.setItem("CONNECTION_ADMIN_KEY", keyParam);
 const ADMIN_KEY = localStorage.getItem("CONNECTION_ADMIN_KEY") || "";
 
+const jwt = () => localStorage.getItem("CONNECTION_JWT") || "";
+export const setJwt = (t: string) => localStorage.setItem("CONNECTION_JWT", t);
+export const clearJwt = () => localStorage.removeItem("CONNECTION_JWT");
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const t = jwt();
   const res = await fetch(`${BASE}${path}`, {
     headers: {
       "Content-Type": "application/json",
       "X-Admin-Id": ADMIN_ID,
       ...(ADMIN_KEY ? { "X-Admin-Key": ADMIN_KEY } : {}),
+      ...(t ? { Authorization: `Bearer ${t}` } : {}),
     },
     ...init,
   });
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
   return res.json() as Promise<T>;
 }
+
+/* ── 실인증 ── */
+export interface AuthUser {
+  userId: string; kind: string; email: string;
+  brandId: string | null; totpEnabled: boolean;
+}
+export const authApi = {
+  status: () => req<{ authRequired: boolean; hasAdmin: boolean }>("/auth/status"),
+  bootstrap: (email: string, password: string) =>
+    req<{ token: string; user: AuthUser }>("/auth/bootstrap",
+      { method: "POST", body: JSON.stringify({ email, password }) }),
+  login: (email: string, password: string) =>
+    req<{ token: string; user: AuthUser; needOtp?: boolean }>("/auth/login",
+      { method: "POST", body: JSON.stringify({ email, password }) }),
+  otpVerify: (pending: string, code: string) =>
+    fetch(`${BASE}/auth/otp/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json",
+                 Authorization: `Bearer ${pending}` },
+      body: JSON.stringify({ code }),
+    }).then(async (r) => {
+      if (!r.ok) throw new Error(String(r.status));
+      return r.json() as Promise<{ token: string; user: AuthUser }>;
+    }),
+  me: () => req<AuthUser>("/auth/me"),
+};
 
 export interface Summary {
   pendingApplications: number;

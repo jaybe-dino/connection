@@ -29,7 +29,7 @@ router = APIRouter()
 SCOPES = "https://www.googleapis.com/auth/gmail.send openid email"
 # 지메일 계정 한도(무료 ~500/일)보다 보수적으로 + 워밍업 곡선(senders와 동일)
 GMAIL_HARD_CAP, WARMUP_START, WARMUP_GROWTH = 450, 20, 1.2
-REPLY_DOMAIN = os.environ.get("REPLY_DOMAIN", "reply.connection.app")
+REPLY_DOMAIN = os.environ.get("REPLY_DOMAIN", "reply.theprlist.net")
 
 
 def _demo_mode() -> bool:

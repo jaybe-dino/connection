@@ -6,6 +6,7 @@
 
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -44,8 +45,14 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Connection API", version="0.1.0", lifespan=_lifespan)
+
+# CORS — ALLOWED_ORIGINS(콤마 구분)가 있으면 화이트리스트, 없으면 개발 편의로 전체 허용.
+# 예: ALLOWED_ORIGINS=https://theprlist.net,https://console.theprlist.net
+_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",")
+            if o.strip()]
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+    CORSMiddleware, allow_origins=_origins or ["*"],
+    allow_methods=["*"], allow_headers=["*"],
 )
 
 from .routes_agents import router as _agents_router  # noqa: E402

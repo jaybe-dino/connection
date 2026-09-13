@@ -32,6 +32,12 @@ GMAIL_HARD_CAP, WARMUP_START, WARMUP_GROWTH = 450, 20, 1.2
 REPLY_DOMAIN = os.environ.get("REPLY_DOMAIN", "reply.theprlist.net")
 
 
+def _inbound_ready() -> bool:
+    """INBOUND_REPLY=1 이면 전용 답장 주소(reply+brand@…)로 수신 — SendGrid
+    Inbound Parse 설정 후 켠다. 꺼져 있으면 답장은 브랜드 지메일로 직행."""
+    return os.environ.get("INBOUND_REPLY") == "1"
+
+
 def _demo_mode() -> bool:
     return not os.environ.get("GOOGLE_CLIENT_ID")
 
@@ -66,7 +72,8 @@ def _acct_out(r: dict) -> dict:
             "email": r["email"], "state": r["state"],
             "connectedAt": r["connected_at"].isoformat(),
             "todayCap": cap, "sentToday": sent,
-            "replyTo": f"reply+{r['brand_id']}@{REPLY_DOMAIN}"}
+            "replyTo": (f"reply+{r['brand_id']}@{REPLY_DOMAIN}"
+                        if _inbound_ready() else r["email"])}
 
 
 @router.get("/brands/{brand_id}/gmail")

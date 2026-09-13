@@ -17,7 +17,7 @@ import os
 from datetime import UTC, datetime, timedelta
 from email.mime.text import MIMEText
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -30,6 +30,50 @@ SCOPES = "https://www.googleapis.com/auth/gmail.send openid email"
 # 지메일 계정 한도(무료 ~500/일)보다 보수적으로 + 워밍업 곡선(senders와 동일)
 GMAIL_HARD_CAP, WARMUP_START, WARMUP_GROWTH = 450, 20, 1.2
 REPLY_DOMAIN = os.environ.get("REPLY_DOMAIN", "reply.theprlist.net")
+
+
+def _require_key(key: str) -> None:
+    """간이 인증 — ADMIN_KEY 환경변수가 있으면 X-Admin-Key 헤더까지 검사.
+
+    실인증(브랜드 로그인) 전까지 연결·해제 같은 민감 동작을 보호한다.
+    """
+    required = os.environ.get("ADMIN_KEY", "")
+    if required and key != required:
+        raise HTTPException(401, "인증 키 불일치 (X-Admin-Key)")
+
+
+def _state_secret() -> str:
+    return os.environ.get("ADMIN_KEY") or os.environ.get("TOKEN_ENC_KEY") or ""
+
+
+def _sign_state(brand_id: str) -> str:
+    """OAuth state 위조 방지 — brand.만료시각.서명(HMAC). 콜백에서 검증한다."""
+    import hashlib
+    import hmac as _hmac
+    import time
+    exp = str(int(time.time()) + 1800)          # 30분 유효
+    msg = f"{brand_id}.{exp}"
+    sig = _hmac.new(_state_secret().encode(), msg.encode(),
+                    hashlib.sha256).hexdigest()[:16]
+    return f"{msg}.{sig}"
+
+
+def _verify_state(state: str) -> str:
+    """서명된 state에서 brand_id 복원. 서명·만료 불일치는 400."""
+    import hashlib
+    import hmac as _hmac
+    import time
+    parts = state.split(".")
+    if len(parts) != 3:
+        if not _state_secret():                 # 개발 모드(비밀키 없음)만 평문 허용
+            return state
+        raise HTTPException(400, "state 형식 오류")
+    brand, exp, sig = parts
+    good = _hmac.new(_state_secret().encode(), f"{brand}.{exp}".encode(),
+                     hashlib.sha256).hexdigest()[:16]
+    if not _hmac.compare_digest(sig, good) or int(exp) < time.time():
+        raise HTTPException(400, "state 서명 불일치 또는 만료 — 연결을 처음부터 다시 시도하세요")
+    return brand
 
 
 def _inbound_ready() -> bool:
@@ -90,8 +134,10 @@ class ConnectIn(BaseModel):
 
 
 @router.post("/brands/{brand_id}/gmail/connect")
-def connect_gmail(brand_id: str, body: ConnectIn) -> dict:
+def connect_gmail(brand_id: str, body: ConnectIn,
+                  x_admin_key: str = Header(default="")) -> dict:
     """실모드: 구글 동의 화면 URL 반환. 데모 모드: 즉시 연결."""
+    _require_key(x_admin_key)
     if not _demo_mode():
         redirect = os.environ.get(
             "GOOGLE_REDIRECT_URI",
@@ -100,7 +146,7 @@ def connect_gmail(brand_id: str, body: ConnectIn) -> dict:
         q = urlencode({
             "client_id": os.environ["GOOGLE_CLIENT_ID"],
             "redirect_uri": redirect, "response_type": "code",
-            "scope": SCOPES, "state": brand_id,
+            "scope": SCOPES, "state": _sign_state(brand_id),
             "access_type": "offline", "prompt": "consent"})
         return {"authUrl": f"https://accounts.google.com/o/oauth2/v2/auth?{q}"}
     email = body.email.strip().lower() or f"{brand_id}@gmail.com"
@@ -122,6 +168,7 @@ def gmail_callback(code: str = "", state: str = "", error: str = "") -> HTMLResp
         return HTMLResponse(f"<h3>연결 취소됨</h3><p>{error or 'code 없음'}</p>", 400)
     if _demo_mode():
         raise HTTPException(400, "데모 모드에서는 콜백을 쓰지 않습니다")
+    brand_id = _verify_state(state)
     import httpx
     redirect = os.environ.get(
         "GOOGLE_REDIRECT_URI",
@@ -147,16 +194,18 @@ def gmail_callback(code: str = "", state: str = "", error: str = "") -> HTMLResp
             " refresh_token=COALESCE(NULLIF(EXCLUDED.refresh_token,''),"
             "                        gmail_accounts.refresh_token),"
             " token_expiry=EXCLUDED.token_expiry RETURNING *",
-            (state, email, _enc(tok["access_token"]),
+            (brand_id, email, _enc(tok["access_token"]),
              _enc(tok.get("refresh_token", "")), expiry, SCOPES)).fetchone()
-        ledger_append(conn, f"brand:{state}", "GMAIL_CONNECTED",
+        ledger_append(conn, f"brand:{brand_id}", "GMAIL_CONNECTED",
                       str(r["account_id"]), {"email": email})
     return HTMLResponse(
         "<h3>✅ 지메일 연결 완료</h3><p>이 창을 닫고 콘솔로 돌아가 새로고침하세요.</p>")
 
 
 @router.delete("/gmail/accounts/{account_id}")
-def disconnect_gmail(account_id: str) -> dict:
+def disconnect_gmail(account_id: str,
+                     x_admin_key: str = Header(default="")) -> dict:
+    _require_key(x_admin_key)
     with connect() as conn:
         r = conn.execute(
             "UPDATE gmail_accounts SET state='revoked', access_token='',"

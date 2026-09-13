@@ -5,6 +5,8 @@
   try {
     var q = new URLSearchParams(location.search).get("api");
     if (q) localStorage.setItem("CONNECTION_API_URL", q);
+    var qk = new URLSearchParams(location.search).get("key");
+    if (qk) localStorage.setItem("CONNECTION_ADMIN_KEY", qk);
   } catch (e) {}
   var API = (function () {
     var fallback = /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
@@ -15,9 +17,14 @@
   window.__API_URL = API;
 
   function req(method, path, body) {
+    var h = { "Content-Type": "application/json" };
+    try {
+      var ak = localStorage.getItem("CONNECTION_ADMIN_KEY");
+      if (ak) h["X-Admin-Key"] = ak;   // 민감 API(지메일 연결 등) 간이 인증
+    } catch (e) {}
     return fetch(API + path, {
       method: method,
-      headers: { "Content-Type": "application/json" },
+      headers: h,
       body: body ? JSON.stringify(body) : undefined,
     }).then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); });
   }
@@ -375,7 +382,11 @@
       req("POST", "/brands/glowlab/gmail/connect", {}).then(function (r) {
         if (r.authUrl) window.open(r.authUrl, "_blank");
         toast("구글 로그인", "새 창에서 회사 지메일로 로그인하고 허용을 누르세요. 끝나면 [새로고침]을 눌러주세요.");
-      }).catch(function () {});
+      }).catch(function (e) {
+        toast(e === 401 ? "인증 필요" : "연결 실패",
+          e === 401 ? "주소 뒤에 <b>?key=어드민키</b>를 붙여 접속한 뒤 다시 시도하세요."
+                    : "잠시 후 다시 시도해 주세요.");
+      });
       return;
     }
     var el = document.getElementById("gmEmail");

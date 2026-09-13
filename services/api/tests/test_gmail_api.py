@@ -61,3 +61,23 @@ def test_disconnect(client):
     assert client.delete(f"/gmail/accounts/{aid}").json()["ok"] is True
     ls2 = client.get("/brands/glowlab/gmail").json()
     assert all(a["accountId"] != aid for a in ls2["accounts"])
+
+
+def test_admin_key_guards_connect(client, monkeypatch):
+    monkeypatch.setenv("ADMIN_KEY", "sekrit")
+    r = client.post("/brands/glowlab/gmail/connect", json={"email": "x@y.co"})
+    assert r.status_code == 401                     # 키 없이 → 거부
+    r = client.post("/brands/glowlab/gmail/connect",
+                    json={"email": "x@y.co"}, headers={"X-Admin-Key": "sekrit"})
+    assert r.status_code == 200                     # 키 있으면 통과
+
+
+def test_oauth_state_signing(monkeypatch):
+    from api import routes_gmail as g
+    monkeypatch.setenv("ADMIN_KEY", "sekrit")
+    s = g._sign_state("glowlab")
+    assert g._verify_state(s) == "glowlab"
+    import pytest as _pytest
+    from fastapi import HTTPException
+    with _pytest.raises(HTTPException):             # 위조된 brand → 거부
+        g._verify_state(s.replace("glowlab", "evil"))

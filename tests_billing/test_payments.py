@@ -135,3 +135,17 @@ def test_pg_order_mismatch_never_captures(setup,monkeypatch):
     monkeypatch.setattr(nicepay,'request',pg)
     assert 'review' in client.post('/payments/return',data=form(i['id']),follow_redirects=False).headers['location']
     assert calls==['GET']
+
+def test_other_app_and_registration_events_are_noops(setup,monkeypatch):
+    client,db,h,events=setup
+    i=invoice(client,h)
+    def forbidden(*args): raise AssertionError('Unrelated event must not access payments or DB')
+    monkeypatch.setattr(nicepay,'request',forbidden)
+    monkeypatch.setattr(routes,'connect',forbidden)
+    for order_id in ('nicepay-registration-sample', 'GLOVEK_123'):
+        r=client.post('/payments/webhook',json={'tid':'sample', 'orderId':order_id})
+        assert r.status_code==200 and r.text=='OK'
+    assert client.post('/payments/webhook',json={'tid':'sample','orderId':i['id']}).status_code==401
+    assert events==[]
+    with db() as c:
+        assert c.execute('SELECT status FROM signup_invoices').fetchone()['status']=='open'

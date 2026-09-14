@@ -140,6 +140,10 @@ async def payment_webhook(request: Request):
     tid, iid = data.get('tid'), data.get('orderId')
     if not isinstance(tid, str) or not isinstance(iid, str):
         raise HTTPException(400, 'Invalid transaction')
+    # The merchant also serves other apps. Acknowledge their events and NICEpay's
+    # registration samples without any database access or payment processing.
+    if not iid.startswith('PRLIST_'):
+        return HTMLResponse('OK')
     # Signed event plus authenticated PG lookup, never trust a status alone.
     if not nicepay._signature([tid, data.get('amount'), data.get('ediDate')], data.get('signature')):
         raise HTTPException(401, 'Invalid signature')

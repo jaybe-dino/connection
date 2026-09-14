@@ -62,6 +62,7 @@ from .routes_dispatch import router as _dispatch_router  # noqa: E402
 from .routes_senders import router as _senders_router  # noqa: E402
 from .routes_gmail import router as _gmail_router  # noqa: E402
 from .routes_auth import router as _auth_router  # noqa: E402
+from .routes_billing import router as _billing_router  # noqa: E402
 
 app.include_router(_public_router)
 app.include_router(_admin_router)
@@ -70,6 +71,7 @@ app.include_router(_senders_router)
 app.include_router(_dispatch_router)
 app.include_router(_gmail_router)
 app.include_router(_auth_router)
+app.include_router(_billing_router)
 
 ALL_LOCALES = ["ko", "th", "en", "vi"]
 

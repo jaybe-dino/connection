@@ -61,7 +61,7 @@ class ApplicationIn(BaseModel):
     biz_no: str = ""
     category: str = ""
     countries: list[str] = []
-    plan: str = "growth"
+    plan: str = "per_signup"
     site_url: str = ""
     answers: dict[str, str] = {}
     contact: str = ""
@@ -69,6 +69,7 @@ class ApplicationIn(BaseModel):
 
 @public.post("/applications")
 def submit_application(body: ApplicationIn) -> dict:
+    body.plan = "per_signup"  # Single usage-based tariff; ignore legacy client plans.
     slug = body.slug.lower().strip()
     with connect() as conn:
         taken = conn.execute(

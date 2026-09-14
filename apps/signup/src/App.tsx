@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Badge, Card } from "@connection/ui";
 
 /** 브랜드 가입 위저드 — 5단계. 가입이 곧 아리 세팅이다. */
-const STEPS = ["계정 · 사업자", "브랜드 프로필", "플랜 선택", "아리 학습", "완료"];
+const STEPS = ["계정 · 사업자", "브랜드 프로필", "이용 요금", "아리 학습", "완료"];
 
 const FIVE_QUESTIONS = [
   { key: "one_liner", q: "브랜드를 한 문장으로 하면?", ph: "예: 민감성 피부를 위한 저자극 선케어" },
@@ -18,7 +18,6 @@ export default function App() {
   const [bizVerified, setBizVerified] = useState(false);
   const [slug, setSlug] = useState("");
   const [countries, setCountries] = useState<string[]>(["TH"]);
-  const [plan, setPlan] = useState("growth");
   const [siteUrl, setSiteUrl] = useState("");
   const [learned, setLearned] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -29,7 +28,7 @@ export default function App() {
   const canNext = [
     bizVerified,
     slugOk && countries.length > 0,
-    !!plan,
+    true,
     learned && answersDone, // 학습 없이는 완료 불가
     true,
   ][step];
@@ -110,25 +109,11 @@ export default function App() {
       )}
 
       {step === 2 && (
-        <div style={{ display: "grid", gap: 8 }}>
-          {[
-            { id: "starter", name: "Starter", price: "₩290,000/월", desc: "셀 1개 · 아리 L1 · 에이전트 3종 · DB 500명" },
-            { id: "growth", name: "Growth", price: "₩790,000/월", desc: "셀 무제한 · 아리 L2 · 에이전트 8종 · DB 무제한 · 전 언어 번역", best: true },
-            { id: "enterprise", name: "Enterprise", price: "별도 문의", desc: "멀티 브랜드 · 전용 인프라 · DPA 커스텀 · SLA · 추천 배타권 옵션" },
-          ].map((p) => (
-            <Card key={p.id} onClick={() => setPlan(p.id)} style={{ borderColor: plan === p.id ? "var(--t500)" : undefined, borderWidth: plan === p.id ? 2 : 1 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ fontWeight: 900, fontSize: 15 }}>{p.name}</span>
-                {p.best && <Badge color="terra">권장</Badge>}
-                <span style={{ marginLeft: "auto", fontWeight: 800, fontSize: 13 }}>{p.price}</span>
-              </div>
-              <div style={{ fontSize: 12, color: "var(--n500)", marginTop: 4 }}>{p.desc}</div>
-            </Card>
-          ))}
-          <div style={{ fontSize: 11, color: "var(--n400)" }}>
-            공통 과금: 검증 가입 1명 ₩10,000 (일회성) — 두 번째 브랜드 가입도 동일
-          </div>
-        </div>
+        <Card>
+          <div style={{ fontWeight: 900, fontSize: 20 }}>가입 1명당 ₩5,000</div>
+          <p>고정 구독료 없이 가입한 만큼만 결제합니다.</p>
+          <p style={{ fontSize: 12, color: "var(--n500)" }}>브랜드별 검증 가입 기준입니다. 같은 브랜드의 중복 가입은 추가 과금하지 않습니다.</p>
+        </Card>
       )}
 
       {step === 3 && (

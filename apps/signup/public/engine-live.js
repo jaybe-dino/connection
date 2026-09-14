@@ -38,6 +38,21 @@
   }
   function fire(method, path, body) { req(method, path, body).catch(function () {}); }
 
+  var billingVersion = 0;
+  window.__billing = null;
+  function loadBilling() {
+    var version = ++billingVersion;
+    window.__billing = null;
+    req("GET", "/brands/" + BRAND() + "/billing").then(function (summary) {
+      if (version !== billingVersion) return;
+      window.__billing = summary;
+      if (typeof ST !== "undefined" && ST.b === "settle" && window.render) render();
+    }).catch(function () {
+      if (version === billingVersion && typeof ST !== "undefined" && ST.b === "settle" && window.render) render();
+    });
+  }
+  window.refreshBilling = loadBilling;
+
   /* ── 게이트 결정 → 실서버 (kind 매핑, 데모 동작은 그대로) ── */
   var GATE_KIND = { pii: "PII", payout: "PAYOUT" };
   if (window.dg) {
@@ -603,7 +618,7 @@
         slug: (B.slug || "glowlab") + "-" + Date.now().toString(36).slice(-4),
         name: "GLOWLAB", biz_no: "123-45-67890", category: "스킨케어",
         countries: ["TH", "US", "VN"],
-        plan: ["starter", "growth", "enterprise"][B.plan || 1],
+        plan: "per_signup",
         site_url: B.url || "glowlab.kr",
         answers: {
           brand_one_liner: "민감성 피부를 위한 저자극 선케어",
@@ -625,7 +640,7 @@
   window.__ME = null;
 
   function reloadBrand() {
-    try { loadSenders(); loadGmail(); loadInbox(); loadDispatch(); } catch (e) {}
+    try { loadBilling(); loadSenders(); loadGmail(); loadInbox(); loadDispatch(); } catch (e) {}
     if (window.render) try { render(); } catch (e) {}
   }
   function authPanel(html) {

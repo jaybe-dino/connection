@@ -13,7 +13,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import Header, APIRouter, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
@@ -73,7 +73,11 @@ class BatchIn(BaseModel):
 
 
 @router.post("/brands/{brand_id}/dispatch-batches")
-def create_batch(brand_id: str, body: BatchIn) -> dict:
+def create_batch(brand_id: str, body: BatchIn,
+                 authorization: str = Header(default=""),
+                 x_admin_key: str = Header(default="")) -> dict:
+    from . import auth as _auth
+    _auth.require_brand(brand_id, authorization, x_admin_key)
     if body.capacity > BATCH_CAP:
         raise HTTPException(400, f"회당 상한 {BATCH_CAP}명 — 스팸 정책 보호")
     batch_id = "dsp-" + uuid4().hex[:6]
@@ -130,7 +134,11 @@ def create_batch(brand_id: str, body: BatchIn) -> dict:
 
 
 @router.get("/brands/{brand_id}/dispatch-batches")
-def list_batches(brand_id: str) -> list[dict]:
+def list_batches(brand_id: str,
+                 authorization: str = Header(default=""),
+                 x_admin_key: str = Header(default="")) -> list[dict]:
+    from . import auth as _auth
+    _auth.require_brand(brand_id, authorization, x_admin_key)
     with connect() as conn:
         rows = conn.execute(
             "SELECT * FROM dispatch_batches WHERE brand_id=%s ORDER BY created_at DESC",
@@ -219,7 +227,16 @@ _STATE_TS = {"ACCEPTED": "accepted_at", "SHIPPED": "shipped_at",
 
 
 @router.post("/dispatch-batches/{batch_id}/import")
-async def import_results(batch_id: str, file: UploadFile) -> dict:
+async def import_results(batch_id: str, file: UploadFile,
+                         authorization: str = Header(default=""),
+                         x_admin_key: str = Header(default="")) -> dict:
+    from . import auth as _auth
+    with connect() as _c:
+        _b = _c.execute("SELECT brand_id FROM dispatch_batches WHERE batch_id=%s",
+                        (batch_id,)).fetchone()
+    if not _b:
+        raise HTTPException(404, "batch not found")
+    _auth.require_brand(_b["brand_id"], authorization, x_admin_key)
     """셀러센터 결과 CSV(handle,status[,tracking_no][,content_url][,gmv]) 반영."""
     text = (await file.read()).decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))

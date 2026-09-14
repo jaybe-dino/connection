@@ -32,8 +32,9 @@ async def _lifespan(app: FastAPI):
         applied = run_migrations()
         if applied:
             log.info("migrations applied: %s", applied)
-        if seed():
-            log.info("GLOWLAB seed inserted")
+        # 데모 시드 — DEMO_SEED=0 이면 건너뜀 (실서비스 DB를 깨끗하게 시작)
+        if os.environ.get("DEMO_SEED", "1") != "0" and seed():
+            log.info("GLOWLAB demo seed inserted")
         _startup_error = None
     except Exception as e:
         _startup_error = f"{type(e).__name__}: {e}"

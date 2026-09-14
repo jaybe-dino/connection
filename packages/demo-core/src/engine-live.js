@@ -16,6 +16,12 @@
   })();
   window.__API_URL = API;
 
+  /* 멀티테넌시 — 로그인한 브랜드 계정이 있으면 그 브랜드, 없으면 데모(glowlab) */
+  function BRAND() {
+    var me = window.__ME;
+    return (me && me.kind === "brand" && me.brandId) || "glowlab";
+  }
+
   function req(method, path, body) {
     var h = { "Content-Type": "application/json" };
     try {
@@ -280,7 +286,7 @@
   /* ── 브랜드 발신 이메일 (트랙 B 도메인 인증) — 콘솔 '발굴·수집' 탭 카드 ── */
   window.__SENDERS = null;
   function loadSenders(silent) {
-    req("GET", "/brands/glowlab/senders").then(function (l) {
+    req("GET", "/brands/" + BRAND() + "/senders").then(function (l) {
       window.__SENDERS = l;
       if (typeof ST !== "undefined" && ST.b === "src" && window.render) render();
     }).catch(function () {});
@@ -294,7 +300,7 @@
     var el = document.getElementById("sndEmail");
     var v = el && el.value.trim();
     if (!v) return toast("발신 이메일", "회사 이메일 주소를 입력해 주세요.");
-    req("POST", "/brands/glowlab/senders", { email: v }).then(function (r) {
+    req("POST", "/brands/" + BRAND() + "/senders", { email: v }).then(function (r) {
       loadSenders();
       toast("인증 코드 발송", r.demoCode
         ? "데모 모드 — 인증 코드: <b>" + r.demoCode + "</b>. 아래 칸에 입력하세요."
@@ -367,13 +373,13 @@
   window.__INBOX = null;
   window.__INBOX_OPEN = null;   // 펼친 스레드 {id, data}
   function loadGmail() {
-    req("GET", "/brands/glowlab/gmail").then(function (g) {
+    req("GET", "/brands/" + BRAND() + "/gmail").then(function (g) {
       window.__GMAIL = g;
       if (typeof ST !== "undefined" && ST.b === "src" && window.render) render();
     }).catch(function () {});
   }
   function loadInbox() {
-    req("GET", "/brands/glowlab/inbox").then(function (l) {
+    req("GET", "/brands/" + BRAND() + "/inbox").then(function (l) {
       window.__INBOX = l;
       if (typeof ST !== "undefined" && ST.b === "src" && window.render) render();
     }).catch(function () {});
@@ -381,7 +387,7 @@
   window.gmailConnect = function () {
     var g = window.__GMAIL;
     if (g && !g.demo) {          // 실모드 — 구글 동의 화면으로
-      req("POST", "/brands/glowlab/gmail/connect", {}).then(function (r) {
+      req("POST", "/brands/" + BRAND() + "/gmail/connect", {}).then(function (r) {
         if (r.authUrl) window.open(r.authUrl, "_blank");
         toast("구글 로그인", "새 창에서 회사 지메일로 로그인하고 허용을 누르세요. 끝나면 [새로고침]을 눌러주세요.");
       }).catch(function (e) {
@@ -394,7 +400,7 @@
     var el = document.getElementById("gmEmail");
     var v = el && el.value.trim();
     if (!v) return toast("지메일 연결", "연결할 회사 지메일 주소를 입력해 주세요.");
-    req("POST", "/brands/glowlab/gmail/connect", { email: v }).then(function () {
+    req("POST", "/brands/" + BRAND() + "/gmail/connect", { email: v }).then(function () {
       loadGmail();
       toast("연결 완료 (데모)", "실서비스에선 구글 로그인 창이 뜹니다. 이제 아리가 <b>" + v + "</b> 명의로 보냅니다.");
     }).catch(function () {});
@@ -480,7 +486,7 @@
   /* ── 틱톡샵 대량 발송 P0 (반자동) — 발굴·수집 '틱톡샵' 탭 카드 ── */
   window.__DISPATCH = null;
   function loadDispatch() {
-    req("GET", "/brands/glowlab/dispatch-batches").then(function (l) {
+    req("GET", "/brands/" + BRAND() + "/dispatch-batches").then(function (l) {
       window.__DISPATCH = l;
       if (typeof ST !== "undefined" && ST.b === "src" && window.render) render();
     }).catch(function () {});
@@ -489,7 +495,7 @@
     var prod = (document.getElementById("dspProd") || {}).value || "";
     var cap = parseInt((document.getElementById("dspCap") || {}).value, 10) || 30;
     if (!prod.trim()) return toast("발송 배치", "틱톡샵 상품명(또는 ID)을 입력해 주세요.");
-    req("POST", "/brands/glowlab/dispatch-batches", {
+    req("POST", "/brands/" + BRAND() + "/dispatch-batches", {
       product_ref: prod.trim(), commission_pct: 12, unit_cost: 9000,
       capacity: cap, deadline_days: 14,
     }).then(function (b) {
@@ -602,6 +608,10 @@
   function jwtClear() { try { localStorage.removeItem("CONNECTION_JWT"); } catch (e) {} }
   window.__ME = null;
 
+  function reloadBrand() {
+    try { loadSenders(); loadGmail(); loadInbox(); loadDispatch(); } catch (e) {}
+    if (window.render) try { render(); } catch (e) {}
+  }
   function authPanel(html) {
     var old = document.getElementById("authPanel");
     if (old) old.remove();
@@ -643,13 +653,14 @@
     };
     document.body.appendChild(d);
   }
-  window.authLogout = function () { jwtClear(); window.__ME = null; authPanel(null); authChip(); toast("로그아웃", "다시 로그인할 때까지 데모 권한으로 동작합니다."); };
+  window.authLogout = function () { jwtClear(); window.__ME = null; authPanel(null); authChip(); reloadBrand(); toast("로그아웃", "다시 로그인할 때까지 데모 권한으로 동작합니다."); };
   window.authLogin = function () {
     var em = (document.getElementById("axEmail") || {}).value || "";
     var pw = (document.getElementById("axPw") || {}).value || "";
     req("POST", "/auth/login", { email: em.trim(), password: pw }).then(function (r) {
       jwtSet(r.token); window.__ME = r.user; authPanel(null); authChip();
-      toast("로그인 완료", "<b>" + r.user.email + "</b> — 이제 브랜드 권한으로 동작합니다.");
+      reloadBrand();
+      toast("로그인 완료", "<b>" + r.user.email + "</b> — 이제 <b>" + (r.user.brandId || "") + "</b> 브랜드로 동작합니다.");
     }).catch(function () { toast("로그인 실패", "이메일 또는 비밀번호를 확인하세요."); });
   };
   window.authMagic = function () {
@@ -674,6 +685,7 @@
       var pw = (document.getElementById("axPw") || {}).value || "";
       req("POST", "/auth/accept", { token: tk, password: pw }).then(function (r) {
         jwtSet(r.token); window.__ME = r.user; authPanel(null); authChip();
+        reloadBrand();
         history.replaceState(null, "", location.pathname);
         toast("계정 생성 완료 🎉", "<b>" + r.user.email + "</b> — 콘솔(console.theprlist.net)에서 이 계정으로 로그인하세요.");
       }).catch(function () { toast("수락 실패", "링크가 만료됐을 수 있어요 — 초대를 다시 요청하세요. 비밀번호는 10자 이상."); });
@@ -686,7 +698,7 @@
       }).catch(function () { toast("로그인 실패", "링크가 만료됐어요 — 다시 요청해 주세요."); });
     }
     if (jwtGet()) {
-      req("GET", "/auth/me").then(function (u) { window.__ME = u; authChip(); })
+      req("GET", "/auth/me").then(function (u) { window.__ME = u; authChip(); reloadBrand(); })
         .catch(function () { jwtClear(); authChip(); });
     } else if (window.__SURFACE === "brand" || window.__SURFACE === "creator" || inviteTok) {
       authChip();

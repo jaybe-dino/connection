@@ -14,12 +14,26 @@ import re
 import secrets
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from .db import connect, ledger_append
 
 router = APIRouter()
+
+
+def _tenant_guard(brand_id: str, authorization: str, x_admin_key: str) -> None:
+    """브랜드 격리 — 그 브랜드의 JWT/어드민 JWT, 전환기엔 간이 키."""
+    from . import auth as _auth
+    _auth.require_brand(brand_id, authorization, x_admin_key)
+
+
+def _sender_brand(conn, sender_id: str) -> str:
+    r = conn.execute("SELECT brand_id FROM brand_senders WHERE sender_id=%s",
+                     (sender_id,)).fetchone()
+    if not r:
+        raise HTTPException(404, "sender not found")
+    return r["brand_id"]
 
 # 워밍업: 첫날 20통 → 매일 ×1.2, 상한 400 (harvest 아웃리치와 동일 곡선)
 WARMUP_START, WARMUP_GROWTH, WARMUP_MAX = 20, 1.2, 400
@@ -85,7 +99,10 @@ class SenderIn(BaseModel):
 
 
 @router.post("/brands/{brand_id}/senders")
-def register_sender(brand_id: str, body: SenderIn) -> dict:
+def register_sender(brand_id: str, body: SenderIn,
+                    authorization: str = Header(default=""),
+                    x_admin_key: str = Header(default="")) -> dict:
+    _tenant_guard(brand_id, authorization, x_admin_key)
     m = _EMAIL_RE.match(body.email.strip().lower())
     if not m:
         raise HTTPException(400, "이메일 형식이 올바르지 않습니다")
@@ -117,7 +134,11 @@ class VerifyIn(BaseModel):
 
 
 @router.post("/senders/{sender_id}/verify")
-def verify_sender(sender_id: str, body: VerifyIn) -> dict:
+def verify_sender(sender_id: str, body: VerifyIn,
+              authorization: str = Header(default=""),
+              x_admin_key: str = Header(default="")) -> dict:
+    with connect() as _c:
+        _tenant_guard(_sender_brand(_c, sender_id), authorization, x_admin_key)
     with connect() as conn:
         r = _get(conn, sender_id)
         if r["state"] != "unverified":
@@ -135,7 +156,11 @@ def verify_sender(sender_id: str, body: VerifyIn) -> dict:
 
 
 @router.post("/senders/{sender_id}/check-dns")
-def check_dns(sender_id: str) -> dict:
+def check_dns(sender_id: str,
+              authorization: str = Header(default=""),
+              x_admin_key: str = Header(default="")) -> dict:
+    with connect() as _c:
+        _tenant_guard(_sender_brand(_c, sender_id), authorization, x_admin_key)
     """DNS 반영 확인 — 데모 모드는 즉시 통과, 실모드는 ESP validate 호출."""
     with connect() as conn:
         r = _get(conn, sender_id)
@@ -163,7 +188,11 @@ class ProfileIn(BaseModel):
 
 
 @router.put("/senders/{sender_id}/profile")
-def update_profile(sender_id: str, body: ProfileIn) -> dict:
+def update_profile(sender_id: str, body: ProfileIn,
+              authorization: str = Header(default=""),
+              x_admin_key: str = Header(default="")) -> dict:
+    with connect() as _c:
+        _tenant_guard(_sender_brand(_c, sender_id), authorization, x_admin_key)
     with connect() as conn:
         _get(conn, sender_id)
         r = conn.execute(
@@ -174,7 +203,10 @@ def update_profile(sender_id: str, body: ProfileIn) -> dict:
 
 
 @router.get("/brands/{brand_id}/senders")
-def list_senders(brand_id: str) -> list[dict]:
+def list_senders(brand_id: str,
+                 authorization: str = Header(default=""),
+                 x_admin_key: str = Header(default="")) -> list[dict]:
+    _tenant_guard(brand_id, authorization, x_admin_key)
     with connect() as conn:
         rows = conn.execute(
             "SELECT * FROM brand_senders WHERE brand_id=%s ORDER BY created_at",
@@ -213,7 +245,11 @@ def report_stats(sender_id: str, body: StatsIn) -> dict:
 
 
 @router.post("/senders/{sender_id}/resume")
-def resume_sender(sender_id: str) -> dict:
+def resume_sender(sender_id: str,
+              authorization: str = Header(default=""),
+              x_admin_key: str = Header(default="")) -> dict:
+    with connect() as _c:
+        _tenant_guard(_sender_brand(_c, sender_id), authorization, x_admin_key)
     """원인 확인 후 사람이 명시적으로 재개 (콘솔·어드민 버튼)."""
     with connect() as conn:
         r = _get(conn, sender_id)

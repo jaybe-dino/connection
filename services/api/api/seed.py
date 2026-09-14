@@ -24,8 +24,9 @@ def _j(v) -> str:
 
 def _seed(conn: psycopg.Connection) -> None:
     conn.execute(
-        "INSERT INTO brands VALUES ('glowlab','GLOWLAB','선케어·스킨케어','ko','growth'),"
-        " ('aura','AURA','메이크업','ko','starter')")
+        "INSERT INTO brands (brand_id, name, category, locale, plan, is_demo)"
+        " VALUES ('glowlab','GLOWLAB','선케어·스킨케어','ko','growth',true),"
+        " ('aura','AURA','메이크업','ko','starter',true)")
 
     conn.execute(
         "INSERT INTO creators VALUES"

@@ -117,7 +117,10 @@ def _acct_out(r: dict) -> dict:
 
 
 @router.get("/brands/{brand_id}/gmail")
-def list_gmail(brand_id: str) -> dict:
+def list_gmail(brand_id: str,
+               authorization: str = Header(default=""),
+               x_admin_key: str = Header(default="")) -> dict:
+    _guard(brand_id, authorization, x_admin_key)
     with connect() as conn:
         rows = conn.execute(
             "SELECT * FROM gmail_accounts WHERE brand_id=%s AND state='connected'"
@@ -378,7 +381,10 @@ def _sync_pending(conn, thread_id) -> None:
 
 
 @router.get("/brands/{brand_id}/inbox")
-def list_inbox(brand_id: str) -> list[dict]:
+def list_inbox(brand_id: str,
+               authorization: str = Header(default=""),
+               x_admin_key: str = Header(default="")) -> list[dict]:
+    _guard(brand_id, authorization, x_admin_key)
     with connect() as conn:
         rows = conn.execute(
             "SELECT * FROM mail_threads WHERE brand_id=%s"
@@ -389,7 +395,15 @@ def list_inbox(brand_id: str) -> list[dict]:
 
 
 @router.get("/inbox/threads/{thread_id}")
-def get_thread(thread_id: str) -> dict:
+def get_thread(thread_id: str,
+               authorization: str = Header(default=""),
+               x_admin_key: str = Header(default="")) -> dict:
+    with connect() as _c:
+        _t = _c.execute("SELECT brand_id FROM mail_threads WHERE thread_id=%s",
+                        (thread_id,)).fetchone()
+    if not _t:
+        raise HTTPException(404, "thread not found")
+    _guard(_t["brand_id"], authorization, x_admin_key)
     with connect() as conn:
         t = conn.execute("SELECT * FROM mail_threads WHERE thread_id=%s",
                          (thread_id,)).fetchone()
@@ -412,7 +426,15 @@ class ReplyIn(BaseModel):
 
 
 @router.post("/inbox/threads/{thread_id}/reply")
-def reply_thread(thread_id: str, body: ReplyIn) -> dict:
+def reply_thread(thread_id: str, body: ReplyIn,
+                 authorization: str = Header(default=""),
+                 x_admin_key: str = Header(default="")) -> dict:
+    with connect() as _c:
+        _t = _c.execute("SELECT brand_id FROM mail_threads WHERE thread_id=%s",
+                        (thread_id,)).fetchone()
+    if not _t:
+        raise HTTPException(404, "thread not found")
+    _guard(_t["brand_id"], authorization, x_admin_key)
     """답장 작성 → OUTBOUND 게이트 접수. 승인되면 다음 조회 때 발송된다."""
     if not body.body.strip():
         raise HTTPException(400, "본문이 비어 있습니다")

@@ -24,11 +24,11 @@ def billing_summary(brand_id: str, authorization: str = Header(default=''),
         totals = conn.execute(
             'SELECT count(*) AS quantity, COALESCE(sum(unit_price),0) AS amount '
             'FROM signup_usage WHERE brand_id=%s', (brand_id,)).fetchone()
-        policy = conn.execute('SELECT effective_at FROM signup_billing_policy').fetchone()
-    return {'model': 'per_signup', 'unitPrice': 5000, 'fixedFee': 0,
+        policy = conn.execute('SELECT effective_at, unit_price FROM signup_billing_policy').fetchone()
+    return {'model': 'per_signup', 'unitPrice': policy['unit_price'], 'fixedFee': 0,
             'quantity': totals['quantity'], 'usageAmount': totals['amount'],
             'currency': 'KRW', 'demo': brand['is_demo'],
             'effectiveAt': policy['effective_at'].isoformat(),
             'collectionEnabled': bool(nicepay.configured()), 'taxTreatment': 'inclusive',
             'collection': 'monthly_invoice',
-            'message': '가입당 5,000원 (부가세 포함) · 월말 합산 결제'}
+            'message': f"가입당 {policy['unit_price']:,}원 (부가세 포함) · 월말 합산 결제"}

@@ -459,11 +459,11 @@ function finishJoin(){
  ST.me.joined.push(k); ST.me.cur=k; ST.c='cell'; ST.curCh='잡담';
  if(k==='GLOWLAB'){ ST.roster++; }
  ST.ledger.push(['방금','MEMBERSHIP_CREATED',`${BRANDS[k].nm} · ${ST.me.name} · 셀 ${BRANDS[k].cell}`,'—','7f3a…c091']);
- ST.ledger.push(['방금','BILLING_EVENT',`${BRANDS[k].nm} · 검증 가입 1건 · billable=true`,'₩5,000','9b21…4de7']);
+ ST.ledger.push(['방금','BILLING_EVENT',`${BRANDS[k].nm} · 검증 가입 1건 · billable=true`,'₩50','9b21…4de7']);
  if(ST.me.joined.length===1)
-  toast('연결됨 · 브랜드 콘솔',`${BRANDS[k].nm} 명부에 <b>1명이 추가</b>됐고 <b>검증 가입 ₩5,000</b>이 원장에 찍혔습니다.`,'brand','roster');
+  toast('연결됨 · 브랜드 콘솔',`${BRANDS[k].nm} 명부에 <b>1명이 추가</b>됐고 <b>검증 가입 ₩50</b>이 원장에 찍혔습니다.`,'brand','roster');
  else
-  toast('연결됨 · 두 번째 셀','계정을 <b>다시 만들지 않고</b> 들어갔습니다. 커넥션은 여기서 <b>₩5,000을 한 번 더</b> 받습니다 — 획득 비용은 0입니다.','brand','settle');
+  toast('연결됨 · 두 번째 셀','계정을 <b>다시 만들지 않고</b> 들어갔습니다. 커넥션은 여기서 <b>₩50을 한 번 더</b> 받습니다 — 획득 비용은 0입니다.','brand','settle');
  render();
 }
 function tgOrig(k,i){ const m=ST.cellMsgs[k][i]; m._o=!m._o; render(); }
@@ -513,7 +513,7 @@ const RP={
  '명부':()=>[{k:'tool',t:'TOOL · db.status',r:`rows: <b>${ST.roster}</b> · all OAuth-verified<br>dup: 0 · reverify_due: 4<br>purge_scheduled: 42 fields`},
    {k:'m',x:`<b>${ST.roster}명</b> 전원이 틱톡·인스타 <b>OAuth 검증</b>으로 들어왔습니다. 수기 행이 없어서 중복이 0이에요. 재검증 대기 4명은 오늘 밤 돌립니다.`},
    {k:'lnk',x:'캔버스 · 크리에이터 DB',go:'roster'}],
- '정산':()=>[{k:'m',x:'가입 1명당 <b>₩5,000</b>입니다. 고정 구독료는 없습니다.'},{k:'lnk',x:'캔버스 · 정산',go:'settle'}],
+ '정산':()=>[{k:'m',x:'가입 1명당 <b>₩50</b>입니다. 고정 구독료는 없습니다.'},{k:'lnk',x:'캔버스 · 정산',go:'settle'}],
 };
 const RAIL=[['brief','◧'],['gates','✓'],['src','⌖'],['cells','◎'],['roster','◍'],['camp','▤'],['review','◑'],['settle','₩']];
 const GATES={
@@ -555,8 +555,8 @@ brief:()=>({t:'브리핑',s:`8월 22일 · 결정 ${gateCount()}건 대기`,
     joined('GLOWLAB')?'방금 <b>1명 추가</b> — 셀 가입':'이 속도면 이번 달 <b>410명</b>')}
   ${mc('셀 인원','131','+9','up',null,'상한 없음 · <b>발화 밀도</b>만 봅니다')}
   ${mc('CAC','₩3,180','+18%','dn',spark([2410,2380,2520,2610,2740,2900,3020,3180],'#8E3B2A'),'소재 <b>2종</b>이 끌어올리는 중')}
-  ${mc('이번 달 매출','₩'+(1425000+(joined('GLOWLAB')?5000:0)).toLocaleString(),'+12%','up',
-    spark([2600,2780,2950,3080,3200,3390,3520,3640],'#5E8C6A'),'가입 1명당 <b>₩5,000</b>')}
+  ${mc('이번 달 매출','₩'+(14250+(joined('GLOWLAB')?50:0)).toLocaleString(),'+12%','up',
+    spark([2600,2780,2950,3080,3200,3390,3520,3640],'#5E8C6A'),'가입 1명당 <b>₩50</b>')}
  </div>
  ${gateCount()?`<div class="sect"><h2>지금 눌러야 할 것</h2><span class="more" onclick="ST.b='gates';render()">승인함 →</span></div>
   <table><tr><th style="width:110px">게이트</th><th>내용</th><th style="width:100px"></th></tr>
@@ -576,7 +576,7 @@ gates:()=>({t:'승인함',s:gateCount()?`${gateCount()}건 대기 · 누르기 �
  b:gc('pii')+gc('payout')+
   NOTE('여기 있는 건 전부 <b>자율 등급과 무관하게 사람이 눌러야 하는 항목</b>입니다.')}),
 
-src:()=>({t:'발굴 · 수집', s:`에이전트 ${Object.values(ST.ch).filter(c=>c.on).length}명 근무 중 · 사람 손 ${handTotal()}시간/주 대체 · 후보 큐 ${Q().cand}명`,
+src:()=>({t:'발굴 · 수집', s:ST.srcTab==='mail'?'Gmail 연결 · 초안 검토 · 발송 내역':`에이전트 ${Object.values(ST.ch).filter(c=>c.on).length}명 근무 중 · 사람 손 ${handTotal()}시간/주 대체 · 후보 큐 ${Q().cand}명`,
  r:`<div class="tabs2">${[['agents','에이전트'],['tkshop','틱톡샵'],['comm','커뮤니티'],['mail','메일링'],['judge','판정 엔진'],['learn','학습'],['tech','기술 스택']]
    .map(t=>`<span class="${ST.srcTab===t[0]?'on':''}" onclick="ST.srcTab='${t[0]}';render()">${t[1]}</span>`).join('')}</div>`,
  raw:2, b:''}),
@@ -679,9 +679,9 @@ review:()=>({t:'콘텐츠 검수',s:reviewCount()?'새 제출물 1건':'대기 �
  </table>${NOTE('자동 체크는 전부 통과했습니다. <b>통과 = 정산 대상 편입</b>이라 마지막은 사람이 눌러주세요.')}`
  :`<div class="empty"><div class="a av"></div><p>${ST.passed?'방금 통과시키셨습니다. 정산 대기 목록에 반영됐어요.':'대기 중인 제출물이 없습니다.'}</p></div>`}),
 
-settle:()=>({t:'가입 과금',s:'가입 1명당 ₩5,000 · 고정 구독료 없음',r:'',
+settle:()=>({t:'가입 과금',s:'가입 1명당 ₩50 · 고정 구독료 없음',r:'',
  b:`<div class="mrow">
-  ${mc('가입당 요금','₩5,000','','',null,'같은 브랜드 중복 가입은 추가 과금 없음')}
+  ${mc('가입당 요금','₩50','','',null,'같은 브랜드 중복 가입은 추가 과금 없음')}
   ${mc('확정 가입',window.__billing ? Number(window.__billing.quantity).toLocaleString()+'명' : '—','','',null,'과금 기준 적용 이후 누적')}
   ${mc('누적 이용금액',window.__billing ? '₩'+Number(window.__billing.usageAmount).toLocaleString() : '—','','',null,'실제 결제금액은 결제 내역에서 확인')}
  </div>
@@ -784,8 +784,8 @@ function doCellInvite(){
  const got=Math.max(1,Math.round(n*0.17));
  ST.queue.invited=n; ST.queue.joinedQ=got; BCELLS[ST.bCell].base+=got; ST.roster+=got;
  ST.ledger.push(['방금','INVITE_SENT',`${BCELLS[ST.bCell].nm} 충원 · ${n}명 · 언어별 초안`,'—','8e42…77ac']);
- ST.ledger.push(['방금','BILLING_EVENT',`셀 가입 ${got}건 · billable=true`,'₩'+(got*5000).toLocaleString(),'c091…5d33']);
- toast('연결됨 · 명부·원장',`${n}명에게 초대를 보냈고 <b>${got}명이 바로 들어왔습니다.</b> 명부 +${got}, 검증 가입 <b>₩${(got*5000).toLocaleString()}</b>이 원장에 찍혔어요.`,'brand','settle');
+ ST.ledger.push(['방금','BILLING_EVENT',`셀 가입 ${got}건 · billable=true`,'₩'+(got*50).toLocaleString(),'c091…5d33']);
+ toast('연결됨 · 명부·원장',`${n}명에게 초대를 보냈고 <b>${got}명이 바로 들어왔습니다.</b> 명부 +${got}, 검증 가입 <b>₩${(got*50).toLocaleString()}</b>이 원장에 찍혔어요.`,'brand','settle');
  render();
 }
 function growPanel(k){
@@ -937,9 +937,9 @@ function bjoinView(){
    <button class="btn lg" onclick="${B.slugOk?'bjNext(1)':`toast('주소 확인 필요','<b>중복 확인</b>을 눌러 주소를 확정해 주세요.')`}">다음</button></div>`;
  else if(B.step===2) body=`
   <h2>가입한 만큼만 결제합니다</h2>
-  <p class="bjs">고정 구독료 없이 <b>가입 1명당 ₩5,000 (부가세 포함)</b>입니다. 월말에 가입 건수를 합산해 결제합니다.</p>
+  <p class="bjs">고정 구독료 없이 <b>가입 1명당 ₩50 (부가세 포함)</b>입니다. 월말에 가입 건수를 합산해 결제합니다.</p>
   <div class="bjp on"><div class="pn2">가입당 과금</div>
-   <div class="pp">₩5,000<i>/명</i></div>
+   <div class="pp">₩50<i>/명</i></div>
    <div class="pd">브랜드별 검증 가입 기준 · 같은 브랜드의 중복 가입은 추가 과금하지 않습니다.</div></div>
   <div class="bjnav"><button class="btn line" onclick="bjNext(-1)">이전</button>
    <button class="btn lg" onclick="bjNext(1)">다음 · 결제는 온보딩 후</button></div>`;
@@ -987,7 +987,7 @@ function bjoinView(){
   <p class="bjs">아리가 온보딩 답변으로 <b>첫 주 운영 계획</b>을 짰습니다.</p>
   <div class="bjsum">
    <div class="dkv"><span>브랜드 주소</span><b class="mono">connection.app/${B.slug}</b></div>
-   <div class="dkv"><span>이용 요금</span><b>가입 1명당 ₩5,000 · 고정 구독료 없음</b></div>
+   <div class="dkv"><span>이용 요금</span><b>가입 1명당 ₩50 · 고정 구독료 없음</b></div>
    <div class="dkv"><span>타깃</span><b>태국 · 미국 · 베트남 (3개 언어 자동)</b></div>
    <div class="dkv"><span>브랜드 프로필</span><b>사이트 학습(34p · 리뷰 812) + 5문항 → <span class="mono" style="font-size:10px">profile v1</span></b></div>
    <div class="dkv"><span>아리 첫 주</span><b>인바운드 폼 개설 → 후보 스크리닝 → 1번방 시딩</b></div>
@@ -1086,7 +1086,7 @@ function planView(){
   +card('02','가입 · 계정',[
     ['틱톡 또는 인스타 OAuth 필수','이메일 가입 없음. <b>본인 크리에이터 계정 연결이 곧 가입</b> — DB 품질의 시작점.'],
     ['필수 동의 3 + 선택 1','본인 확인 · 약관 · 국외 이전(필수), 교차 브랜드 추천(선택). append-only 기록.'],
-    ['한 계정 · N 브랜드 멤버십','두 번째 브랜드부터 재가입 없음. 커넥션은 <b>획득 비용 0으로 ₩5,000</b>을 다시 받음.']])
+    ['한 계정 · N 브랜드 멤버십','두 번째 브랜드부터 재가입 없음. 커넥션은 <b>획득 비용 0으로 ₩50</b>을 다시 받음.']])
   +card('03','셀 · 커뮤니티',[
     ['상한 없음','정원 대신 <b>발화 밀도</b>로 건강을 판단. 묻히면 소그룹 스레드 제안.'],
     ['캠페인과 무관한 자유 시딩','셀은 캠페인 단위로 묶지 않습니다. 캠페인이 끝나도 방은 계속 삽니다.'],
@@ -1111,8 +1111,8 @@ function planView(){
     ['L4 신뢰 인프라','판단 원장 · 열람·이의 제기 · 동의 철회 0.4초 전파. <b>데이터를 들고 있을 자격.</b>'],
     ['안 하는 것','자체 LLM · 스크래핑 · 범용 CRM.']])
   +card('07','수익 구조',[
-    ['이용 요금','고정 구독료 없음 · <b>가입 1명당 ₩5,000</b>.'],
-    ['검증 가입 과금','1명 ₩5,000 · 일회성. 두 번째 브랜드 가입도 동일 과금(획득 비용 0).'],
+    ['이용 요금','고정 구독료 없음 · <b>가입 1명당 ₩50</b>.'],
+    ['검증 가입 과금','1명 ₩50 · 일회성. 두 번째 브랜드 가입도 동일 과금(획득 비용 0).'],
     ['과금 제외 원칙','기준 미달은 차단이 아니라 과금 제외 — 커뮤니티는 유지.']])
   +card('08','결정 로그',[
     ['8/22','에이전트+대시보드 결합(나란히) 확정 · 테라 데이라이트 확정'],
@@ -2049,7 +2049,7 @@ function render(){
       return `<div class="step ${s[1]?'done':now?'now':''}"><div class="no">${s[1]?'✓':i+1}</div><div>${s[0]}</div></div>`}).join('')}
     <div class="card" style="margin-top:14px"><h4>이 구조의 핵심</h4>
      <p>계정은 <b>커넥션</b>이 하나만 만들고, 회원은 <b>브랜드마다 따로</b> 생깁니다.
-     그래서 두 번째 브랜드부터는 <b>재가입이 없고</b>, 커넥션은 <b>획득 비용 0으로 ₩5,000</b>을 다시 받습니다.</p></div>
+     그래서 두 번째 브랜드부터는 <b>재가입이 없고</b>, 커넥션은 <b>획득 비용 0으로 ₩50</b>을 다시 받습니다.</p></div>
     <div class="card"><h4>지금 상태</h4>
      <p>패스 <b>${ST.me.pass?'있음':'없음'}</b> · 소속 셀 <b>${ST.me.joined.length}개</b>
      ${ST.me.joined.length?`<br>현재 셀 <b>${ST.me.cur?BRANDS[ST.me.cur].nm:'-'}</b>`:''}</p></div>

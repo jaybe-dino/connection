@@ -27,7 +27,8 @@ def guard(brand, authorization, key):
 
 def invoice_out(row):
     return {'id': row['invoice_id'], 'period': row['period'].strftime('%Y-%m'),
-            'quantity': row['quantity'], 'amount': row['amount'], 'status': row['status']}
+            'quantity': row['quantity'], 'amount': row['amount'], 'status': row['status'],
+            'cardPayable': row['amount'] >= 1000}
 
 
 def close_months(conn, brand):
@@ -36,13 +37,13 @@ def close_months(conn, brand):
     cutoff = datetime.now(ZoneInfo('Asia/Seoul')).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     groups = conn.execute(
         "SELECT date_trunc('month', verified_at AT TIME ZONE 'Asia/Seoul')::date AS period, "
-        "count(*) AS quantity FROM signup_usage WHERE brand_id=%s AND invoice_id IS NULL "
+        "count(*) AS quantity, sum(unit_price) AS amount FROM signup_usage WHERE brand_id=%s AND invoice_id IS NULL "
         "AND verified_at < %s GROUP BY 1 ORDER BY 1", (brand, cutoff)).fetchall()
     for group in groups:
         iid = 'PRLIST_' + uuid.uuid4().hex[:24]
         conn.execute('INSERT INTO signup_invoices(invoice_id,brand_id,period,quantity,amount) '
                      'VALUES(%s,%s,%s,%s,%s)',
-                     (iid, brand, group['period'], group['quantity'], group['quantity'] * 5000))
+                     (iid, brand, group['period'], group['quantity'], group['amount']))
         conn.execute("UPDATE signup_usage SET invoice_id=%s WHERE brand_id=%s AND invoice_id IS NULL "
                      "AND date_trunc('month',verified_at AT TIME ZONE 'Asia/Seoul')::date=%s",
                      (iid, brand, group['period']))
@@ -74,6 +75,8 @@ def checkout(brand_id: str, invoice_id: str, authorization: str = Header(default
                            'WHERE invoice_id=%s AND brand_id=%s', (invoice_id, brand_id)).fetchone()
     if not row or row['is_demo']:
         raise HTTPException(404, '결제할 청구서 없음')
+    if row['amount'] < 1000:
+        raise HTTPException(409, '카드 결제 최소 금액은 1,000원입니다. 청구 내역은 보관됩니다.')
     if row['status'] != 'open':
         raise HTTPException(409, '이미 처리 중이거나 결제된 청구서입니다')
     return {'clientId': nicepay.client_key(), 'method': 'card', 'orderId': invoice_id,

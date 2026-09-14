@@ -13,6 +13,7 @@ GOOGLE_CLIENT_ID 가 없으면 **데모 모드**: 연결·발송이 즉시 성�
 import base64
 import json
 import logging
+import hmac
 import os
 from datetime import UTC, datetime, timedelta
 from email.mime.text import MIMEText
@@ -125,7 +126,7 @@ def list_gmail(brand_id: str,
         rows = conn.execute(
             "SELECT * FROM gmail_accounts WHERE brand_id=%s AND state='connected'"
             " ORDER BY connected_at", (brand_id,)).fetchall()
-    return {"demo": _demo_mode(), "accounts": [_acct_out(r) for r in rows]}
+    return {"demo": _demo_mode(), "inboundReady": _inbound_ready(), "accounts": [_acct_out(r) for r in rows]}
 
 
 class ConnectIn(BaseModel):
@@ -254,12 +255,13 @@ def send_via_brand_gmail(conn, brand_id: str, to: str, subject: str,
     """
     r = conn.execute(
         "SELECT * FROM gmail_accounts WHERE brand_id=%s AND state='connected'"
-        " ORDER BY connected_at LIMIT 1", (brand_id,)).fetchone()
+        " ORDER BY connected_at LIMIT 1 FOR UPDATE", (brand_id,)).fetchone()
     if not r:
         return None
     out = _acct_out(r)
     if out["sentToday"] >= out["todayCap"]:
         return None
+    message_id = None
     if not _demo_mode():
         token = _refresh_if_needed(conn, r)
         msg = MIMEText(body, "plain", "utf-8")
@@ -273,13 +275,16 @@ def send_via_brand_gmail(conn, brand_id: str, to: str, subject: str,
             headers={"Authorization": f"Bearer {token}"},
             json={"raw": raw}, timeout=20)
         if resp.status_code >= 300:
-            raise HTTPException(502, f"지메일 발송 실패: {resp.text[:200]}")
+            raise HTTPException(502, "지메일 발송 실패 — Gmail에서 발송 여부를 확인하세요")
+        message_id = resp.json().get("id")
+        if not message_id:
+            raise HTTPException(502, "발송 결과 확인 필요")
     conn.execute(
         "UPDATE gmail_accounts SET sent_today=CASE WHEN sent_date=CURRENT_DATE"
         " THEN sent_today+1 ELSE 1 END, sent_date=CURRENT_DATE"
         " WHERE account_id=%s", (r["account_id"],))
     return {"via": "gmail" if not _demo_mode() else "demo",
-            "fromEmail": r["email"]}
+            "fromEmail": r["email"], "messageId": message_id}
 
 
 # ── 답장 인박스 — Reply-To 인바운드 수신 → 스레드 → 게이트 답장 ──
@@ -312,7 +317,10 @@ class InboundIn(BaseModel):
 
 
 @router.post("/inbound/reply")
-def inbound_reply(body: InboundIn) -> dict:
+def inbound_reply(body: InboundIn, x_inbound_key: str = Header(default="")) -> dict:
+    secret = os.environ.get("INBOUND_REPLY_KEY", "")
+    if not secret or not hmac.compare_digest(x_inbound_key, secret):
+        raise HTTPException(401, "인바운드 인증 필요")
     brand = body.brand_id
     if not brand and "+" in body.to:
         brand = body.to.split("+", 1)[1].split("@", 1)[0]
@@ -350,36 +358,6 @@ def _thread_out(r: dict) -> dict:
             "lastMessageAt": r["last_message_at"].isoformat()}
 
 
-def _sync_pending(conn, thread_id) -> None:
-    """게이트 붙은 발신 대기 메시지 동기화 — 승인=발송, 보류=무통지."""
-    rows = conn.execute(
-        "SELECT m.*, t.brand_id, t.creator_email FROM mail_messages m"
-        " JOIN mail_threads t USING (thread_id)"
-        " WHERE m.thread_id=%s AND m.state='pending_gate'", (thread_id,)).fetchall()
-    for m in rows:
-        g = conn.execute("SELECT state FROM gate_requests WHERE gate_id=%s",
-                         (m["gate_id"],)).fetchone()
-        if not g:
-            continue
-        if g["state"] == "APPROVED":
-            sent = send_via_brand_gmail(conn, m["brand_id"], m["creator_email"],
-                                        "Re: " + (m["body"][:40] or "connection"),
-                                        m["body"])
-            via = sent["via"] if sent else "dryrun"
-            frm = sent["fromEmail"] if sent else ""
-            conn.execute(
-                "UPDATE mail_messages SET state='sent', sent_via=%s,"
-                " from_email=%s WHERE msg_id=%s", (via, frm, m["msg_id"]))
-            conn.execute(
-                "UPDATE mail_threads SET last_direction='out',"
-                " last_message_at=now() WHERE thread_id=%s", (thread_id,))
-            ledger_append(conn, "ari:inbox", "MAIL_SENT", str(thread_id),
-                          {"to": m["creator_email"], "via": via})
-        elif g["state"] in ("HELD", "REJECTED"):
-            conn.execute("UPDATE mail_messages SET state='held' WHERE msg_id=%s",
-                         (m["msg_id"],))
-
-
 @router.get("/brands/{brand_id}/inbox")
 def list_inbox(brand_id: str,
                authorization: str = Header(default=""),
@@ -389,8 +367,6 @@ def list_inbox(brand_id: str,
         rows = conn.execute(
             "SELECT * FROM mail_threads WHERE brand_id=%s"
             " ORDER BY last_message_at DESC LIMIT 100", (brand_id,)).fetchall()
-        for r in rows:
-            _sync_pending(conn, r["thread_id"])
     return [_thread_out(r) for r in rows]
 
 
@@ -409,7 +385,6 @@ def get_thread(thread_id: str,
                          (thread_id,)).fetchone()
         if not t:
             raise HTTPException(404, "thread not found")
-        _sync_pending(conn, thread_id)
         msgs = conn.execute(
             "SELECT * FROM mail_messages WHERE thread_id=%s ORDER BY created_at",
             (thread_id,)).fetchall()
@@ -461,3 +436,31 @@ def reply_thread(thread_id: str, body: ReplyIn,
                       {"kind": "OUTBOUND", "thread": str(thread_id)})
     return {"msgId": m["msg_id"], "gateId": str(g["gate_id"]),
             "state": "pending_gate"}
+
+@router.post('/inbox/threads/{thread_id}/messages/{msg_id}/send')
+def send_reply(thread_id: str, msg_id: int, authorization: str = Header(default='')):
+    from .auth import current_user
+    u = current_user(authorization)
+    if not u or u.get('otp') == 'pending':
+        raise HTTPException(401, '로그인이 필요합니다')
+    if _demo_mode(): raise HTTPException(503, '실제 Gmail 연결이 필요합니다')
+    with connect() as conn:
+        t = conn.execute('SELECT * FROM mail_threads WHERE thread_id=%s', (thread_id,)).fetchone()
+        if not t: raise HTTPException(404, '대화 없음')
+        _guard(t['brand_id'], authorization, '')
+        m = conn.execute("UPDATE mail_messages SET state='sending' WHERE msg_id=%s AND thread_id=%s AND direction='out' AND state='pending_gate' RETURNING *", (msg_id,thread_id)).fetchone()
+        if not m: raise HTTPException(409, '이미 발송했거나 확인이 필요한 메일입니다')
+    try:
+        with connect() as conn:
+            sent = send_via_brand_gmail(conn,t['brand_id'],t['creator_email'],'Re: '+t['subject'],m['body'])
+            if not sent:
+                conn.execute("UPDATE mail_messages SET state='pending_gate' WHERE msg_id=%s",(msg_id,))
+                return {'state':'pending_gate'}
+            conn.execute("UPDATE mail_messages SET state='sent',sent_via=%s,from_email=%s WHERE msg_id=%s",(sent['via'],sent['fromEmail'],msg_id))
+            conn.execute("UPDATE mail_threads SET last_direction='out',last_message_at=now() WHERE thread_id=%s",(thread_id,))
+            conn.execute("UPDATE gate_requests SET state='APPROVED',decided_by=%s,decided_at=now(),executed=true WHERE gate_id=%s",(str(u.get('sub') or u.get('kind')),m['gate_id']))
+        return {'state':'sent'}
+    except Exception:
+        with connect() as conn:
+            conn.execute("UPDATE mail_messages SET state='review' WHERE msg_id=%s",(msg_id,))
+        raise HTTPException(502,'Gmail 보낸편지함에서 발송 여부를 확인하세요. 자동 재발송하지 않습니다.')

@@ -21,6 +21,7 @@ def dbname():
     subprocess.run(['createdb', name], check=True)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'services/api/tests/sql/signup_billing.sql')],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/011_monthly_invoices.sql')],check=True,stdout=subprocess.DEVNULL)
+    subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/012_signup_price_50.sql')],check=True,stdout=subprocess.DEVNULL)
     yield name
     subprocess.run(['dropdb',name],check=True)
 
@@ -59,21 +60,21 @@ def invoice(client,headers):
     return r.json()['invoices'][0]
 
 def form(iid):
-    return {'tid':'test-tid','orderId':iid,'amount':'10000','authResultCode':'0000',
-            'authToken':'token','signature':signature('tokentest-client10000')}
+    return {'tid':'test-tid','orderId':iid,'amount':'100','authResultCode':'0000',
+            'authToken':'token','signature':signature('tokentest-client100')}
 
 def paid(iid):
-    return {'resultCode':'0000','status':'paid','orderId':iid,'amount':10000,'tid':'test-tid',
-            'ediDate':'2026-02-01', 'signature':signature('test-tid100002026-02-01')}
+    return {'resultCode':'0000','status':'paid','orderId':iid,'amount':100,'tid':'test-tid',
+            'ediDate':'2026-02-01', 'signature':signature('test-tid1002026-02-01')}
 
 def test_month_close_idempotency_and_current_month_exclusion(setup):
     client,db,h,_=setup
     first=invoice(client,h);second=invoice(client,h)
     assert first==second
-    assert first['quantity']==2 and first['amount']==10000
+    assert first['quantity']==2 and first['amount']==100
     assert first['period']=='2026-01'
     summary=client.get('/brands/real/billing',headers=h).json()
-    assert summary['quantity']==3 and summary['usageAmount']==15000
+    assert summary['quantity']==3 and summary['usageAmount']==150
     assert summary['taxTreatment']=='inclusive'
 
 def test_tenant_and_unauth_denied(setup):
@@ -149,3 +150,17 @@ def test_other_app_and_registration_events_are_noops(setup,monkeypatch):
     assert events==[]
     with db() as c:
         assert c.execute('SELECT status FROM signup_invoices').fetchone()['status']=='open'
+
+def test_monthly_invoice_sums_recorded_prices(setup):
+    client,db,h,_=setup
+    with db() as c:c.execute("UPDATE signup_usage SET unit_price=5000 WHERE creator_id='c1'")
+    i=invoice(client,h)
+    assert i['amount']==5050 and i['quantity']==2
+    assert client.get('/brands/real/billing',headers=h).json()['unitPrice']==50
+
+def test_small_monthly_invoice_is_retained_without_card_checkout(setup):
+    client,db,h,_=setup
+    i=invoice(client,h)
+    assert i['amount']==100 and not i['cardPayable']
+    assert client.post('/brands/real/billing/invoices/'+i['id']+'/checkout',headers=h).status_code==409
+    with db() as c:assert c.execute('SELECT status FROM signup_invoices').fetchone()['status']=='open'

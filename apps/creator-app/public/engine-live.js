@@ -46,8 +46,8 @@
     if (!rows.length) return '<p>마감된 월의 청구서가 없습니다.</p>';
     var labels = {open:'결제 대기', processing:'결제 확인 중', paid:'결제 완료', review:'거래 확인 필요'};
     return '<h3>월별 청구서</h3>' + rows.map(function (i) {
-      return '<div style="padding:12px;border-bottom:1px solid #ddd">' + i.period + ' · ' + Number(i.quantity) + '명 · ₩' + Number(i.amount).toLocaleString() + ' (부가세 포함) · ' + (labels[i.status] || '확인 중') +
-        (i.status === 'open' && billingConfigured ? ' <button class="btn" onclick="paySignupInvoice(\'' + i.id + '\')">카드 결제</button>' : '') +
+      return '<div style="padding:12px;border-bottom:1px solid #ddd">' + i.period + ' · ' + Number(i.quantity) + '명 · ₩' + Number(i.amount).toLocaleString() + ' (부가세 포함) · ' + (labels[i.status] || '확인 중') + (i.status === 'open' && !i.cardPayable ? ' · 카드 최소금액 1,000원 미만' : '') +
+        (i.status === 'open' && billingConfigured && i.cardPayable ? ' <button class="btn" onclick="paySignupInvoice(\'' + i.id + '\')">카드 결제</button>' : '') +
         (i.status === 'processing' || i.status === 'review' ? ' <button class="btn line" onclick="checkSignupInvoice(\'' + i.id + '\')">거래 확인</button>' : '') + '</div>';
     }).join('') + (billingConfigured ? '' : '<p>결제사 연결 설정 중입니다. 청구 내역은 보관됩니다.</p>');
   };
@@ -433,6 +433,67 @@
     }
     return '<div class="cc" style="margin-bottom:12px"><div class="t">발신 이메일 — 브랜드 명의로 보내기</div>' + inner + "</div>";
   }
+  function mailEscape(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
+  }
+  var outreachData = null;
+  var outreachBusy = false;
+  var outreachVersion = 0;
+  function loadOutreach() {
+    var brand=BRAND(), version=++outreachVersion;
+    req('GET','/brands/'+brand+'/outreach').then(function(r){
+      if(version!==outreachVersion || BRAND()!==brand) return;
+      outreachData=r;
+      if(typeof ST!=='undefined' && ST.b==='src' && window.render) render();
+    }).catch(function(){ outreachData=null; });
+  }
+  window.outreachDraft = function() {
+    if(outreachBusy)return;
+    var recipients=document.getElementById('outRecipients').value.split(/[\s,;]+/).filter(Boolean);
+    var subject=document.getElementById('outSubject').value.trim();
+    var body=document.getElementById('outBody').value.trim();
+    if(!recipients.length || recipients.length>20 || !subject || !body) return toast('입력 확인','수신자는 한 번에 최대 20명이며, 제목과 본문을 입력해 주세요.');
+    outreachBusy=true;
+    req('POST','/brands/'+BRAND()+'/outreach',{recipients:recipients,subject:subject,body:body}).then(function(){
+      loadOutreach(); toast('초안 저장','수신자와 내용을 확인한 뒤 발송해 주세요.');
+    }).catch(function(){toast('저장 실패','로그인 상태와 이메일 형식을 확인해 주세요.');}).finally(function(){outreachBusy=false;});
+  };
+  window.outreachSend = function(id) {
+    if(outreachBusy)return;
+    outreachBusy=true;
+    req('POST','/brands/'+BRAND()+'/outreach/'+id+'/send',{}).then(function(r){
+      loadOutreach();loadGmail();loadInbox();
+      var n=r.recipients.filter(function(x){return x.state==='sent';}).length;
+      toast('발송 결과','발송 완료 '+n+'명. 수신자별 상태를 확인해 주세요.');
+    }).catch(function(){loadOutreach();toast('발송 확인','Gmail 연결과 발송 내역을 확인해 주세요.');}).finally(function(){outreachBusy=false;});
+  };
+  window.outreachCancel = function(id) {
+    req('POST','/brands/'+BRAND()+'/outreach/'+id+'/cancel',{}).then(loadOutreach).catch(function(){toast('취소 실패','새로고침 후 상태를 확인해 주세요.');});
+  };
+  window.outreachRefresh=loadOutreach;
+  window.inboxSend = function(thread,id) {
+    req('POST','/inbox/threads/'+thread+'/messages/'+id+'/send',{}).then(function(r){
+      window.__INBOX_OPEN=null;window.inboxOpen(thread);loadInbox();loadGmail();
+      toast(r.state==='sent'?'답장 발송 완료':'발송 대기',r.state==='sent'?'Gmail로 발송했습니다.':'Gmail 연결 또는 오늘의 발송 한도를 확인하세요.');
+    }).catch(function(){toast('발송 확인 필요','Gmail 보낸편지함에서 발송 여부를 확인하세요.');});
+  };
+  function outreachCard() {
+    if(!window.__ME) return '<div class="cc"><div class="t">아웃리치</div><p>로그인 후 메일 초안과 발송 내역을 확인할 수 있습니다.</p></div>';
+    var states={pending:'대기 · 연결/한도 확인',sending:'발송 시도 중 · 재발송 금지',sent:'발송 완료',review:'Gmail에서 발송 여부 확인',blocked:'수신 거부 또는 90일 내 중복'};
+    var rows=(outreachData && outreachData.batches || []).filter(function(b){return /^[a-f0-9-]{36}$/.test(b.id);}).map(function(b){
+      var pending=b.recipients.some(function(r){return r.state==='pending';});
+      return '<details style="margin-top:12px;border-top:1px solid #ddd;padding-top:12px"><summary>'+mailEscape(b.subject)+' · '+b.recipients.length+'명 · '+({draft:'초안',approved:'발송 승인됨',cancelled:'취소됨'}[b.state]||'')+'</summary>'+
+        '<p>'+b.recipients.map(function(r){return mailEscape(r.email)+' — '+(states[r.state]||'확인 필요');}).join('<br>')+'</p><pre style="white-space:pre-wrap;font:inherit">'+mailEscape(b.body)+'</pre><p style="font-size:12px">수신 거부 링크가 본문 끝에 자동으로 추가됩니다.</p>'+
+        (pending && b.state!=='cancelled'?'<button class="cbt" onclick="outreachSend(\''+b.id+'\')">'+(b.state==='draft'?'내용 승인하고 발송':'남은 수신자 발송')+'</button> ':'')+
+        (b.state==='draft'?'<button class="cbt no" onclick="outreachCancel(\''+b.id+'\')">초안 취소</button>':'')+'</details>';
+    }).join('');
+    return '<div class="cc"><div class="t">아웃리치 메일</div><p>수신자와 내용을 저장한 뒤 확인하고 발송합니다. 발송 한도를 넘긴 수신자는 대기하며, 수신 거부·90일 내 중복 발송은 제외합니다.</p>'+
+      '<label>수신자 이메일 · 최대 20명<textarea id="outRecipients" rows="3" style="width:100%;box-sizing:border-box" placeholder="이메일을 줄바꿈 또는 쉼표로 구분"></textarea></label>'+
+      '<label>제목<input id="outSubject" maxlength="150" style="width:100%;box-sizing:border-box"></label>'+
+      '<label>본문<textarea id="outBody" rows="6" style="width:100%;box-sizing:border-box"></textarea></label>'+
+      '<button class="cbt" onclick="outreachDraft()">초안 저장</button> <button class="cbt no" onclick="outreachRefresh()">내역 새로고침</button>'+rows+'</div>';
+  }
+
   /* ── 지메일 연동 — 브랜드 명의 발송(구글 OAuth) + 답장 인박스 ── */
   window.__GMAIL = null;
   window.__INBOX = null;
@@ -493,7 +554,7 @@
     req("POST", "/inbox/threads/" + id + "/reply", { body: v }).then(function () {
       window.inboxOpen(id); window.inboxOpen(id);   // 닫고 다시 로드
       loadInbox();
-      toast("답장 접수", "<b>승인함(OUTBOUND)</b>에 올라갔어요. 승인해야 실제로 나갑니다.");
+      toast("답장 접수", "대화에서 내용을 확인한 뒤 [승인하고 발송]을 눌러주세요.");
     }).catch(function () {});
   };
   var ARI_LABELS = { interested: ["관심 있음", "var(--gr,#2E7D51)"],
@@ -514,8 +575,8 @@
             ' <span class="cbt no" onclick="location.reload()">새로고침</span></div>');
     } else {
       var a = g.accounts[g.accounts.length - 1];
-      inner = "<p>✅ <b>" + a.email + "</b> 연결됨 — 오늘 " + a.sentToday + "/" + a.todayCap + "통 " +
-        "(워밍업 자동 증가). 답장은 아래 <b>인박스</b>로 들어옵니다.</p>" +
+      inner = "<p>✅ <b>" + mailEscape(a.email) + "</b> 연결됨 — 오늘 " + a.sentToday + "/" + a.todayCap + "통 " +
+        "(워밍업 자동 증가). " + (g.inboundReady ? "답장은 아래 인박스로 들어옵니다." : "답장은 연결된 Gmail 받은편지함에서 확인하세요.") + "</p>" +
         '<div style="margin-top:8px"><span class="cbt no" onclick="gmailDisconnect(\'' + a.accountId + '\')">연결 해제</span></div>';
     }
     return '<div class="cc" style="margin-bottom:12px"><div class="t">지메일 연동 — 구글 로그인으로 브랜드 명의 발송</div>' + inner + "</div>";
@@ -527,18 +588,18 @@
     var items = L.slice(0, 6).map(function (t) {
       var lb = ARI_LABELS[t.ariLabel] || ARI_LABELS.other;
       var row = "<div style='margin-top:8px;padding-top:8px;border-top:1px solid var(--n100,#eee);cursor:pointer' onclick=\"inboxOpen('" + t.threadId + "')\">" +
-        "<b>@" + (t.handle || t.creatorEmail) + "</b> " +
+        "<b>@" + mailEscape(t.handle || t.creatorEmail) + "</b> " +
         "<span style='font-size:9.6px;padding:1px 6px;border-radius:8px;border:1px solid " + lb[1] + ";color:" + lb[1] + "'>아리: " + lb[0] + "</span>" +
         (t.lastDirection === "in" ? " <span style='font-size:9.6px;color:var(--bd,#8E3B2A)'>● 답장 옴</span>" : "") +
         "</div>";
       if (open && open.id === t.threadId && open.data) {
         var msgs = open.data.messages.map(function (m) {
           var mine = m.direction === "out";
-          var st = m.state === "pending_gate" ? " · <i>승인 대기</i>" : m.state === "held" ? " · <i>보류됨</i>" : "";
+          var st = m.state === "pending_gate" ? " · <i>승인 대기</i>" : m.state === "held" ? " · <i>보류됨</i>" : m.state === "sending" || m.state === "review" ? " · <i>Gmail에서 발송 여부 확인</i>" : "";
           return "<div style='margin:5px 0;text-align:" + (mine ? "right" : "left") + "'>" +
             "<span style='display:inline-block;max-width:82%;padding:6px 9px;border-radius:9px;font-size:10.6px;" +
             (mine ? "background:var(--n100,#eee)" : "background:var(--sand,#F4EDE3)") + "'>" +
-            m.body + "<span style='font-size:9px;color:var(--n600)'>" + st + "</span></span></div>";
+            mailEscape(m.body) + "<span style='font-size:9px;color:var(--n600)'>" + st + "</span></span>" + (m.state === "pending_gate" ? ' <button class="cbt" onclick="inboxSend(\'' + t.threadId + '\',' + Number(m.msgId) + ')">승인하고 발송</button>' : '') + "</div>";
         }).join("");
         row += "<div style='margin-top:6px'>" + msgs +
           '<div style="display:flex;gap:6px;margin-top:7px"><input id="ibxBody" placeholder="답장 쓰기 — 승인함을 거쳐 발송됩니다" style="flex:1">' +
@@ -631,7 +692,7 @@
       window.srcView = function () {
         var h = _srcView();
         if (typeof ST !== "undefined" && ST.srcTab === "mail")
-          h = '<div class="cvbd" style="padding-bottom:0">' + gmailCard() + inboxCard() + senderCard() + "</div>" + h;
+          h = '<div class="cvbd" style="padding-bottom:0">' + gmailCard() + outreachCard() + inboxCard() + "</div>";
         if (typeof ST !== "undefined" && ST.srcTab === "tkshop")
           h = '<div class="cvbd" style="padding-bottom:0">' + dispatchCard() + "</div>" + h;
         return h;
@@ -640,6 +701,7 @@
       loadDispatch();
       loadGmail();
       loadInbox();
+      loadOutreach();
     }
   } catch (e) {}
 
@@ -690,7 +752,8 @@
   window.__ME = null;
 
   function reloadBrand() {
-    try { loadBilling(); loadSenders(); loadGmail(); loadInbox(); loadDispatch(); } catch (e) {}
+    outreachData=null; outreachVersion++; window.__INBOX_OPEN=null;
+    try { loadOutreach(); loadBilling(); loadSenders(); loadGmail(); loadInbox(); loadDispatch(); } catch (e) {}
     if (window.render) try { render(); } catch (e) {}
   }
   function authPanel(html) {

@@ -71,6 +71,8 @@ app.include_router(_agents_router)
 app.include_router(_senders_router)
 app.include_router(_dispatch_router)
 app.include_router(_gmail_router)
+from .routes_outreach import router as _outreach_router
+app.include_router(_outreach_router)
 app.include_router(_auth_router)
 app.include_router(_billing_router)
 app.include_router(_payments_router)

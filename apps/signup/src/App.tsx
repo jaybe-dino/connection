@@ -110,7 +110,7 @@ export default function App() {
 
       {step === 2 && (
         <Card>
-          <div style={{ fontWeight: 900, fontSize: 20 }}>가입 1명당 ₩5,000</div>
+          <div style={{ fontWeight: 900, fontSize: 20 }}>가입 1명당 ₩50</div>
           <p>부가세 포함 금액입니다. 고정 구독료 없이 월말에 가입 건수를 합산해 결제합니다.</p>
           <p style={{ fontSize: 12, color: "var(--n500)" }}>브랜드별 검증 가입 기준입니다. 같은 브랜드의 중복 가입은 추가 과금하지 않습니다.</p>
         </Card>

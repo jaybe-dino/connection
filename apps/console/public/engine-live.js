@@ -38,14 +38,64 @@
   }
   function fire(method, path, body) { req(method, path, body).catch(function () {}); }
 
+  var billingInvoices = [];
+  var billingConfigured = false;
+  var checkoutBusy = false;
+  window.billingInvoicesHtml = function () {
+    var rows = billingInvoices.filter(function (i) { return /^PRLIST_[a-f0-9]{24}$/.test(i.id) && /^\d{4}-\d{2}$/.test(i.period); });
+    if (!rows.length) return '<p>마감된 월의 청구서가 없습니다.</p>';
+    var labels = {open:'결제 대기', processing:'결제 확인 중', paid:'결제 완료', review:'거래 확인 필요'};
+    return '<h3>월별 청구서</h3>' + rows.map(function (i) {
+      return '<div style="padding:12px;border-bottom:1px solid #ddd">' + i.period + ' · ' + Number(i.quantity) + '명 · ₩' + Number(i.amount).toLocaleString() + ' (부가세 포함) · ' + (labels[i.status] || '확인 중') +
+        (i.status === 'open' && billingConfigured ? ' <button class="btn" onclick="paySignupInvoice(\'' + i.id + '\')">카드 결제</button>' : '') +
+        (i.status === 'processing' || i.status === 'review' ? ' <button class="btn line" onclick="checkSignupInvoice(\'' + i.id + '\')">거래 확인</button>' : '') + '</div>';
+    }).join('') + (billingConfigured ? '' : '<p>결제사 연결 설정 중입니다. 청구 내역은 보관됩니다.</p>');
+  };
+  window.checkSignupInvoice = function (id) {
+    req('POST', '/brands/' + BRAND() + '/billing/invoices/' + id + '/reconcile', {}).then(loadBilling)
+      .catch(function () { toast('확인 필요', '거래 확인을 완료하지 못했습니다. 잠시 후 다시 확인해 주세요.'); });
+  };
+  window.paySignupInvoice = function (id) {
+    if (checkoutBusy) return;
+    checkoutBusy = true;
+    var targetBrand = BRAND();
+    req('POST', '/brands/' + targetBrand + '/billing/invoices/' + id + '/checkout', {}).then(function (order) {
+      return new Promise(function (resolve, reject) {
+        if (window.AUTHNICE) return resolve(order);
+        var script = document.createElement('script');
+        script.src = 'https://pay.nicepay.co.kr/v1/js/';
+        script.onload = function () { resolve(order); };
+        script.onerror = function () { script.remove(); reject(new Error('sdk')); };
+        document.head.appendChild(script);
+      });
+    }).then(function (order) {
+      if (BRAND() !== targetBrand) throw new Error('account changed');
+      window.AUTHNICE.requestPay(Object.assign({}, order, {fnError: function () {
+        checkoutBusy = false;
+        toast('결제창 종료', '결제 내역을 새로고침해 상태를 확인해 주세요.');
+      }}));
+      checkoutBusy = false;
+    }).catch(function () {
+      checkoutBusy = false;
+      toast('결제 준비 중', '결제창을 열지 못했습니다. 청구 내역을 새로고침해 주세요.');
+    });
+  };
   var billingVersion = 0;
   window.__billing = null;
   function loadBilling() {
     var version = ++billingVersion;
     window.__billing = null;
+    billingInvoices = [];
+    billingConfigured = false;
     req("GET", "/brands/" + BRAND() + "/billing").then(function (summary) {
       if (version !== billingVersion) return;
       window.__billing = summary;
+      req('POST', '/brands/' + BRAND() + '/billing/invoices', {}).then(function (result) {
+        if (version !== billingVersion) return;
+        billingInvoices = result.invoices;
+        billingConfigured = result.configured;
+        if (typeof ST !== 'undefined' && ST.b === 'settle' && window.render) render();
+      }).catch(function () {});
       if (typeof ST !== "undefined" && ST.b === "settle" && window.render) render();
     }).catch(function () {
       if (version === billingVersion && typeof ST !== "undefined" && ST.b === "settle" && window.render) render();

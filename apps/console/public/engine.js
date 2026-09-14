@@ -686,7 +686,8 @@ settle:()=>({t:'가입 과금',s:'가입 1명당 ₩5,000 · 고정 구독료 �
   ${mc('누적 이용금액',window.__billing ? '₩'+Number(window.__billing.usageAmount).toLocaleString() : '—','','',null,'실제 결제금액은 결제 내역에서 확인')}
  </div>
  <p>${window.__billing ? (window.__billing.demo ? '데모 브랜드는 실제 과금에서 제외됩니다.' : '검증이 완료된 브랜드 가입을 기준으로 집계합니다.') : '로그인 후 실제 가입 건수를 확인할 수 있습니다.'}</p>
- <p>결제 주기와 부가세 기준 설정 중입니다. 현재 자동 결제는 활성화되지 않았습니다.</p>
+ <p>부가세 포함 · 매월 말일 기준 합산하여 청구합니다. 청구서에서 카드로 결제할 수 있습니다.</p>
+ ${window.billingInvoicesHtml ? window.billingInvoicesHtml() : ''}
  <button class="btn line" onclick="window.refreshBilling && window.refreshBilling()">새로고침</button>`}),
 };
 
@@ -936,7 +937,7 @@ function bjoinView(){
    <button class="btn lg" onclick="${B.slugOk?'bjNext(1)':`toast('주소 확인 필요','<b>중복 확인</b>을 눌러 주소를 확정해 주세요.')`}">다음</button></div>`;
  else if(B.step===2) body=`
   <h2>가입한 만큼만 결제합니다</h2>
-  <p class="bjs">고정 구독료 없이 <b>가입 1명당 ₩5,000</b>입니다.</p>
+  <p class="bjs">고정 구독료 없이 <b>가입 1명당 ₩5,000 (부가세 포함)</b>입니다. 월말에 가입 건수를 합산해 결제합니다.</p>
   <div class="bjp on"><div class="pn2">가입당 과금</div>
    <div class="pp">₩5,000<i>/명</i></div>
    <div class="pd">브랜드별 검증 가입 기준 · 같은 브랜드의 중복 가입은 추가 과금하지 않습니다.</div></div>

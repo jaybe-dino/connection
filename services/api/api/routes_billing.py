@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Header, HTTPException
 
 from .auth import current_user, require_brand
+from . import nicepay
 from .db import connect
 
 router = APIRouter()
@@ -28,5 +29,6 @@ def billing_summary(brand_id: str, authorization: str = Header(default=''),
             'quantity': totals['quantity'], 'usageAmount': totals['amount'],
             'currency': 'KRW', 'demo': brand['is_demo'],
             'effectiveAt': policy['effective_at'].isoformat(),
-            'collectionEnabled': False, 'taxTreatment': 'pending',
-            'message': '가입당 5,000원 · 결제 주기와 부가세 기준 설정 중'}
+            'collectionEnabled': bool(nicepay.configured()), 'taxTreatment': 'inclusive',
+            'collection': 'monthly_invoice',
+            'message': '가입당 5,000원 (부가세 포함) · 월말 합산 결제'}

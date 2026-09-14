@@ -25,6 +25,23 @@ def _mail_demo_mode() -> bool:
                 or os.environ.get("GOOGLE_CLIENT_ID"))
 
 
+def _send_system_mail(to: str, subject: str, body: str) -> bool:
+    """시스템 메일(초대·매직링크) — SYSTEM_MAIL_BRAND에 연결된 지메일로 발송.
+
+    실모드에서만 시도. 실패해도 예외를 올리지 않는다(호출측이 힌트 응답).
+    """
+    from .routes_gmail import _demo_mode, send_via_brand_gmail
+    if _demo_mode():
+        return False
+    brand = os.environ.get("SYSTEM_MAIL_BRAND", "glowlab")
+    try:
+        with connect() as conn:
+            return bool(send_via_brand_gmail(conn, brand, to, subject, body))
+    except Exception:
+        log.exception("시스템 메일 발송 실패 → %s", to)
+        return False
+
+
 def _user_out(u: dict) -> dict:
     return {"userId": str(u["user_id"]), "kind": u["kind"], "email": u["email"],
             "brandId": u["brand_id"], "creatorId": u["creator_id"],
@@ -187,7 +204,15 @@ def invite_brand(body: InviteIn, authorization: str = Header(default=""),
     if _mail_demo_mode():
         out["demoLink"] = link      # 실모드에선 메일로만 발송
     else:
-        log.info("초대 메일 발송 대상 %s → %s", email, link)  # ESP 연동 지점
+        sent = _send_system_mail(
+            email, "The PR List — 브랜드 콘솔 초대",
+            f"안녕하세요, The PR List입니다.\n\n{body.brand_id} 브랜드 콘솔 계정이"
+            f" 준비됐어요. 아래 링크에서 비밀번호를 설정하면 바로 시작됩니다"
+            f" (72시간 유효).\n\n{link}\n\n— 아리 드림")
+        out["sent"] = sent
+        if not sent:
+            out["demoLink"] = link
+            out["hint"] = "시스템 발신 지메일 미연결 — 링크를 직접 전달하세요 (SYSTEM_MAIL_BRAND)"
     return out
 
 
@@ -238,7 +263,12 @@ def magic_request(body: MagicIn) -> dict:
     if _mail_demo_mode():
         out["demoLink"] = link
     else:
-        log.info("매직링크 발송 %s → %s", email, link)     # ESP 연동 지점
+        out["sent"] = _send_system_mail(
+            email, "The PR List — 로그인 링크",
+            f"안녕하세요! 아래 링크를 누르면 바로 로그인됩니다 (15분 유효).\n\n"
+            f"{link}\n\n본인이 요청하지 않았다면 이 메일은 무시하세요.\n— 아리")
+        if not out["sent"]:
+            out["hint"] = "메일 발송 실패 — 잠시 후 다시 시도해 주세요"
     return out
 
 

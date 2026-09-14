@@ -57,6 +57,12 @@ export const authApi = {
       return r.json() as Promise<{ token: string; user: AuthUser }>;
     }),
   me: () => req<AuthUser>("/auth/me"),
+  otpSetup: () =>
+    req<{ secret: string; otpauthUri: string }>("/auth/otp/setup",
+      { method: "POST", body: "{}" }),
+  otpEnable: (code: string) =>
+    req<{ ok: boolean }>("/auth/otp/enable",
+      { method: "POST", body: JSON.stringify({ code }) }),
 };
 
 export interface Summary {

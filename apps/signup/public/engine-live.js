@@ -583,6 +583,22 @@
     var _bjDone = window.bjDone;
     window.bjDone = function () {
       var B = (typeof ST !== "undefined" && ST.bj) || {};
+      // 담당자 이메일 — 승인되면 이 주소로 콘솔 로그인 초대가 간다
+      if (!window.__BJ_EMAIL) {
+        authPanel("<b>담당자 이메일</b><div style='margin-top:5px;color:#5a6560'>" +
+          "승인되면 이 주소로 <b>콘솔 로그인 초대</b>가 갑니다.</div>" +
+          "<input id='bjEmail' placeholder='marketing@brand.com'" +
+          " style='width:100%;padding:6px;margin-top:8px;box-sizing:border-box'>" +
+          "<div style='margin-top:8px'><span class='cbt' onclick='bjEmailGo()'>이 주소로 받을게요</span></div>");
+        window.bjEmailGo = function () {
+          var v = ((document.getElementById("bjEmail") || {}).value || "").trim();
+          if (v.indexOf("@") < 0) return toast("담당자 이메일", "이메일 형식을 확인해 주세요.");
+          window.__BJ_EMAIL = v;
+          authPanel(null);
+          window.bjDone();
+        };
+        return;
+      }
       fire("POST", "/applications", {
         slug: (B.slug || "glowlab") + "-" + Date.now().toString(36).slice(-4),
         name: "GLOWLAB", biz_no: "123-45-67890", category: "스킨케어",
@@ -596,7 +612,7 @@
           sample_criteria: "등급 B 이상 + 태국 거주",
           voice: "존댓말 · 이모지 최소 · 태국어는 부드럽게",
         },
-        contact: "hana@glowlab.kr",
+        contact: window.__BJ_EMAIL || "hana@glowlab.kr",
       });
       _bjDone();
     };

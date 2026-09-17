@@ -80,7 +80,7 @@ def checkout(brand_id: str, invoice_id: str, authorization: str = Header(default
     if row['status'] != 'open':
         raise HTTPException(409, '이미 처리 중이거나 결제된 청구서입니다')
     return {'clientId': nicepay.client_key(), 'method': 'card', 'orderId': invoice_id,
-            'amount': row['amount'], 'goodsName': 'The PR List ' + row['period'].strftime('%Y-%m') + ' 가입 이용료',
+            'amount': row['amount'], 'goodsName': 'theprlist ' + row['period'].strftime('%Y-%m') + ' 가입 이용료',
             'returnUrl': RETURN_URL}
 
 

@@ -12,6 +12,7 @@ GOOGLE_CLIENT_ID 가 없으면 **데모 모드**: 연결·발송이 즉시 성�
 
 import base64
 import json
+from html import escape
 import logging
 import hmac
 import os
@@ -166,7 +167,7 @@ def connect_gmail(brand_id: str, body: ConnectIn,
 def gmail_callback(code: str = "", state: str = "", error: str = "") -> HTMLResponse:
     """구글 동의 후 리다이렉트 — 코드를 토큰으로 교환하고 계정 저장 (실모드)."""
     if error or not code:
-        return HTMLResponse(f"<h3>연결 취소됨</h3><p>{error or 'code 없음'}</p>", 400)
+        return HTMLResponse(f"<h3>연결 취소됨</h3><p>{escape(error or 'code 없음')}</p>", 400)
     if _demo_mode():
         raise HTTPException(400, "데모 모드에서는 콜백을 쓰지 않습니다")
     brand_id = _verify_state(state)
@@ -180,7 +181,7 @@ def gmail_callback(code: str = "", state: str = "", error: str = "") -> HTMLResp
         "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET", ""),
         "redirect_uri": redirect}, timeout=15).json()
     if "access_token" not in tok:
-        return HTMLResponse(f"<h3>토큰 교환 실패</h3><pre>{tok.get('error','')}</pre>", 400)
+        return HTMLResponse(f"<h3>토큰 교환 실패</h3><pre>{escape(str(tok.get('error','')))}</pre>", 400)
     # id_token(구글이 TLS로 직접 준 값)에서 이메일만 꺼낸다
     payload = tok.get("id_token", "").split(".")[1]
     payload += "=" * (-len(payload) % 4)
@@ -296,7 +297,7 @@ _INTEREST_KW = ("interested", "yes", "sounds good", "love to", "let's do",
 
 
 def _ari_label(text: str) -> str:
-    """아리 1차 분류 — 키워드 휴리스틱 (ANTHROPIC 키 있으면 P1에서 승격)."""
+    """theprlist 1차 분류 — 키워드 휴리스틱 (ANTHROPIC 키 있으면 P1에서 승격)."""
     t = text.lower()
     if any(k in t for k in _DECLINE_KW):
         return "declined"

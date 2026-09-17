@@ -2,7 +2,7 @@
 
 const BASE: string =
   (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL ||
-  new URLSearchParams(location.search).get("api") ||
+  (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? new URLSearchParams(location.search).get("api") : null) ||
   (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)
     ? "http://localhost:8000"
     : "https://api.theprlist.net");
@@ -105,7 +105,7 @@ export const adminApi = {
   applications: (status = "pending") =>
     req<Application[]>(`/admin/applications?status=${status}`),
   approveApplication: (id: string) =>
-    req<{ brandId: string }>(`/admin/applications/${id}/approve`, { method: "POST" }),
+    req<{ brandId: string; inviteLink?: string }>(`/admin/applications/${id}/approve`, { method: "POST" }),
   rejectApplication: (id: string, reason: string) =>
     req(`/admin/applications/${id}/reject`, {
       method: "POST", body: JSON.stringify({ reason }),

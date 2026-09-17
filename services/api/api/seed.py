@@ -103,12 +103,12 @@ def _seed(conn: psycopg.Connection) -> None:
         " ('glowlab','kim','approver','{PII,PAYOUT,OUTBOUND,PUBLISH}'),"
         " ('glowlab','lee','operator','{}')")
 
-    # 승인 대기 게이트 4건 (아리 요청)
+    # 승인 대기 게이트 4건 (theprlist 요청)
     gates = [
         ("PII", "cmp-1 선정 10명 배송 주소 전달", "물류사 CSV 내보내기 — 주소·연락처 포함"),
         ("OUTBOUND", "메일 시퀀스 1단 80건 발송", "태국 mid 등급 · 검증 이메일만 · 스팸 점수 0.4"),
         ("PAYOUT", "8월 정산 3건 ฿4,200 실행", "검수 통과 3건 — PingPong 일괄"),
-        ("PUBLISH", "주간 피드 공지 게시 (태국 셀)", "멤버 콘텐츠 큐레이션 4건 — 아리 초안"),
+        ("PUBLISH", "주간 피드 공지 게시 (태국 셀)", "멤버 콘텐츠 큐레이션 4건 — theprlist 초안"),
     ]
     for kind, summary, detail in gates:
         row = conn.execute(

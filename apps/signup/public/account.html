@@ -2,14 +2,10 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#faf8f4" />
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="/demo.css?v=e3498f40" />
     <link rel="stylesheet" href="/product.css?v=dc70343c" />
-    <link rel="stylesheet" href="/mobile.css?v=58dda4e6" />
-    <title>theprlist</title>
+    <title>theprlist — 브랜드 가입</title>
   </head>
   <body>
     <div class="svcbar">
@@ -22,12 +18,8 @@
     </div>
     <div class="stage" id="stage"></div>
     <div id="toastWrap"></div>
-    <script>window.__SURFACE = "creator";</script>
+    <script>window.__SURFACE = "bjoin";</script>
     <script src="/engine.js?v=5e88cf78"></script>
     <script src="/engine-live.js?v=23bb8700"></script>
-    <script>
-      if ("serviceWorker" in navigator && location.protocol === "https:")
-        navigator.serviceWorker.register("/sw.js");
-    </script>
   </body>
 </html>

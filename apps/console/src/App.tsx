@@ -65,7 +65,7 @@ function Rail() {
       <div style={{ padding: "0 10px 16px", color: "var(--n0)", fontWeight: 900, fontSize: 15 }}>
         {mockBrand.name}
         <div style={{ fontSize: 10, fontWeight: 600, color: "var(--d400)", marginTop: 2 }}>
-          connection.app/{mockBrand.id} · {mockBrand.plan}
+          theprlist.net/{mockBrand.id} · {mockBrand.plan}
         </div>
       </div>
       {RAIL.map((r) => (

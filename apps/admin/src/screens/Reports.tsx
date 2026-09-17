@@ -9,7 +9,7 @@ const ACTIONS: [string, string, string][] = [
   ["suspend_7d", "7일 정지", "var(--c500)"],
 ];
 
-/** 신고 처리함 — 아리 1차 분류 → 운영자 조치. SLA 심각 24h · 일반 72h */
+/** 신고 처리함 — theprlist 1차 분류 → 운영자 조치. SLA 심각 24h · 일반 72h */
 export default function Reports({ onChange }: { onChange: () => void }) {
   const [rows, setRows] = useState<Report[]>([]);
   const load = () => adminApi.reports().then(setRows).catch(() => {});

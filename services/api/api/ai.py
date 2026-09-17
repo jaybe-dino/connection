@@ -1,7 +1,7 @@
-"""번역 · 아리 응답 — Claude API (Anthropic SDK).
+"""번역 · theprlist 응답 — Claude API (Anthropic SDK).
 
 ANTHROPIC_API_KEY가 없으면 결정적 폴백으로 동작해 전체 시스템이 멈추지 않는다.
-모델: claude-opus-5 · 적응형 사고 · 작업별 effort (번역 low / 아리 대화 high).
+모델: claude-opus-5 · 적응형 사고 · 작업별 effort (번역 low / theprlist 대화 high).
 캠페인 일괄 번역같은 비실시간 대량 작업은 추후 Batches API(50% 할인)로 이관.
 """
 
@@ -73,7 +73,7 @@ def translate(text: str, source_locale: str, target_locales: list[str]) -> dict[
 
 
 ARI_SYSTEM = (
-    "당신은 '아리' — K-뷰티 브랜드 {brand_name}의 전담 크리에이터 커뮤니티 운영 "
+    "당신은 'theprlist' — K-뷰티 브랜드 {brand_name}의 전담 크리에이터 커뮤니티 운영 "
     "에이전트입니다. 브랜드 담당자와 콘솔에서 대화합니다.\n"
     "원칙: 밖으로 나가는 모든 행동(발송·게시·정산·개인정보)은 게이트에서 사람이 "
     "승인해야 실행됩니다 — 당신은 초안과 판단까지만 합니다. 결정을 대신하지 말고 "
@@ -83,12 +83,12 @@ ARI_SYSTEM = (
 
 
 def ari_reply(brand_name: str, context: str, history: list[dict], user_msg: str) -> str:
-    """콘솔 아리 채팅 응답. history: [{role, content}] (user/assistant)."""
+    """콘솔 theprlist 채팅 응답. history: [{role, content}] (user/assistant)."""
     client = _client()
     if client is None:
         return (
             "지금은 AI 미연동 상태예요 (ANTHROPIC_API_KEY 필요). "
-            f"질문은 기록해뒀어요: “{user_msg[:60]}”"
+            "잠시 후 다시 시도해 주세요."
         )
 
     resp = client.messages.create(

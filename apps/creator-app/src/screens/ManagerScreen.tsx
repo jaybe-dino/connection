@@ -59,7 +59,7 @@ export default function ManagerScreen() {
           >
             <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 3 }}>
               <span style={{ fontWeight: 800, fontSize: 11 }}>
-                {m.author === "ari" ? "아리" : m.author === "brand" ? "브랜드 담당자" : "나"}
+                {m.author === "ari" ? "theprlist" : m.author === "brand" ? "브랜드 담당자" : "나"}
               </span>
               {m.author === "ari" && <Badge color="plum">운영</Badge>}
               <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--n400)" }}>{m.at}</span>

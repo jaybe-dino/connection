@@ -4,14 +4,14 @@
 (function () {
   try {
     var q = new URLSearchParams(location.search).get("api");
-    if (q) localStorage.setItem("CONNECTION_API_URL", q);
+    if (q && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) localStorage.setItem("CONNECTION_API_URL", q);
     var qk = new URLSearchParams(location.search).get("key");
-    if (qk) localStorage.setItem("CONNECTION_ADMIN_KEY", qk);
+    if (qk && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) localStorage.setItem("CONNECTION_ADMIN_KEY", qk);
   } catch (e) {}
   var API = (function () {
     var fallback = /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
       ? "http://localhost:8000" : "https://api.theprlist.net";
-    try { return localStorage.getItem("CONNECTION_API_URL") || fallback; }
+    try { return /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? (localStorage.getItem("CONNECTION_API_URL") || fallback) : fallback; }
     catch (e) { return fallback; }
   })();
   window.__API_URL = API;
@@ -34,15 +34,17 @@
       method: method,
       headers: h,
       body: body ? JSON.stringify(body) : undefined,
-    }).then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); });
+    }).then(function (r) { return r.json().then(function(data){if(!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : "요청을 처리하지 못했습니다 ("+r.status+")");return data;}); });
   }
   function fire(method, path, body) { req(method, path, body).catch(function () {}); }
 
   var billingInvoices = [];
   var billingConfigured = false;
+  var billingStatus = "불러오는 중입니다.";
   var checkoutBusy = false;
   window.billingInvoicesHtml = function () {
     var rows = billingInvoices.filter(function (i) { return /^PRLIST_[a-f0-9]{24}$/.test(i.id) && /^\d{4}-\d{2}$/.test(i.period); });
+    if(billingStatus)return '<p role="status">'+mailEscape(billingStatus)+'</p>';
     if (!rows.length) return '<p>마감된 월의 청구서가 없습니다.</p>';
     var labels = {open:'결제 대기', processing:'결제 확인 중', paid:'결제 완료', review:'거래 확인 필요'};
     return '<h3>월별 청구서</h3>' + rows.map(function (i) {
@@ -84,6 +86,7 @@
   window.__billing = null;
   function loadBilling() {
     var version = ++billingVersion;
+    billingStatus="불러오는 중입니다.";
     window.__billing = null;
     billingInvoices = [];
     billingConfigured = false;
@@ -92,12 +95,14 @@
       window.__billing = summary;
       req('POST', '/brands/' + BRAND() + '/billing/invoices', {}).then(function (result) {
         if (version !== billingVersion) return;
+        billingStatus="";
         billingInvoices = result.invoices;
         billingConfigured = result.configured;
         if (typeof ST !== 'undefined' && ST.b === 'settle' && window.render) render();
-      }).catch(function () {});
+      }).catch(function(e){if(version===billingVersion){billingStatus="청구 조회 실패: "+e.message;if(window.render)render();}});
       if (typeof ST !== "undefined" && ST.b === "settle" && window.render) render();
-    }).catch(function () {
+    }).catch(function (e) {
+      if(version===billingVersion)billingStatus="청구 조회 실패: "+e.message;
       if (version === billingVersion && typeof ST !== "undefined" && ST.b === "settle" && window.render) render();
     });
   }
@@ -293,7 +298,7 @@
     });
   };
 
-  /* ── 콘솔: 아리 검토(컴플라이언스) · AI 브리프 → 실서버 ── */
+  /* ── 콘솔: theprlist 검토(컴플라이언스) · AI 브리프 → 실서버 ── */
   window.ariReview = function () {
     var nm = (document.getElementById("ncn") || {}).value || "9월 진정 앰플";
     var text = nm + " — 48시간 진정 테스트 완료 · 무향 · 민감성 전용 · #ad 표기";
@@ -302,17 +307,17 @@
       banned_words: ["미백", "최고"], require_disclosure: true,
     }).then(function (r) {
       if (r.ok && !r.violations.length)
-        return toast("아리 검토 · 통과", "금지어·의학적 표현·광고 표기 모두 문제 없어요. 게시해도 됩니다.");
+        return toast("theprlist 검토 · 통과", "금지어·의학적 표현·광고 표기 모두 문제 없어요. 게시해도 됩니다.");
       var rows = r.violations.map(function (v) {
         return "<div style='margin:5px 0'>" +
           (v.severity === "block" ? "⛔" : "⚠️") + " <b>" + v.term + "</b> — " +
           v.message + (v.fix ? "<br><span style='color:var(--n600)'>→ " + v.fix + "</span>" : "") +
           "</div>";
       }).join("");
-      toast(r.ok ? "아리 검토 · 주의 " + r.violations.length + "건"
-                 : "아리 검토 · 게시 불가", rows);
+      toast(r.ok ? "theprlist 검토 · 주의 " + r.violations.length + "건"
+                 : "theprlist 검토 · 게시 불가", rows);
     }).catch(function () {
-      toast("아리 검토", "문구를 아리가 먼저 봅니다 — <b>금지어 검사</b>와 국가별 광고 표기 규정 체크를 통과해야 게시돼요.");
+      toast("theprlist 검토", "문구를 theprlist가 먼저 봅니다 — <b>금지어 검사</b>와 국가별 광고 표기 규정 체크를 통과해야 게시돼요.");
     });
   };
   window.briefGen = function () {
@@ -337,11 +342,11 @@
         var v = _camp();
         if (v.b) {
           v.b = v.b.replace(
-            /onclick="toast\('아리 검토'[\s\S]*?\)"(?=>아리 검토 먼저)/,
+            /onclick="toast\('theprlist 검토'[\s\S]*?\)"(?=>theprlist 검토 먼저)/,
             'onclick="ariReview()"');
           v.b = v.b.replace(
-            '>아리 검토 먼저</button>',
-            '>아리 검토 먼저</button><button class="btn line" onclick="briefGen()">AI 브리프</button>');
+            '>theprlist 검토 먼저</button>',
+            '>theprlist 검토 먼저</button><button class="btn line" onclick="briefGen()">AI 브리프</button>');
         }
         return v;
       };
@@ -455,6 +460,7 @@
     if(!recipients.length || recipients.length>20 || !subject || !body) return toast('입력 확인','수신자는 한 번에 최대 20명이며, 제목과 본문을 입력해 주세요.');
     outreachBusy=true;
     req('POST','/brands/'+BRAND()+'/outreach',{recipients:recipients,subject:subject,body:body}).then(function(){
+      ['outRecipients','outSubject','outBody'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
       loadOutreach(); toast('초안 저장','수신자와 내용을 확인한 뒤 발송해 주세요.');
     }).catch(function(){toast('저장 실패','로그인 상태와 이메일 형식을 확인해 주세요.');}).finally(function(){outreachBusy=false;});
   };
@@ -499,13 +505,17 @@
   window.__INBOX = null;
   window.__INBOX_OPEN = null;   // 펼친 스레드 {id, data}
   function loadGmail() {
+    var current=jwtGet(),brand=BRAND();
     req("GET", "/brands/" + BRAND() + "/gmail").then(function (g) {
+      if(jwtGet()!==current || BRAND()!==brand)return;
       window.__GMAIL = g;
       if (typeof ST !== "undefined" && ST.b === "src" && window.render) render();
     }).catch(function () {});
   }
   function loadInbox() {
+    var current=jwtGet(),brand=BRAND();
     req("GET", "/brands/" + BRAND() + "/inbox").then(function (l) {
+      if(jwtGet()!==current || BRAND()!==brand)return;
       window.__INBOX = l;
       if (typeof ST !== "undefined" && ST.b === "src" && window.render) render();
     }).catch(function () {});
@@ -513,10 +523,12 @@
   window.gmailConnect = function () {
     var g = window.__GMAIL;
     if (g && !g.demo) {          // 실모드 — 구글 동의 화면으로
+      var popup=window.open("about:blank","_blank");
       req("POST", "/brands/" + BRAND() + "/gmail/connect", {}).then(function (r) {
-        if (r.authUrl) window.open(r.authUrl, "_blank");
+        if(r.authUrl){if(popup)popup.location=r.authUrl;else location.href=r.authUrl;}
         toast("구글 로그인", "새 창에서 회사 지메일로 로그인하고 허용을 누르세요. 끝나면 [새로고침]을 눌러주세요.");
       }).catch(function (e) {
+        if(popup)popup.close();
         toast(e === 401 ? "인증 필요" : "연결 실패",
           e === 401 ? "주소 뒤에 <b>?key=어드민키</b>를 붙여 접속한 뒤 다시 시도하세요."
                     : "잠시 후 다시 시도해 주세요.");
@@ -528,13 +540,13 @@
     if (!v) return toast("지메일 연결", "연결할 회사 지메일 주소를 입력해 주세요.");
     req("POST", "/brands/" + BRAND() + "/gmail/connect", { email: v }).then(function () {
       loadGmail();
-      toast("연결 완료 (데모)", "실서비스에선 구글 로그인 창이 뜹니다. 이제 아리가 <b>" + v + "</b> 명의로 보냅니다.");
+      toast("연결 완료 (데모)", "실서비스에선 구글 로그인 창이 뜹니다. 이제 theprlist가 <b>" + v + "</b> 명의로 보냅니다.");
     }).catch(function () {});
   };
   window.gmailDisconnect = function (id) {
     req("DELETE", "/gmail/accounts/" + id).then(function () {
       loadGmail(); toast("연결 해제", "이 지메일로는 더 이상 발송하지 않습니다.");
-    }).catch(function () {});
+    }).catch(function (e) {toast("연결 해제 실패",mailEscape(e.message));});
   };
   window.inboxOpen = function (id) {
     if (window.__INBOX_OPEN && window.__INBOX_OPEN.id === id) {
@@ -545,7 +557,7 @@
     req("GET", "/inbox/threads/" + id).then(function (t) {
       window.__INBOX_OPEN = { id: id, data: t };
       if (window.render) render();
-    }).catch(function () {});
+    }).catch(function (e) {toast("대화 조회 실패",mailEscape(e.message));});
   };
   window.inboxReply = function (id) {
     var el = document.getElementById("ibxBody");
@@ -555,7 +567,7 @@
       window.inboxOpen(id); window.inboxOpen(id);   // 닫고 다시 로드
       loadInbox();
       toast("답장 접수", "대화에서 내용을 확인한 뒤 [승인하고 발송]을 눌러주세요.");
-    }).catch(function () {});
+    }).catch(function (e) {toast("답장 저장 실패",mailEscape(e.message));});
   };
   var ARI_LABELS = { interested: ["관심 있음", "var(--gr,#2E7D51)"],
                      declined: ["거절", "var(--n600)"],
@@ -566,7 +578,7 @@
     if (g === null) {
       inner = '<p style="font-size:10.6px;color:var(--n600)">서버에 연결되면 회사 지메일을 연동할 수 있어요.</p>';
     } else if (!g.accounts.length) {
-      inner = "<p><b>회사 지메일로 직접 발송</b> — 구글 로그인 한 번이면 아리가 그 주소 명의로 보냅니다. " +
+      inner = "<p><b>회사 지메일로 직접 발송</b> — 구글 로그인 한 번이면 theprlist가 그 주소 명의로 보냅니다. " +
         "비밀번호는 저장하지 않고, 구글 계정 설정에서 언제든 해제할 수 있어요.</p>" +
         (g.demo
           ? '<div style="display:flex;gap:6px;margin-top:9px"><input id="gmEmail" placeholder="hello@brand.com" style="flex:1">' +
@@ -589,7 +601,7 @@
       var lb = ARI_LABELS[t.ariLabel] || ARI_LABELS.other;
       var row = "<div style='margin-top:8px;padding-top:8px;border-top:1px solid var(--n100,#eee);cursor:pointer' onclick=\"inboxOpen('" + t.threadId + "')\">" +
         "<b>@" + mailEscape(t.handle || t.creatorEmail) + "</b> " +
-        "<span style='font-size:9.6px;padding:1px 6px;border-radius:8px;border:1px solid " + lb[1] + ";color:" + lb[1] + "'>아리: " + lb[0] + "</span>" +
+        "<span style='font-size:9.6px;padding:1px 6px;border-radius:8px;border:1px solid " + lb[1] + ";color:" + lb[1] + "'>theprlist: " + lb[0] + "</span>" +
         (t.lastDirection === "in" ? " <span style='font-size:9.6px;color:var(--bd,#8E3B2A)'>● 답장 옴</span>" : "") +
         "</div>";
       if (open && open.id === t.threadId && open.data) {
@@ -607,7 +619,7 @@
       }
       return row;
     }).join("");
-    return '<div class="cc" style="margin-bottom:12px"><div class="t">인박스 — 크리에이터 답장 (아리 분류)</div>' + items + "</div>";
+    return '<div class="cc" style="margin-bottom:12px"><div class="t">인박스 — 크리에이터 답장 (theprlist 분류)</div>' + items + "</div>";
   }
   /* ── 틱톡샵 대량 발송 P0 (반자동) — 발굴·수집 '틱톡샵' 탭 카드 ── */
   window.__DISPATCH = null;
@@ -705,45 +717,7 @@
     }
   } catch (e) {}
 
-  /* ── 브랜드 가입 완료 → 신청 접수 (어드민 승인 큐로) ── */
-  if (window.bjDone) {
-    var _bjDone = window.bjDone;
-    window.bjDone = function () {
-      var B = (typeof ST !== "undefined" && ST.bj) || {};
-      // 담당자 이메일 — 승인되면 이 주소로 콘솔 로그인 초대가 간다
-      if (!window.__BJ_EMAIL) {
-        authPanel("<b>담당자 이메일</b><div style='margin-top:5px;color:#5a6560'>" +
-          "승인되면 이 주소로 <b>콘솔 로그인 초대</b>가 갑니다.</div>" +
-          "<input id='bjEmail' placeholder='marketing@brand.com'" +
-          " style='width:100%;padding:6px;margin-top:8px;box-sizing:border-box'>" +
-          "<div style='margin-top:8px'><span class='cbt' onclick='bjEmailGo()'>이 주소로 받을게요</span></div>");
-        window.bjEmailGo = function () {
-          var v = ((document.getElementById("bjEmail") || {}).value || "").trim();
-          if (v.indexOf("@") < 0) return toast("담당자 이메일", "이메일 형식을 확인해 주세요.");
-          window.__BJ_EMAIL = v;
-          authPanel(null);
-          window.bjDone();
-        };
-        return;
-      }
-      fire("POST", "/applications", {
-        slug: (B.slug || "glowlab") + "-" + Date.now().toString(36).slice(-4),
-        name: "GLOWLAB", biz_no: "123-45-67890", category: "스킨케어",
-        countries: ["TH", "US", "VN"],
-        plan: "per_signup",
-        site_url: B.url || "glowlab.kr",
-        answers: {
-          brand_one_liner: "민감성 피부를 위한 저자극 선케어",
-          ideal_creator: "피부 고민을 직접 말하는 사람",
-          banned_words: "미백, 효능 단정, 경쟁사 비방",
-          sample_criteria: "등급 B 이상 + 태국 거주",
-          voice: "존댓말 · 이모지 최소 · 태국어는 부드럽게",
-        },
-        contact: window.__BJ_EMAIL || "hana@glowlab.kr",
-      });
-      _bjDone();
-    };
-  }
+  window.bjDone = window.bjLearn = function () { location.href='https://theprlist.net/signup'; };
 
   /* ── 실인증 — 브랜드 로그인 · 초대 수락 · 크리에이터 매직링크 ── */
   function jwtGet() { try { return localStorage.getItem("CONNECTION_JWT") || ""; } catch (e) { return ""; } }
@@ -780,7 +754,7 @@
     d.onclick = function () {
       if (document.getElementById("authPanel")) return authPanel(null);
       if (window.__ME) {
-        authPanel("<b>" + window.__ME.email + "</b><br><span style='color:#5a6560'>" +
+        authPanel("<b>" + mailEscape(window.__ME.email) + "</b><br><span style='color:#5a6560'>" +
           (window.__ME.kind === "brand" ? "브랜드 · " + (window.__ME.brandId || "") : window.__ME.kind) +
           "</span><div style='margin-top:9px'><span class='cbt no' onclick=\"authLogout()\">로그아웃</span></div>");
       } else if (window.__SURFACE === "creator") {
@@ -797,16 +771,19 @@
     };
     document.body.appendChild(d);
   }
-  window.authLogout = function () { jwtClear(); window.__ME = null; authPanel(null); authChip(); reloadBrand(); toast("로그아웃", "다시 로그인할 때까지 데모 권한으로 동작합니다."); };
+  window.authLogout = function () { jwtClear(); window.__ME = null; authPanel(null); authChip(); reloadBrand(); toast("로그아웃", "다시 로그인해야 서비스를 사용할 수 있습니다."); };
   window.authLogin = function () {
     var em = (document.getElementById("axEmail") || {}).value || "";
     var pw = (document.getElementById("axPw") || {}).value || "";
     req("POST", "/auth/login", { email: em.trim(), password: pw }).then(function (r) {
-      jwtSet(r.token); window.__ME = r.user; authPanel(null); authChip();
+      jwtSet(r.token);
+      if(r.needOtp){authPanel('<b>2단계 인증</b><input id="axOtp" inputmode="numeric" maxlength="6" placeholder="인증 앱의 6자리 코드"><button class="cbt" onclick="authOtp()">확인</button>');return;}
+      window.__ME = r.user; authPanel(null); authChip();
       reloadBrand();
       toast("로그인 완료", "<b>" + r.user.email + "</b> — 이제 <b>" + (r.user.brandId || "") + "</b> 브랜드로 동작합니다.");
     }).catch(function () { toast("로그인 실패", "이메일 또는 비밀번호를 확인하세요."); });
   };
+  window.authOtp = function(){req('POST','/auth/otp/verify',{code:document.getElementById('axOtp').value}).then(function(r){jwtSet(r.token);window.__ME=r.user;authPanel(null);authChip();reloadBrand();}).catch(function(){toast('인증 실패','인증 코드를 확인하세요.');});};
   window.authMagic = function () {
     var em = (document.getElementById("axEmail") || {}).value || "";
     req("POST", "/auth/magic", { email: em.trim() }).then(function (r) {
@@ -817,6 +794,54 @@
     }).catch(function () { toast("전송 실패", "이메일 주소를 확인해 주세요."); });
   };
 
+  /* Public console only exposes workflows backed by durable server results. */
+  var profileData=null, profileError='', profileDraft=null, profileUrl='', profileBusy=false, profileNotice='';
+  var livePage='home', chatMessages=[], chatBusy=false;
+  var profileLabels={brand_one_liner:'브랜드 소개',hero_product:'주력 제품',ingredients:'성분·특징',price_range:'가격대',voice:'말투',ideal_creator:'원하는 크리에이터',banned_words:'금지 표현',sample_criteria:'샘플 기준'};
+  function loadProfile(){var brand=BRAND();profileError='';req('GET','/brands/'+brand+'/profile/learned').then(function(r){if(BRAND()!==brand)return;profileData=r;if(window.__SURFACE==='brand')render();}).catch(function(e){profileError=e.message;if(window.__SURFACE==='brand')render();});}
+  window.liveNav=function(page){livePage=page;ST.b=page==='mail'?'src':page==='billing'?'settle':'brief';ST.srcTab='mail';render();};
+  window.profileUrlChanged=function(v){if(v!==profileUrl){profileUrl=v;profileDraft=null;profileNotice="주소가 바뀌었습니다. 다시 분석해 주세요.";var save=document.getElementById("profileSave");if(save){save.disabled=true;save.textContent="새 주소로 다시 분석해 주세요";}}};
+  window.liveLearn=async function(){
+    if(profileBusy)return;profileUrl=(document.getElementById('brandSite').value||'').trim();if(!profileUrl)return;
+    profileBusy=true;profileDraft=null;profileNotice='공개 페이지를 읽고 분석하고 있습니다…';render();var brand=BRAND();
+    try{var r=await req('POST','/brand-learning',{url:profileUrl});if(BRAND()!==brand)return;profileDraft=r;profileNotice='실제 페이지 '+r.pagesRead+'개 · 본문 '+r.charactersRead+'자 분석 완료. 근거를 확인한 뒤 저장해 주세요.';}
+    catch(e){profileNotice=e.message;}finally{profileBusy=false;render();}
+  };
+  window.liveSaveProfile=async function(){if(profileBusy||!profileDraft)return;profileBusy=true;render();var brand=BRAND();
+    try{var r=await req('POST','/brands/'+brand+'/profile/learned',{learning_id:profileDraft.learningId});if(BRAND()!==brand)return;profileData=r;profileDraft=null;profileNotice='브랜드 프로필 v'+r.version+' 저장 완료. 이제 대화와 캠페인 초안에서 이 내용을 참고합니다.';}
+    catch(e){profileNotice=e.message;}finally{profileBusy=false;render();}
+  };
+  window.liveChat=async function(){var input=document.getElementById('liveQuestion'),q=input.value.trim();if(!q||chatBusy)return;input.value='';var history=chatMessages.slice(-8);chatMessages.push({role:'user',content:q});chatBusy=true;render();var brand=BRAND();
+    try{var r=await req('POST','/assistant/chat',{brand:brand,message:q,history:history});if(BRAND()===brand)chatMessages.push({role:'assistant',content:r.reply});}
+    catch(e){if(BRAND()===brand)chatMessages.push({role:'assistant',content:'응답 실패: '+e.message});}finally{chatBusy=false;render();}
+  };
+  function learnedFields(fields){return Object.keys(fields||{}).map(function(k){var f=fields[k];return '<div class="cc"><b>'+mailEscape(profileLabels[k]||k)+'</b><p>'+mailEscape(typeof f==='string'?f:f.value||'')+'</p>'+(f.evidence?'<blockquote>근거: '+mailEscape(f.evidence)+'</blockquote>':'')+'</div>';}).join('');}
+  function liveLearningCard(){return '<h1>theprlist에 브랜드를 알려주세요</h1><p>공개 홈페이지 한 페이지를 읽어 브랜드 정보를 추출합니다. 모델 자체를 재훈련하거나 SNS·리뷰 전체를 수집하는 기능은 아닙니다.</p><label>브랜드 홈페이지<input id="brandSite" oninput="profileUrlChanged(this.value)" type="url" placeholder="https://brand.com/about" value="'+mailEscape(profileUrl)+'" '+(profileBusy?'disabled':'')+'></label><button class="btn" onclick="liveLearn()" '+(profileBusy?'disabled':'')+'>홈페이지 분석</button><p role="status">'+mailEscape(profileNotice||profileError)+'</p>'+(profileDraft?'<h2>분석 결과 · 아직 저장 전</h2><p>출처: '+mailEscape(profileDraft.sourceUrl)+'</p>'+learnedFields(profileDraft.fields)+'<button id="profileSave" class="btn" onclick="liveSaveProfile()" '+(profileBusy?'disabled':'')+'>확인하고 브랜드 프로필에 저장</button>':'')+'<h2>저장된 브랜드 프로필'+(profileData?' · v'+profileData.version:'')+'</h2>'+(profileData&&profileData.version?learnedFields(profileData.fields):'<p>저장된 정보가 없습니다. 분석 후 저장해 주세요.</p>');}
+  var originalRender=window.render;
+  if(window.__SURFACE==='brand'){
+    window.render=function(){
+      var stage=document.getElementById('stage');if(!stage)return;
+      document.querySelector('.svcbar').style.display='none';
+      var nav='<header class="live-head"><a href="https://theprlist.net">theprlist<span> / brand console</span></a><nav>'+[['home','홈'],['learn','브랜드 학습'],['mail','메일링'],['billing','월별 청구'],['status','서비스 상태']].map(function(x){return '<button class="btn '+(livePage===x[0]?'':'line')+'" onclick="liveNav(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+'</nav></header>';
+      var preserved={};['outRecipients','outSubject','outBody','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)preserved[id]=el.value;});
+      var body='';
+      if(!window.__ME){body='<h1>브랜드와 크리에이터,<br>함께 시작할 준비.</h1><p>승인된 브랜드 계정으로 로그인해 주세요.</p><button class="btn" onclick="document.getElementById(\'authChip\').click()">로그인</button> <a class="btn line" href="https://theprlist.net/signup">가입 신청</a>';}
+      else if(livePage==='learn')body=liveLearningCard();
+      else if(livePage==='mail')body='<h1>브랜드 메일링</h1>'+gmailCard()+outreachCard()+inboxCard();
+      else if(livePage==='billing')body='<h1>월별 청구</h1><p>검증 가입 1명당 50원 · 부가세 포함 · 월 단위 합산</p><p>카드 결제 최소금액은 1,000원입니다. 미만 청구서도 보관되며 자동 결제되지 않습니다.</p><button class="btn line" onclick="refreshBilling()">새로고침</button>'+window.billingInvoicesHtml();
+      else if(livePage==='status')body='<h1>서비스 상태</h1><div class="cc"><h2>이용 가능한 흐름</h2><p>브랜드 신청 → 운영자 승인 → 계정 생성 → 홈페이지 분석·프로필 저장 → Gmail 연결 → 초안 검토·발송 → 월별 청구 확인</p></div><div class="cc"><h2>준비 중</h2><p>틱톡·인스타 계정 검증과 자동 후보 수집, 크리에이터 커뮤니티·캠페인 참여, 자동 답장 수신, 크리에이터 대금 지급은 아직 공개 운영 대상이 아닙니다.</p><p>메일 답장은 연결된 Gmail에서 확인하세요. 가입 과금은 실제 검증 가입이 기록될 때만 발생합니다.</p></div>';
+      else body='<p class="live-eyebrow">YOUR BRAND, IN GOOD COMPANY</p><h1>브랜드의 다음 연결을<br>만들어 보세요.</h1><p>'+mailEscape(window.__ME.email)+' · '+mailEscape(BRAND())+'</p><div class="live-grid"><button class="cc" onclick="liveNav(\'learn\')"><h2>01. 브랜드 학습</h2><p>홈페이지 분석과 근거를 확인하고 저장하세요.</p></button><button class="cc" onclick="liveNav(\'mail\')"><h2>02. 메일링</h2><p>Gmail을 연결하고 초안을 검토한 뒤 발송하세요.</p></button></div><h2>theprlist에게 물어보세요</h2><p>저장된 브랜드 프로필을 참고해 답합니다. 대화로 메일을 발송하거나 결제를 실행하지 않습니다.</p>'+chatMessages.map(function(m){return '<div class="cc"><b>'+(m.role==='user'?'나':'theprlist')+'</b><p>'+mailEscape(m.content)+'</p></div>';}).join('')+'<form onsubmit="event.preventDefault();liveChat()"><input id="liveQuestion" maxlength="2000" placeholder="우리 브랜드를 소개하는 문구를 제안해 줘" required '+(chatBusy?'disabled':'')+'><button class="btn" '+(chatBusy?'disabled':'')+'>'+(chatBusy?'답변 중…':'질문하기')+'</button></form>';
+      stage.innerHTML=nav+'<main class="live-main">'+body+'</main><footer class="live-footer"><a href="https://theprlist.net/privacy">개인정보처리방침</a> · <a href="https://theprlist.net/terms">이용약관</a> · <a href="mailto:chief@dinostudio.kr">문의</a></footer>';
+      Object.keys(preserved).forEach(function(id){var el=document.getElementById(id);if(el)el.value=preserved[id];});
+    };
+    var previousReload=reloadBrand;
+    reloadBrand=function(){['outRecipients','outSubject','outBody','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});profileData=null;profileDraft=null;profileNotice='';profileUrl='';chatMessages=[];window.__GMAIL=null;window.__INBOX=null;previousReload();if(window.__ME)loadProfile();};
+    var style=document.createElement('style');style.textContent='body{background:#f5f4ef}.stage{display:block!important;overflow:auto!important;height:calc(100vh - 1px)!important}.live-head{padding:24px 5%;display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid #dadbd2;background:#fafbf5}.live-head>a{font-size:25px;font-weight:800;color:#163f35;text-decoration:none}.live-head span{font-size:12px;font-weight:400}.live-head nav{display:flex;gap:8px;flex-wrap:wrap}.live-main{max-width:1050px;margin:0 auto;padding:55px 24px 95px;font-size:15px;line-height:1.8}.live-main h1{font-size:40px;line-height:1.25;margin:0 0 25px}.live-main h2{font-size:21px;margin:18px 0 10px}.live-main p{margin:12px 0}.live-main .cc{background:#fff;border:1px solid #dadbd2;border-radius:12px;padding:24px;margin:15px 0;text-align:left}.live-main input,.live-main textarea{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid #aebcb1;border-radius:6px;margin:8px 0 14px;font:inherit}.live-main .btn,.live-main .cbt{font-size:14px;padding:10px 16px;cursor:pointer}.live-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.live-eyebrow{letter-spacing:.1em;color:#41684c}.live-footer{padding:20px 24px 75px;text-align:center}.live-main blockquote{padding:12px;border-left:3px solid #5e8c6a;color:#526157;overflow-wrap:anywhere}@media(max-width:700px){.live-head{display:block}.live-head nav{margin-top:15px}.live-main{padding-top:30px}.live-main h1{font-size:30px}.live-grid{grid-template-columns:1fr}}';document.head.appendChild(style);render();
+  }
+
+  if(window.__SURFACE==='bjoin'||window.__SURFACE==='creator'){
+    window.render=function(){document.querySelector('.svcbar').style.display='none';document.getElementById('stage').innerHTML='<main style="max-width:650px;margin:70px auto;padding:24px"><h1>theprlist</h1><h2>'+(window.__SURFACE==='creator'?'크리에이터 서비스 준비 중':'계정 초대 수락')+'</h2><p>'+(window.__SURFACE==='creator'?'크리에이터 계정 검증·캠페인 참여 기능을 준비하고 있습니다. 공개 일정은 별도로 안내합니다.':'초대받은 계정은 아래 입력창에서 비밀번호를 설정해 주세요.')+'</p><a class="btn" href="https://theprlist.net">서비스 소개</a> <a class="btn line" href="https://console.theprlist.net">브랜드 로그인</a></main>';};render();
+  }
   try {
     var sp = new URLSearchParams(location.search);
     var inviteTok = sp.get("invite"), magicTok = sp.get("magic");

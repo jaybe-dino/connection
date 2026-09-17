@@ -62,7 +62,7 @@ function AuthGate({ onDone }: { onDone: () => void }) {
   return (
     <div style={{ height: "100dvh", display: "grid", placeItems: "center", background: "var(--d800)" }}>
       <div style={{ width: 330, background: "var(--n0)", borderRadius: 14, padding: "26px 26px 20px" }}>
-        <div style={{ fontWeight: 900, fontSize: 17, marginBottom: 2 }}>The PR List 어드민</div>
+        <div style={{ fontWeight: 900, fontSize: 17, marginBottom: 2 }}>theprlist 어드민</div>
         <div style={{ fontSize: 11.5, color: "var(--n600)", marginBottom: 16 }}>
           {mode === "bootstrap" ? "최초 어드민 계정을 만듭니다 (1회)"
             : mode === "otp" ? "OTP 앱의 6자리 코드를 입력하세요"
@@ -173,7 +173,7 @@ export default function App() {
         display: "flex", flexDirection: "column", padding: "16px 10px", flexShrink: 0,
       }}>
         <div style={{ padding: "0 10px 4px", color: "var(--n0)", fontWeight: 900, fontSize: 15 }}>
-          커넥션 어드민
+          theprlist 어드민
         </div>
         <div style={{ padding: "0 10px 14px", fontSize: 10, color: live ? "var(--s300)" : "var(--c300)" }}>
           {live ? "● 서버 연결됨 · jay (총괄)" : "● API 미연결 — 서버를 켜주세요"}

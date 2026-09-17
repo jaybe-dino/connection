@@ -49,7 +49,7 @@ export default function CellScreen() {
         <Card key={m.id}>
           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 4, gap: 6 }}>
             <Text style={{ fontWeight: "800", fontSize: 12, color: C.n800 }}>
-              {m.authorKind === "ari" ? "아리" : `@${m.author}`}
+              {m.authorKind === "ari" ? "theprlist" : `@${m.author}`}
             </Text>
             {m.authorKind === "ari" && <Badge color="plum">운영</Badge>}
             {m.authorKind === "brand" && <Badge color="terra">브랜드</Badge>}
@@ -68,7 +68,7 @@ export default function CellScreen() {
         <Card style={{ borderColor: C.c300 }}>
           <Text style={{ fontWeight: "800", fontSize: 13, marginBottom: 6, color: C.n800 }}>메시지 신고</Text>
           <Text style={{ fontSize: 12, color: C.n600, marginBottom: 10 }}>
-            신고하면 아리가 1차 분류 후 운영자가 검토합니다. 신고자는 익명입니다.
+            신고하면 theprlist가 1차 분류 후 운영자가 검토합니다. 신고자는 익명입니다.
           </Text>
           {["스팸·광고", "괴롭힘·혐오", "기타"].map((r) => (
             <Pressable key={r} onPress={() => setReporting(null)}

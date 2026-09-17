@@ -87,7 +87,7 @@ function Header() {
       }}
     >
       <div style={{ fontWeight: 900, fontSize: 16, letterSpacing: "-0.02em" }}>
-        커넥션
+        theprlist
       </div>
       <button
         onClick={() => nav("/notifications")}

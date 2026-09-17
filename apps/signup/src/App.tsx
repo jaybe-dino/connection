@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Badge, Card } from "@connection/ui";
 
-/** 브랜드 가입 위저드 — 5단계. 가입이 곧 아리 세팅이다. */
-const STEPS = ["계정 · 사업자", "브랜드 프로필", "이용 요금", "아리 학습", "완료"];
+/** 브랜드 가입 위저드 — 5단계. 가입이 곧 theprlist 세팅이다. */
+const STEPS = ["계정 · 사업자", "브랜드 프로필", "이용 요금", "theprlist 학습", "완료"];
 
 const FIVE_QUESTIONS = [
   { key: "one_liner", q: "브랜드를 한 문장으로 하면?", ph: "예: 민감성 피부를 위한 저자극 선케어" },
@@ -35,9 +35,9 @@ export default function App() {
 
   return (
     <div style={{ maxWidth: 560, margin: "0 auto", padding: "32px 18px 60px" }}>
-      <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 4 }}>커넥션 — 브랜드 가입</div>
+      <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 4 }}>theprlist — 브랜드 가입</div>
       <div style={{ fontSize: 12, color: "var(--n500)", marginBottom: 20 }}>
-        가입이 곧 아리 세팅이에요 — 학습 없이는 모집을 시작할 수 없어요
+        가입이 곧 theprlist 세팅이에요 — 학습 없이는 모집을 시작할 수 없어요
       </div>
 
       <div style={{ display: "flex", gap: 4, marginBottom: 24 }}>
@@ -78,7 +78,7 @@ export default function App() {
         <Card>
           <Label>슬러그 예약 — 주소는 브랜드명 하나</Label>
           <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13 }}>
-            <span style={{ color: "var(--n400)" }}>connection.app/</span>
+            <span style={{ color: "var(--n400)" }}>theprlist.net/</span>
             <input value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} placeholder="yourbrand" style={{ ...inp, flex: 1 }} />
           </div>
           {slug && (
@@ -157,8 +157,8 @@ export default function App() {
             브랜드 프로필 v1이 만들어졌어요
           </div>
           <div style={{ fontSize: 13, color: "var(--n500)", lineHeight: 1.7 }}>
-            connection.app/<b>{slug || "yourbrand"}</b> 예약 완료<br />
-            아리가 첫 주 계획을 세웠어요 — 콘솔 브리핑에서 확인하세요
+            theprlist.net/<b>{slug || "yourbrand"}</b> 예약 완료<br />
+            theprlist가 첫 주 계획을 세웠어요 — 콘솔 브리핑에서 확인하세요
           </div>
           <button style={{ ...btnDark, marginTop: 16, background: "var(--t500)" }}>콘솔로 가기 →</button>
         </Card>

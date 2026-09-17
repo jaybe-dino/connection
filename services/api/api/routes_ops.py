@@ -5,10 +5,12 @@
 """
 
 import json
+import re
+from uuid import UUID
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .compliance import check_content
 from .db import connect, ledger_append
@@ -57,21 +59,35 @@ def require_admin(x_admin_id: str = Header(default=""),
 
 class ApplicationIn(BaseModel):
     slug: str
-    name: str
-    biz_no: str = ""
+    name: str = Field(min_length=1,max_length=100)
+    biz_no: str = Field(default="",max_length=30)
     category: str = ""
     countries: list[str] = []
     plan: str = "per_signup"
     site_url: str = ""
     answers: dict[str, str] = {}
-    contact: str = ""
+    contact: str = Field(default="",max_length=254)
+    learning_id: UUID | None = None
 
 
 @public.post("/applications")
 def submit_application(body: ApplicationIn) -> dict:
     body.plan = "per_signup"  # Single usage-based tariff; ignore legacy client plans.
     slug = body.slug.lower().strip()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,39}",slug) or slug in {"www","api","admin","app","console","signup","privacy","terms"}:
+        raise HTTPException(400,"브랜드 주소는 영문 소문자·숫자·하이픈 3~40자입니다")
+    if not body.name.strip():
+        raise HTTPException(400,"브랜드명을 입력하세요")
+    if body.contact and not re.fullmatch(r"[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+",body.contact.strip()):
+        raise HTTPException(400,"담당자 이메일을 확인하세요")
+    if body.learning_id and (not body.contact.strip() or not body.biz_no.strip()):
+        raise HTTPException(400,"담당자 이메일과 사업자등록번호를 입력하세요")
+    if len(body.answers)>12 or any(len(k)>80 or len(v)>2000 for k,v in body.answers.items()):
+        raise HTTPException(400,"브랜드 소개 내용이 너무 깁니다")
     with connect() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("application:"+slug,))
+        if body.learning_id and not conn.execute("SELECT 1 FROM brand_learning WHERE learning_id=%s AND state='ready'",(body.learning_id,)).fetchone():
+            raise HTTPException(400,"완료된 학습 결과가 필요합니다")
         taken = conn.execute(
             "SELECT 1 FROM brands WHERE brand_id=%s"
             " UNION SELECT 1 FROM brand_applications WHERE slug=%s AND status='pending'",
@@ -84,6 +100,7 @@ def submit_application(body: ApplicationIn) -> dict:
             " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING app_id",
             (slug, body.name, body.biz_no, body.category, body.countries,
              body.plan, body.site_url, _j(body.answers), body.contact)).fetchone()
+        conn.execute("UPDATE brand_applications SET learning_id=%s WHERE app_id=%s",(body.learning_id,row["app_id"]))
         ledger_append(conn, "system", "BRAND_APPLIED", slug,
                       {"app_id": str(row["app_id"]), "plan": body.plan})
     return {"app_id": str(row["app_id"]), "status": "pending",
@@ -132,14 +149,20 @@ def _decidable_app(conn, app_id: str) -> dict:
 def approve_application(app_id: str, admin_user: dict = Depends(require_admin)) -> dict:
     with connect() as conn:
         app_row = _decidable_app(conn, app_id)
+        contact=(app_row['contact'] or '').strip().lower()
+        existing=conn.execute('SELECT kind,brand_id FROM users WHERE email=%s',(contact,)).fetchone()
+        if existing and (existing['kind']!='brand' or existing['brand_id']!=app_row['slug']):
+            raise HTTPException(409,'다른 계정에서 사용 중인 담당자 이메일입니다. 새 담당자 이메일로 다시 신청하세요.')
         conn.execute(
             "INSERT INTO brands (brand_id, name, category, locale, plan)"
             " VALUES (%s,%s,%s,'ko',%s)",
             (app_row["slug"], app_row["name"], app_row["category"], app_row["plan"]))
-        # 아리 학습 답변 → 브랜드 프로필 v1 (확인됨 처리 — 모집 시작 가능)
+        # theprlist 학습 답변 → 브랜드 프로필 v1 (확인됨 처리 — 모집 시작 가능)
         answers = app_row["answers"] or {}
-        fields = {k: {"value": v, "source": "onboarding_qa", "confirmed": True}
-                  for k, v in answers.items()}
+        learned = conn.execute("SELECT fields FROM brand_learning WHERE learning_id=%s AND state='ready'",(app_row.get("learning_id"),)).fetchone()
+        fields = dict((learned or {}).get("fields") or {})
+        fields.update({k: {"value": v, "source": "onboarding_qa", "confirmed": True}
+                  for k, v in answers.items() if isinstance(v,str) and v.strip()})
         conn.execute(
             "INSERT INTO brand_profile_versions (brand_id, version, fields, note)"
             " VALUES (%s, 1, %s, 'onboarding')",

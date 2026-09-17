@@ -164,6 +164,8 @@ def require_brand(brand_id: str,
     """브랜드 라우트 가드 — 그 브랜드의 JWT, 어드민 JWT, 또는(전환기) 간이 키."""
     u = current_user(authorization)
     if u:
+        if u.get("otp") == "pending":
+            raise HTTPException(401, "2단계 인증을 완료하세요")
         if u.get("kind") == "admin" or (u.get("kind") == "brand"
                                         and u.get("brand_id") == brand_id):
             return u

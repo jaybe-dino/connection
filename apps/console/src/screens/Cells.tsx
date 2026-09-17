@@ -42,7 +42,7 @@ export default function Cells() {
             <Card key={m.id} style={{ padding: 11 }}>
               <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 3 }}>
                 <span style={{ fontWeight: 800, fontSize: 12 }}>
-                  {m.authorKind === "ari" ? "아리" : `@${m.author}`}
+                  {m.authorKind === "ari" ? "theprlist" : `@${m.author}`}
                 </span>
                 {m.authorKind === "ari" && <Badge color="plum">운영</Badge>}
                 <span style={{ fontSize: 10, color: "var(--n400)" }}>{m.channel}</span>
@@ -92,7 +92,7 @@ export default function Cells() {
             </div>
           ))}
           <div style={{ fontSize: 11, color: "var(--n400)", marginTop: 8 }}>
-            아리 로그: 협찬 과다 2명은 차단이 아니라 과금 제외로 분류했어요
+            theprlist 로그: 협찬 과다 2명은 차단이 아니라 과금 제외로 분류했어요
           </div>
         </Card>
       )}
@@ -111,7 +111,7 @@ export default function Cells() {
           ))}
           <SectionTitle>자율 다이얼</SectionTitle>
           <div style={{ fontSize: 12, color: "var(--n600)", lineHeight: 1.7 }}>
-            아리 L2 — 초안까지 자동, 실행은 게이트. PII·정산·외부발송·공개게시는
+            theprlist L2 — 초안까지 자동, 실행은 게이트. PII·정산·외부발송·공개게시는
             다이얼과 무관하게 항상 사람 승인이에요.
           </div>
         </Card>

@@ -37,7 +37,7 @@ export default function CellScreen() {
           </div>
         </div>
         <button
-          onClick={() => navigator.clipboard?.writeText(`https://connection.app/${cell.brandId}`)}
+          onClick={() => navigator.clipboard?.writeText(`https://theprlist.net/${cell.brandId}`)}
           style={{ border: "1px solid var(--n200)", background: "var(--n0)", borderRadius: 999, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}
           title="링크는 숨기고 공유는 버튼"
         >
@@ -73,7 +73,7 @@ export default function CellScreen() {
           <Card key={m.id} style={{ padding: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
               <span style={{ fontWeight: 800, fontSize: 12 }}>
-                {m.authorKind === "ari" ? "아리" : `@${m.author}`}
+                {m.authorKind === "ari" ? "theprlist" : `@${m.author}`}
               </span>
               {m.authorKind === "ari" && <Badge color="plum">운영</Badge>}
               {m.authorKind === "brand" && <Badge color="terra">브랜드</Badge>}
@@ -102,7 +102,7 @@ export default function CellScreen() {
         <Card style={{ marginTop: 12, borderColor: "var(--c300)" }}>
           <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>메시지 신고</div>
           <div style={{ fontSize: 12, color: "var(--n600)", marginBottom: 10 }}>
-            신고하면 아리가 1차 분류 후 운영자가 검토합니다. 신고자는 익명입니다.
+            신고하면 theprlist가 1차 분류 후 운영자가 검토합니다. 신고자는 익명입니다.
           </div>
           {["스팸·광고", "괴롭힘·혐오", "기타"].map((r) => (
             <button

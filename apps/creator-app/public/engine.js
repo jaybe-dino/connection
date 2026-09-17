@@ -60,7 +60,7 @@ const INIT=()=>({
          ['02:15','CONSENT_APPENDED','신규 23명 · policy_version 2026-08-v1','—','a417…88bc']],
 });
 let ST=INIT();
-function resetAll(){ ST=INIT(); seedChat(); render(); toast('초기화','처음 상태로 되돌렸습니다.'); }
+function resetAll(){ ST=INIT(); if (!window.__SURFACE) { seedChat(); render(); } toast('초기화','처음 상태로 되돌렸습니다.'); }
 
 function toast(l,m,app,scr){
  const w=document.getElementById('toastWrap');
@@ -100,26 +100,26 @@ welcome:()=>({hd:null, body:`
  <div class="hero2">
   <div class="lgm"><span class="sym"><i class="c"></i><i class="a"></i><i class="b"></i></span><span>CONNECTION</span></div>
   <h1>브랜드는 여러 곳,<br>계정은 <i>하나</i>.</h1>
-  <p>커넥션은 브랜드가 운영하는 <b>크리에이터 커뮤니티</b>를 한 자리에 모아둔 곳이에요.
+  <p>theprlist은 브랜드가 운영하는 <b>크리에이터 커뮤니티</b>를 한 자리에 모아둔 곳이에요.
    여기서 계정을 하나 만들면, 브랜드마다 다시 가입할 필요가 없습니다.</p>
   <p>브랜드마다 <b>셀</b>이라는 방이 있어요. 인원 상한 없이 여러 명이 함께 이야기하고,
    서로 <b>다른 언어로 말해도 각자 자기 언어로</b> 보입니다.</p>
- <div class="urlbar"><span class="lk2">connection.app/glowlab</span>
-  <span class="cp" onclick="toast('브랜드 URL','주소는 <b>브랜드명 하나</b>로 끝납니다. 링크로 들어와도 <b>커넥션 패스 로그인</b>부터 거치고, 로그인하면 바로 그 브랜드의 내 셀로 이동해요.')">?</span></div>
+ <div class="urlbar"><span class="lk2">theprlist.net/glowlab</span>
+  <span class="cp" onclick="toast('브랜드 URL','주소는 <b>브랜드명 하나</b>로 끝납니다. 링크로 들어와도 <b>theprlist 패스 로그인</b>부터 거치고, 로그인하면 바로 그 브랜드의 내 셀로 이동해요.')">?</span></div>
  </div>
  <div class="cc" style="background:var(--n50)"><div class="t">이렇게 진행됩니다</div>
-  <p>① 커넥션 계정 만들기 (한 번만)<br>② 참여할 브랜드 셀 고르기<br>
+  <p>① theprlist 계정 만들기 (한 번만)<br>② 참여할 브랜드 셀 고르기<br>
    ③ 그 브랜드에만 해당하는 동의 · 자격 확인<br>④ 셀 입장</p></div>
  <button class="btn lg" style="width:100%;margin-top:6px" onclick="ST.c='signup';render()">시작하기</button>
  <div class="fine">이미 계정이 있으면 로그인만 하면 됩니다.
-  회원 정보는 <b>각 브랜드가 소유</b>하고, 커넥션은 <b>본인 확인만</b> 맡습니다.</div>`}),
+  회원 정보는 <b>각 브랜드가 소유</b>하고, theprlist은 <b>본인 확인만</b> 맡습니다.</div>`}),
 
-/* ---------- 1. 커넥션 가입 ---------- */
-signup:()=>({hd:['커넥션 계정 만들기','한 번만 하면 됩니다'], back:'welcome', steps:[1,0,0,0], body:`
+/* ---------- 1. theprlist 가입 ---------- */
+signup:()=>({hd:['theprlist 계정 만들기','한 번만 하면 됩니다'], back:'welcome', steps:[1,0,0,0], body:`
  <div class="cc" style="background:var(--t50);border-color:var(--t100)">
   <div class="t">지금 만드는 건 브랜드 계정이 아니에요</div>
-  <p>커넥션 계정(<b>패스</b>)입니다. 이 하나로 <b>여러 브랜드 셀</b>에 들어갈 수 있어요.</p></div>
- ${['커넥션 패스 생성 · <b>본인 확인</b>을 커넥션이 맡습니다','서비스 이용약관',
+  <p>theprlist 계정(<b>패스</b>)입니다. 이 하나로 <b>여러 브랜드 셀</b>에 들어갈 수 있어요.</p></div>
+ ${['theprlist 패스 생성 · <b>본인 확인</b>을 theprlist이 맡습니다','서비스 이용약관',
     '국외 이전 · 해외 브랜드·물류와 연결되기 위해 필요합니다','다른 브랜드 셀 추천 받기']
   .map((t,i)=>`<div class="cs" onclick="tg(${i})">
     <div class="bx ${ST.me.consents[i]?'on':''}">${ST.me.consents[i]?'✓':''}</div>
@@ -137,7 +137,7 @@ signup:()=>({hd:['커넥션 계정 만들기','한 번만 하면 됩니다'], ba
   필수 3개 + <b>SNS 계정 연결</b>이 있어야 계정이 만들어집니다.</div>`}),
 
 /* ---------- 2. 셀 고르기 (허브) ---------- */
-hub:()=>({hd:[ST.me.name+' 님의 커넥션', `패스 · 소속 셀 ${ST.me.joined.length}개`], body:`
+hub:()=>({hd:[ST.me.name+' 님의 theprlist', `패스 · 소속 셀 ${ST.me.joined.length}개`], body:`
  <div class="cc" style="background:var(--n900);border:none;color:#fff">
   <div style="display:flex;gap:12px;align-items:center">
    <div class="av" style="width:40px;height:40px"></div>
@@ -158,8 +158,8 @@ hub:()=>({hd:[ST.me.name+' 님의 커넥션', `패스 · 소속 셀 ${ST.me.join
     <div><div class="nm">${B.nm}</div>
      <div class="ds">${B.cat} · 보상 <b>${B.reward}</b><br>${B.cell} · <b>${B.at}명 활동</b>${B.appr?' · 승인제':''}</div></div>
     <div class="rt"><button class="btn" onclick="startJoin('${k}')">${B.appr?'신청':'가입'}</button></div></div>`}).join('')}
- ${ST.me.joined.length? NOTE('두 번째 셀부터는 <b>계정을 다시 만들지 않습니다.</b> 브랜드 동의만 새로 받고 바로 들어갑니다 — 그게 커넥션 패스가 하는 일이에요.')
-  : NOTE('셀에 <b>인원 상한은 없습니다.</b> 대신 아리가 발화 밀도를 지켜보고, 대화가 묻히면 <b>소그룹 스레드</b>를 열어줘요.')}`}),
+ ${ST.me.joined.length? NOTE('두 번째 셀부터는 <b>계정을 다시 만들지 않습니다.</b> 브랜드 동의만 새로 받고 바로 들어갑니다 — 그게 theprlist 패스가 하는 일이에요.')
+  : NOTE('셀에 <b>인원 상한은 없습니다.</b> 대신 theprlist가 발화 밀도를 지켜보고, 대화가 묻히면 <b>소그룹 스레드</b>를 열어줘요.')}`}),
 
 /* ---------- 3. 브랜드 셀 가입 (3단계) ---------- */
 join:()=>{
@@ -176,7 +176,7 @@ join:()=>{
      <span class="chip nt">${B.at}명 활동</span></div></div></div>
   <div class="cc"><div class="t">셀에서 하는 일</div>
    <p>· 같은 캠페인 하는 <b>20~30명</b>과 이야기해요<br>
-    · 담당자(아리)가 <b>매일 질문 하나</b>를 던집니다<br>
+    · 담당자(theprlist)가 <b>매일 질문 하나</b>를 던집니다<br>
     · 촬영 팁을 나누고, 먼저 한 사람이 답해줍니다<br>
     · <b>순위표는 없습니다</b> — 비교하지 않아요</p></div>
   <div class="cc" style="background:var(--n50)"><div class="t">미리 알려드릴 것</div>
@@ -186,7 +186,7 @@ join:()=>{
   <button class="btn lg" style="width:100%" onclick="ST.me.joinStep=1;render()">다음</button>`};
  if(st===1) return {hd:[B.nm+' 셀 가입','2 / 3 · 이 브랜드에 대한 동의'], back:null, steps:[1,1,1,0], body:`
   <div class="cc" style="background:var(--s50);border-color:var(--s100)">
-   <div class="t">커넥션 계정은 이미 있어요</div>
+   <div class="t">theprlist 계정은 이미 있어요</div>
    <p>다시 가입하지 않습니다. <b>${B.nm}에 대한 동의만</b> 새로 받아요.
     브랜드마다 회원 정보를 <b>그 브랜드가 소유</b>하기 때문입니다.</p></div>
   ${[`${B.nm}의 회원이 되는 것 · 이름·연락처를 <b>${B.nm}이 소유</b>합니다`,
@@ -194,11 +194,11 @@ join:()=>{
    .map((t,i)=>`<div class="cs" onclick="tgB(${i})">
      <div class="bx ${ST.me.brandConsent[i]?'on':''}">${ST.me.brandConsent[i]?'✓':''}</div>
      <div class="tx">${t}<span class="rq">필수</span></div></div>`).join('')}
-  <div class="cc" style="margin-top:14px;background:var(--n50)"><div class="t">이미 동의하신 것 (커넥션)</div>
+  <div class="cc" style="margin-top:14px;background:var(--n50)"><div class="t">이미 동의하신 것 (theprlist)</div>
    <p>· 패스 생성 · 본인 확인<br>· 국외 이전<br>
     · 다른 브랜드 셀 추천 받기 — <b>${ST.me.consents[3]?'켜짐':'꺼짐'}</b></p></div>
   <button class="btn lg" style="width:100%" onclick="joinNext()">동의하고 계속</button>
-  <div class="fine">${B.nm}을 나가도 <b>커넥션 계정과 다른 셀은 그대로</b> 유지됩니다.</div>`};
+  <div class="fine">${B.nm}을 나가도 <b>theprlist 계정과 다른 셀은 그대로</b> 유지됩니다.</div>`};
  return {hd:[B.nm+' 셀 가입','3 / 3 · 자격 확인'], back:null, steps:[1,1,1,1], body:`
   <div class="cc"><div class="t">SNS 계정을 알려주세요</div>
    <p>콘텐츠를 보고 <b>어떤 캠페인이 맞을지</b> 판단하는 데 씁니다.
@@ -278,7 +278,7 @@ submit:()=>({hd:['콘텐츠 제출','8월 선쿠션 · 마감 9/15'], body:
   ${ST.tagFixed? `<button class="btn lg" style="width:100%" onclick="doSubmit()">제출하기</button>`
    : `<button class="btn soft lg" style="width:100%" onclick="ST.tagFixed=true;render()">#ad 태그 추가하기</button>`}`}),
 
-agent:()=>({hd:['담당자 · 아리', (BRANDS[ST.me.cur]||{}).nm+' 셀 · 자동 번역 ไทย↔KO'], body:`
+agent:()=>({hd:['담당자 · theprlist', (BRANDS[ST.me.cur]||{}).nm+' 셀 · 자동 번역 ไทย↔KO'], body:`
  <div class="cellsw" style="margin:-4px -2px 8px">${ST.me.joined.map(x=>`<span class="${x===ST.me.cur?'on':''}"
    onclick="ST.me.cur='${x}';render()">${BRANDS[x].nm} 담당</span>`).join('')}</div>
  <div class="cc" style="background:var(--n50);padding:8px 12px;font-size:10.2px;color:var(--n600)">
@@ -318,9 +318,9 @@ earn:()=>({hd:['내 정산','다음 지급 9월 5일 · PingPong'], body:`
    </div>`).join('')}
   <p style="margin-top:9px">셀마다 <b>따로 정산</b>됩니다. 합산은 여기서만 보여요.</p></div>
  <div class="cc" style="background:var(--n50)"><p style="font-size:10.6px">
-  정산 내역이 이상하면 <b>아리에게 바로 물어보세요.</b> 근거는 전부 원장에 있습니다.</p></div>`}),
+  정산 내역이 이상하면 <b>theprlist에게 바로 물어보세요.</b> 근거는 전부 원장에 있습니다.</p></div>`}),
 
-pass:()=>({hd:['내 패스','커넥션 계정 · 소속 셀 '+ST.me.joined.length+'개'], body:`
+pass:()=>({hd:['내 패스','theprlist 계정 · 소속 셀 '+ST.me.joined.length+'개'], body:`
  <div class="cc" style="background:var(--n900);border:none;color:#fff">
   <div style="display:flex;gap:12px;align-items:center">
    <div class="av" style="width:42px;height:42px"></div>
@@ -463,7 +463,7 @@ function finishJoin(){
  if(ST.me.joined.length===1)
   toast('연결됨 · 브랜드 콘솔',`${BRANDS[k].nm} 명부에 <b>1명이 추가</b>됐고 <b>검증 가입 ₩50</b>이 원장에 찍혔습니다.`,'brand','roster');
  else
-  toast('연결됨 · 두 번째 셀','계정을 <b>다시 만들지 않고</b> 들어갔습니다. 커넥션은 여기서 <b>₩50을 한 번 더</b> 받습니다 — 획득 비용은 0입니다.','brand','settle');
+  toast('연결됨 · 두 번째 셀','계정을 <b>다시 만들지 않고</b> 들어갔습니다. theprlist은 여기서 <b>₩50을 한 번 더</b> 받습니다 — 획득 비용은 0입니다.','brand','settle');
  render();
 }
 function tgOrig(k,i){ const m=ST.cellMsgs[k][i]; m._o=!m._o; render(); }
@@ -607,7 +607,7 @@ camp:()=>({t:'캠페인',s:`열린 캠페인 ${ST.camps.filter(c=>c.st==='open')
        ['aff','어필리에이트','판매액의 12% · 전용 링크 · 판매가 곧 보상']]
      .map(t=>`<div class="${ST.nc.type===t[0]?'on':''}" onclick="ncType('${t[0]}')">
        <b>${t[1]}</b><span>${t[2]}</span></div>`).join('')}</div></div>
-  <div class="ncf"><label>USP — 아리가 제품 페이지에서 뽑은 소구점 (수정 가능)</label>
+  <div class="ncf"><label>USP — theprlist가 제품 페이지에서 뽑은 소구점 (수정 가능)</label>
    <div style="display:flex;gap:4px;flex-wrap:wrap">
     ${['48시간 진정 테스트 완료','무향 · 민감성 전용','가벼운 젤 텍스처'].map(u=>`<span class="uspc big">${u} ×</span>`).join('')}
     <span class="uspc add" onclick="toast('USP 추가','브랜드 프로필의 <b>고객의 언어</b>에서 골라 넣을 수도 있어요 — "겉돌지 않아요" 같은.')">+ 추가</span></div></div>
@@ -620,7 +620,7 @@ camp:()=>({t:'캠페인',s:`열린 캠페인 ${ST.camps.filter(c=>c.st==='open')
   <div style="display:flex;gap:7px;margin-top:4px">
    <button class="btn" onclick="pubCamp()">등록 · 게시</button>
    <button class="btn line" onclick="toast('번역 미리보기','<b>ไทย</b> — เซรั่มซิก้าปลอบผิว · ผ่านเทสต์ปลอบผิว 48 ชม. · ไร้น้ำหอม… 태국어 화자 검수를 거친 용어집 기반입니다.')">번역 미리보기</button>
-   <button class="btn line" onclick="toast('아리 검토','문구를 아리가 먼저 봅니다 — <b>금지어 검사</b>와 국가별 광고 표기 규정 체크를 통과해야 게시돼요.')">아리 검토 먼저</button></div>
+   <button class="btn line" onclick="toast('theprlist 검토','문구를 theprlist가 먼저 봅니다 — <b>금지어 검사</b>와 국가별 광고 표기 규정 체크를 통과해야 게시돼요.')">theprlist 검토 먼저</button></div>
   ${NOTE('무가 캠페인은 <b>게시 의무를 걸지 않는 게</b> 좋습니다. 의무를 걸면 유가와 같아지는데 보상만 없는 캠페인이 돼요 — 지원이 끊깁니다.')}`
  : ST.campTab==='appl' ? `
   <div class="sect2"><h3>지원자 · ${ST.applied?ST.recruited+1:ST.recruited}명</h3><span class="h2">선정 전 1:1로 확인하세요 — 대화는 자동 번역됩니다</span></div>
@@ -633,10 +633,10 @@ camp:()=>({t:'캠페인',s:`열린 캠페인 ${ST.camps.filter(c=>c.st==='open')
      <button class="btn line" onclick="toast('아래 스레드','이 화면 아래 <b>1:1 스레드</b>에서 이어서 대화하세요.')">1:1 대화</button></td></tr>`:''}
   <tr><td><b>Fah K.</b> <span class="mono" style="font-size:10px;color:var(--n600)">@fahbeauty</span></td>
    <td><span class="gd A">A</span></td><td class="mono">88점</td><td><span class="chip nt">지원</span></td>
-   <td><button class="btn line" onclick="toast('1:1 시작','아리가 태국어 첫 질문 초안을 만들었습니다 — 확인 후 보내세요.')">1:1 대화</button></td></tr>
+   <td><button class="btn line" onclick="toast('1:1 시작','theprlist가 태국어 첫 질문 초안을 만들었습니다 — 확인 후 보내세요.')">1:1 대화</button></td></tr>
   <tr><td><b>Nan T.</b> <span class="mono" style="font-size:10px;color:var(--n600)">@nan.talks</span></td>
    <td><span class="gd B">B</span></td><td class="mono">81점</td><td><span class="chip nt">지원</span></td>
-   <td><button class="btn line" onclick="toast('1:1 시작','아리가 태국어 첫 질문 초안을 만들었습니다 — 확인 후 보내세요.')">1:1 대화</button></td></tr>
+   <td><button class="btn line" onclick="toast('1:1 시작','theprlist가 태국어 첫 질문 초안을 만들었습니다 — 확인 후 보내세요.')">1:1 대화</button></td></tr>
   </table>
   ${ST.applied?`
   <div class="sect2" style="margin-top:16px"><h3>1:1 스레드 — ${ST.me.name}</h3>
@@ -717,11 +717,11 @@ function brandSend(e){
 function brandSeed(){
  const k=ST.bCell;
  ST.cellMsgs[k].push({who:'seed', tx:'혹시 <b>요즘 제일 자주 쓰는 앱</b>이 뭐예요? 편집을 뭘로 하시는지 궁금해서요.'});
- toast('마중물 발송','아리가 오늘의 질문을 하나 더 올렸습니다. <b>이건 L2 자동 항목</b>이라 승인 없이 나갑니다.');
+ toast('마중물 발송','theprlist가 오늘의 질문을 하나 더 올렸습니다. <b>이건 L2 자동 항목</b>이라 승인 없이 나갑니다.');
  render();
 }
 function brandDraft(){
- toast('초안 · 승인 필요','아리가 공지 초안을 썼습니다. <b>공개 게시는 게이트</b>라 승인 전에는 나가지 않습니다. — 대표님이 직접 쓰시면 바로 게시됩니다.');
+ toast('초안 · 승인 필요','theprlist가 공지 초안을 썼습니다. <b>공개 게시는 게이트</b>라 승인 전에는 나가지 않습니다. — 대표님이 직접 쓰시면 바로 게시됩니다.');
 }
 
 
@@ -735,12 +735,12 @@ function pubFeed(k){ if(ST.feedSent){ toast('이번 주는 발행됐습니다','
 function actPanel(k){
  return `<div class="agp">
   <div class="sect2"><h3>이번 주 활성화 플랜</h3>
-   <span class="h2">아리가 방을 살아 있게 하는 프로그램 — 캠페인과 무관하게 돕니다</span></div>
+   <span class="h2">theprlist가 방을 살아 있게 하는 프로그램 — 캠페인과 무관하게 돕니다</span></div>
   ${[['월','주간 피드','멤버 콘텐츠 3건 큐레이션 → 방에 게시. <b>서로의 결과물이 최고의 마중물</b>이에요.','L2',ST.feedSent?'발행됨':'대기'],
-     ['화','멤버 스포트라이트','이번 주 한 명을 골라 <b>아리가 인터뷰 3문항</b>. 작은 계정 우선 — 큰 계정은 이미 보여요.','L2','예약'],
+     ['화','멤버 스포트라이트','이번 주 한 명을 골라 <b>theprlist가 인터뷰 3문항</b>. 작은 계정 우선 — 큰 계정은 이미 보여요.','L2','예약'],
      ['수','촬영 팁 큐레이션','잡담에서 나온 팁을 모아 <b>촬영 팁 채널</b>에 정리. 출처 멤버 이름을 남깁니다.','L2','예약'],
      ['목','미니 챌린지','\'선쿠션 덧바르기 전후\' 같은 가벼운 주제. 참여 보상 없음 — <b>보상이 붙으면 숙제가 돼요.</b>','L1','초안 승인 대기'],
-     ['금','브랜드 Q&A','멤버 질문을 모아 브랜드가 답합니다. 답변 초안은 아리가, <b>게시는 승인</b>.','L1','질문 수집 중']]
+     ['금','브랜드 Q&A','멤버 질문을 모아 브랜드가 답합니다. 답변 초안은 theprlist가, <b>게시는 승인</b>.','L1','질문 수집 중']]
    .map(r=>`<div class="mstep"><div class="day">${r[0]}</div>
     <div class="mb"><div class="mt">${r[1]} <span class="chip nt" style="font-size:8.6px;margin-left:4px">${r[3]}</span>
       <span class="chip ${r[4]==='발행됨'?'ok':r[4].includes('승인')?'wt':'nt'}" style="font-size:8.6px">${r[4]}</span></div>
@@ -791,7 +791,7 @@ function doCellInvite(){
 function growPanel(k){
  return `<div class="agp">
   <div class="sect2"><h3>이 셀을 채우는 파이프라인</h3>
-   <span class="h2">아리가 후보를 찾아 초대하고, 가입하면 이 방에 배정합니다</span></div>
+   <span class="h2">theprlist가 후보를 찾아 초대하고, 가입하면 이 방에 배정합니다</span></div>
   <div class="funnel">
    <div class="fs"><div class="l">후보 큐</div><div class="v">${Q().cand}</div>
     <div class="d"><b>발굴 · 수집</b>에서 넘어옴<br>4축 판정 완료</div></div>
@@ -818,7 +818,7 @@ function growPanel(k){
    .map(r=>`<div class="qcand"><span class="h3 mono">${r[0]}</span><span class="s3">${r[1]}</span>
      <span class="s3" style="flex:2">${r[3]}</span><span class="gd ${r[2]}">${r[2]}</span></div>`).join('')}
 
-  <div class="sect2" style="margin-top:20px"><h3>아리가 이 방에서 한 일</h3>
+  <div class="sect2" style="margin-top:20px"><h3>theprlist가 이 방에서 한 일</h3>
    <span class="h2">최근 24시간 · 전부 원장에 기록</span></div>
   ${[['09:00','오늘의 마중물 발송 — <b>"선쿠션 어디부터 바르세요?"</b> · 발화 3명 유도'],
      ['08:40','신규 입장자 <b>${nm}</b>에게 첫 인사 + 프로필 3문항 발송'.replace('${nm}', joined('GLOWLAB')?ST.me.name:'Fah K.')],
@@ -832,14 +832,14 @@ function growPanel(k){
 function rulePanel(k){
  const R=RUL();
  return `<div class="agp">
-  <div class="sect2"><h3>충원 규칙</h3><span class="h2">아리가 이 셀을 어떻게 채울지</span></div>
+  <div class="sect2"><h3>충원 규칙</h3><span class="h2">theprlist가 이 셀을 어떻게 채울지</span></div>
   <div class="rule"><div class="rl"><div class="rn">자동 초대</div>
-    <div class="rd">후보가 쌓이면 <b>아리가 직접 초대문을 보냅니다.</b> 하루 최대 15명 · 언어별로 다시 씁니다.
+    <div class="rd">후보가 쌓이면 <b>theprlist가 직접 초대문을 보냅니다.</b> 하루 최대 15명 · 언어별로 다시 씁니다.
      ${R.autoInvite?'<br>틱톡 DM은 정책상 <b>초안까지만</b> — 발송은 승인함으로.':''}</div></div>
    <div class="sw2 ${R.autoInvite?'on':''}" onclick="setRule('autoInvite',${!R.autoInvite})"><i></i></div></div>
 
   <div class="rule"><div class="rl"><div class="rn">셀 URL 공개 범위</div>
-    <div class="rd">셀마다 <b>고유 URL</b>이 있습니다. 누가 이 링크로 들어올 수 있는지 — 어느 쪽이든 <b>커넥션 패스 로그인</b>은 항상 거칩니다.</div></div>
+    <div class="rd">셀마다 <b>고유 URL</b>이 있습니다. 누가 이 링크로 들어올 수 있는지 — 어느 쪽이든 <b>theprlist 패스 로그인</b>은 항상 거칩니다.</div></div>
    <div class="rc">${[['invite','초대 링크만'],['apply','신청 후 승인'],['open','완전 공개']]
      .map(v=>`<span class="${R.access===v[0]?'on':''}" onclick="setRule('access','${v[0]}')">${v[1]}</span>`).join('')}</div></div>
   <div class="rule"><div class="rl"><div class="rn">자동 번역</div>
@@ -867,7 +867,7 @@ function rulePanel(k){
    <div class="sw2 on"><i></i></div></div>
 
   <div class="sect2" style="margin-top:20px"><h3>자율 등급 · 셀 운영</h3>
-   <span class="h2">아리가 어디까지 스스로 하는가</span></div>
+   <span class="h2">theprlist가 어디까지 스스로 하는가</span></div>
   <div class="rule"><div class="rl"><div class="rn">셀 운영 (C13 카드)</div>
     <div class="rd">${['제안만 — 마중물도 초안으로 올립니다',
       '초안 + 승인 — 문구를 만들고 발송은 대표님이',
@@ -900,11 +900,11 @@ function bjConfirm(v){ ST.bj.confirmed=true;
   :'주력 제품을 다시 지정해 주세요 — 학습 결과에서 해당 축만 갈아끼웁니다.'); render(); }
 function bjSlug(){ const el=document.getElementById('slug'); if(el) ST.bj.slug=(el.value||'glowlab').toLowerCase().replace(/[^a-z0-9-]/g,'');
  ST.bj.slugOk=true;
- toast('사용 가능','<b>connection.app/'+ST.bj.slug+'</b> — 이 주소가 브랜드의 셀 입구가 됩니다. 한번 정하면 바꾸기 어려워요.'); render(); }
-function bjDone(){ toast('브랜드 온보딩 완료','아리가 <b>첫 주 운영 계획</b>을 짜서 브리핑에 올려뒀습니다. 콘솔에서 확인하세요.','brand','brief'); go('brand'); }
+ toast('사용 가능','<b>theprlist.net/'+ST.bj.slug+'</b> — 이 주소가 브랜드의 셀 입구가 됩니다. 한번 정하면 바꾸기 어려워요.'); render(); }
+function bjDone(){ toast('브랜드 온보딩 완료','theprlist가 <b>첫 주 운영 계획</b>을 짜서 브리핑에 올려뒀습니다. 콘솔에서 확인하세요.','brand','brief'); go('brand'); }
 function bjoinView(){
  const B=ST.bj;
- const steps=['계정 · 사업자','브랜드 프로필','이용 요금','아리 온보딩','완료'];
+ const steps=['계정 · 사업자','브랜드 프로필','이용 요금','theprlist 온보딩','완료'];
  const stepHead=`<div class="bjsteps">${steps.map((t,i)=>`<div class="${i<B.step?'done':i===B.step?'now':''}">
    <i>${i<B.step?'✓':i+1}</i><span>${t}</span></div>`).join('')}</div>`;
  let body='';
@@ -924,12 +924,12 @@ function bjoinView(){
   <button class="btn lg" style="margin-top:14px" onclick="${B.agree.every(Boolean)?'bjNext(1)':`toast('진행할 수 없습니다','두 동의가 모두 있어야 합니다. <b>DPA 없이 크리에이터 데이터를 다룰 수 없어요.</b>')`}">다음</button>`;
  else if(B.step===1) body=`
   <h2>브랜드 프로필과 주소</h2>
-  <p class="bjs">여기서 정하는 것들이 <b>아리의 판정 기준</b>과 <b>셀 입구 주소</b>가 됩니다.</p>
+  <p class="bjs">여기서 정하는 것들이 <b>theprlist의 판정 기준</b>과 <b>셀 입구 주소</b>가 됩니다.</p>
   <div class="bjf"><label>카테고리</label><div class="bjchips">${['스킨케어','메이크업','헤어·바디','향수'].map((c,i)=>`<span class="${i===0?'on':''}">${c}</span>`).join('')}</div></div>
   <div class="bjf"><label>타깃 국가 (복수 선택)</label><div class="bjchips">${['태국','미국','베트남','일본','인도네시아'].map((c,i)=>`<span class="${i<3?'on':''}">${c}</span>`).join('')}</div>
-   <div class="sub3" style="margin-top:5px">선택한 국가 언어로 아리가 초대문·마중물을 씁니다.</div></div>
+   <div class="sub3" style="margin-top:5px">선택한 국가 언어로 theprlist가 초대문·마중물을 씁니다.</div></div>
   <div class="bjf"><label>브랜드 주소 — 한번 정하면 바꾸기 어렵습니다</label>
-   <div class="bjrow"><span class="mono" style="font-size:11.6px;color:var(--n600)">connection.app/</span>
+   <div class="bjrow"><span class="mono" style="font-size:11.6px;color:var(--n600)">theprlist.net/</span>
     <input id="slug" value="${B.slug}" style="flex:1" class="mono">
     <button class="btn soft" onclick="bjSlug()">중복 확인</button>
     ${B.slugOk?'<span class="chip ok">사용 가능</span>':''}</div></div>
@@ -944,7 +944,7 @@ function bjoinView(){
   <div class="bjnav"><button class="btn line" onclick="bjNext(-1)">이전</button>
    <button class="btn lg" onclick="bjNext(1)">다음 · 결제는 온보딩 후</button></div>`;
  else if(B.step===3) body=`
-  <h2>아리에게 브랜드를 가르칩니다</h2>
+  <h2>theprlist에게 브랜드를 가르칩니다</h2>
   <p class="bjs">두 단계입니다 — <b>① 사이트를 읽고, ② 사이트가 말해주지 않는 것만 묻습니다.</b>
    여기서 만든 브랜드 프로필이 이후 <b>크리에이터 모집의 판정 기준</b>이 됩니다.</p>
 
@@ -954,7 +954,7 @@ function bjoinView(){
    <div class="sub3">공개 페이지만 읽습니다 — 제품 상세 · 리뷰 · 브랜드 스토리 · 인스타 90일.</div></div>
 
   ${B.learned?`<div class="lrncard">
-   <div class="lh">아리가 읽고 이해한 것 <span class="h2">제품 34페이지 · 리뷰 812건 · 인스타 90일</span></div>
+   <div class="lh">theprlist가 읽고 이해한 것 <span class="h2">제품 34페이지 · 리뷰 812건 · 인스타 90일</span></div>
    ${[['포지셔닝','민감성 피부 · 저자극 · <b>성분 중심</b> 서사','브랜드 스토리 + 제품 상세'],
       ['주력 제품','선쿠션 SPF50+ (전체 매출 언급의 41%)','제품 페이지 · 베스트 탭'],
       ['성분 키워드','시카 · 판테놀 · 무향 — <b>\'순하다\'가 리뷰 최빈 단어</b>','리뷰 812건'],
@@ -968,38 +968,38 @@ function bjoinView(){
      :`확인 — 모집의 중심을 <b>선쿠션</b>으로 잡아도 될까요?
       <span class="cbt" onclick="bjConfirm(true)">맞아요</span>
       <span class="cbt no" onclick="bjConfirm(false)">아니요, 다른 제품</span>`}</div>
-  </div>`:`<div class="lrnhint">링크를 넣고 <b>학습 시작</b>을 누르면 아리가 사이트를 읽고 브랜드 프로필 초안을 만듭니다.</div>`}
+  </div>`:`<div class="lrnhint">링크를 넣고 <b>학습 시작</b>을 누르면 theprlist가 사이트를 읽고 브랜드 프로필 초안을 만듭니다.</div>`}
 
   <div class="bjf" style="margin-top:16px"><label>② 사이트가 말해주지 않는 것 · 5문항</label></div>
-  ${[['우리 브랜드를 한 문장으로?','\'민감성 피부를 위한 저자극 선케어\' — 아리가 초대문·공고에 그대로 씁니다'],
+  ${[['우리 브랜드를 한 문장으로?','\'민감성 피부를 위한 저자극 선케어\' — theprlist가 초대문·공고에 그대로 씁니다'],
      ['어떤 크리에이터가 \'맞는\' 사람인가요?','팔로워 수보다 <b>피부 고민을 직접 말하는 사람</b> — 4축 판정의 적합도 축이 됩니다'],
-     ['절대 하면 안 되는 말·표현은?','\'미백\' · 효능 단정 · 경쟁사 비방 — 아리의 모든 초안에서 금지어로 걸립니다'],
+     ['절대 하면 안 되는 말·표현은?','\'미백\' · 효능 단정 · 경쟁사 비방 — theprlist의 모든 초안에서 금지어로 걸립니다'],
      ['제품을 먼저 보내는 기준은?','등급 B 이상 + 태국 거주 — 샘플 발송 자동 판정 기준이 됩니다'],
-     ['브랜드 말투는?','존댓말 · 이모지 최소 · 태국어는 부드럽게 — 아리가 브랜드 이름으로 말할 때의 톤']]
+     ['브랜드 말투는?','존댓말 · 이모지 최소 · 태국어는 부드럽게 — theprlist가 브랜드 이름으로 말할 때의 톤']]
    .map((q,i)=>`<div class="bjq ${i<=B.q?'done':''}" onclick="ST.bj.q=Math.max(ST.bj.q,${i});render()">
     <div class="qn">Q${i+1}</div><div><div class="qt">${q[0]}</div>
-    <div class="qa">${i<=B.q?q[1]:'답변하면 아리 설정에 반영됩니다 — 눌러서 예시 보기'}</div></div>
+    <div class="qa">${i<=B.q?q[1]:'답변하면 theprlist 설정에 반영됩니다 — 눌러서 예시 보기'}</div></div>
     ${i<=B.q?'<span class="chip ok" style="margin-left:auto;flex-shrink:0">반영됨</span>':''}</div>`).join('')}
   <div class="bjnav"><button class="btn line" onclick="bjNext(-1)">이전</button>
-   <button class="btn lg" onclick="${(B.learned&&B.q>=4)?'bjNext(1)':`toast('아직 부족합니다','${B.learned?'문항이 남았습니다':'<b>사이트 학습</b>부터 돌려주세요'} — 학습 없이 모집을 시작하면 아리가 <b>짐작으로 후보를 고르게</b> 됩니다.')`}">아리 세팅 완료</button></div>`;
+   <button class="btn lg" onclick="${(B.learned&&B.q>=4)?'bjNext(1)':`toast('아직 부족합니다','${B.learned?'문항이 남았습니다':'<b>사이트 학습</b>부터 돌려주세요'} — 학습 없이 모집을 시작하면 theprlist가 <b>짐작으로 후보를 고르게</b> 됩니다.')`}">theprlist 세팅 완료</button></div>`;
  else body=`
   <h2>준비가 끝났습니다</h2>
-  <p class="bjs">아리가 온보딩 답변으로 <b>첫 주 운영 계획</b>을 짰습니다.</p>
+  <p class="bjs">theprlist가 온보딩 답변으로 <b>첫 주 운영 계획</b>을 짰습니다.</p>
   <div class="bjsum">
-   <div class="dkv"><span>브랜드 주소</span><b class="mono">connection.app/${B.slug}</b></div>
+   <div class="dkv"><span>브랜드 주소</span><b class="mono">theprlist.net/${B.slug}</b></div>
    <div class="dkv"><span>이용 요금</span><b>가입 1명당 ₩50 · 고정 구독료 없음</b></div>
    <div class="dkv"><span>타깃</span><b>태국 · 미국 · 베트남 (3개 언어 자동)</b></div>
    <div class="dkv"><span>브랜드 프로필</span><b>사이트 학습(34p · 리뷰 812) + 5문항 → <span class="mono" style="font-size:10px">profile v1</span></b></div>
-   <div class="dkv"><span>아리 첫 주</span><b>인바운드 폼 개설 → 후보 스크리닝 → 1번방 시딩</b></div>
+   <div class="dkv"><span>theprlist 첫 주</span><b>인바운드 폼 개설 → 후보 스크리닝 → 1번방 시딩</b></div>
    <div class="dkv"><span>첫 결정 요청</span><b>초대문 초안 승인 (내일 09:30 예정)</b></div>
   </div>
-  ${NOTE('브랜드가 가입하면서 이미 <b>아리를 세팅</b>했습니다 — 콘솔에 처음 들어가는 순간부터 아리는 일하고 있어요.')}
+  ${NOTE('브랜드가 가입하면서 이미 <b>theprlist를 세팅</b>했습니다 — 콘솔에 처음 들어가는 순간부터 theprlist는 일하고 있어요.')}
   <div class="bjnav"><button class="btn line" onclick="bjNext(-1)">이전</button>
    <button class="btn lg" onclick="bjDone()">브랜드 콘솔 열기 →</button></div>`;
  return `<div class="planw"><div class="plani" style="max-width:720px">
   <div class="plhero" style="padding:22px 26px;margin-bottom:14px">
    <div class="lgm"><span class="sym"><i class="c"></i><i class="a"></i><i class="b"></i></span>
-    <span style="font-size:10px;font-weight:900;letter-spacing:.22em;color:var(--t700)">CONNECTION FOR BRANDS</span></div>
+    <span style="font-size:10px;font-weight:900;letter-spacing:.22em;color:var(--t700)">theprlist for brands</span></div>
    ${stepHead}</div>
   <div class="bjcard">${body}</div>
  </div></div>`;
@@ -1012,7 +1012,7 @@ function recruitPlan(card,tabbar){
  const pipe=['① 브랜드 학습','② 후보 발견','③ 4축 판정','④ 접촉','⑤ 가입 · 과금','⑥ 셀 배정','⑦ 결과 채점'];
  const c1=card('R1','브랜드 학습 — 모집의 뿌리',[
     ['소스 ① 사이트 학습','브랜드가 링크를 넣으면 제품 상세 · 리뷰 · 인스타 90일을 읽어 <b>포지셔닝 · 주력 제품 · 성분 키워드 · 가격대 · 고객의 언어 · 톤</b>을 추출합니다. 공개 페이지만.'],
-    ['소스 ② 온보딩 5문항','사이트가 말해주지 않는 것 — 맞는 크리에이터像 · 금지어 · 샘플 기준 · 말투. <b>대충 쓰면 아리도 대충 압니다.</b>'],
+    ['소스 ② 온보딩 5문항','사이트가 말해주지 않는 것 — 맞는 크리에이터像 · 금지어 · 샘플 기준 · 말투. <b>대충 쓰면 theprlist도 대충 압니다.</b>'],
     ['소스 ③ 운영 피드백','대표가 후보를 반려·추가할 때마다 그 이유가 프로필에 쌓입니다. <b>운영할수록 정확해지는 유일한 소스.</b>'],
     ['산출 — 브랜드 프로필 v','버전 관리되는 구조화 문서. 바뀌면 <b>이후 판정부터</b> 적용되고 원장에 남습니다.']],
    '학습이 부실하면 그 뒤 전부가 부실해집니다 — 그래서 온보딩에서 <b>학습 없이는 모집을 시작할 수 없게</b> 막았습니다.');
@@ -1020,7 +1020,7 @@ function recruitPlan(card,tabbar){
     ['4축 판정 · 적합도 축','\'우리 제품과 맞는가\'의 기준이 곧 프로필 — 주력 제품 · 타깃 피부 타입 · 카테고리 톤.'],
     ['초대문 · 공고 개인화','고객의 언어("겉돌지 않아요")와 브랜드 말투로 씁니다. <b>복붙 초대는 수락률 9%</b>, 개인화는 47%.'],
     ['채널 우선순위','중가 브랜드 → 소액 캠페인 채널 강화, 성분 서사 → 리뷰형 커뮤니티 우선 같은 배분 판단.'],
-    ['금지어 필터','아리가 쓰는 <b>모든 초안</b>이 발송 전에 금지어 검사를 통과해야 합니다.']]);
+    ['금지어 필터','theprlist가 쓰는 <b>모든 초안</b>이 발송 전에 금지어 검사를 통과해야 합니다.']]);
  const c3=`<div class="pk"><div class="pkh"><span class="no2">R3</span><h2>담당자 8명 — 한눈에</h2></div>
    <table class="dbt" style="margin-top:4px"><tr><th>담당</th><th>목표</th><th style="width:170px">핵심 KPI</th><th style="width:170px">실패 시</th></tr>
    ${Object.keys(AGSPEC).map(k=>`<tr><td><b>${CHAN[k].nm}</b></td>
@@ -1040,7 +1040,7 @@ function recruitPlan(card,tabbar){
     ['가중치 갱신','틀린 이유가 가중치로 — <span class="mono" style="font-size:10px">follower 0.30→0.12</span> 같은 변경이 원장에 남음.'],
     ['브랜드 프로필 역반영','\'이런 후보가 실제로 완주하더라\'가 프로필의 크리에이터像을 다시 씁니다.']]);
  const c6=card('R6','단계 로드맵',[
-    ['M0 — 수동 + 초안','아리는 후보 리스트와 초안만. 발송·게시 전부 사람. <b>판정 정확도 검증 기간.</b>'],
+    ['M0 — 수동 + 초안','theprlist는 후보 리스트와 초안만. 발송·게시 전부 사람. <b>판정 정확도 검증 기간.</b>'],
     ['M1 — L1 반자동','인바운드 판정 · 스윕 자동화. 접촉은 승인제 유지. 채점 루프 가동.'],
     ['M2 — L2 조건 자동','채점 정확도가 기준을 넘은 채널부터 규칙 내 자동으로. <b>승격 조건은 감이 아니라 브라이어 점수.</b>']],
    '자동화의 순서가 거꾸로면 망합니다 — <b>먼저 채점, 그 다음 자동화.</b>');
@@ -1073,20 +1073,20 @@ function planView(){
    <div class="lgm"><span class="sym"><i class="c"></i><i class="a"></i><i class="b"></i></span><span style="font-size:10px;font-weight:900;letter-spacing:.22em;color:var(--t700)">CONNECTION · 핵심 기획</span></div>
    ${tabbar}
    <h1>브랜드가 소유하는 글로벌 크리에이터 커뮤니티를,<br>에이전트가 운영한다.</h1>
-   <p>커넥션은 <b>계정 하나(패스)</b>로 여러 브랜드의 셀에 들어가는 구조 위에,
-    브랜드마다 <b>아리(운영 에이전트)</b>를 붙여 모집 · 커뮤니티 · 검수 · 정산 · 권리를 대신 굴리는 서비스입니다.
-    RemixHub의 권리 엔진이 아래층, 커넥션의 에이전트가 위층이에요.</p>
+   <p>theprlist은 <b>계정 하나(패스)</b>로 여러 브랜드의 셀에 들어가는 구조 위에,
+    브랜드마다 <b>theprlist(운영 에이전트)</b>를 붙여 모집 · 커뮤니티 · 검수 · 정산 · 권리를 대신 굴리는 서비스입니다.
+    RemixHub의 권리 엔진이 아래층, theprlist의 에이전트가 위층이에요.</p>
   </div>
   <div class="pgrid">
   ${card('01','접근 · URL',[
-    ['주소는 브랜드명 하나','<b class=mono>connection.app/glowlab</b> — 셀·채널은 내부 라우팅. 주소가 복잡하면 공유가 죽습니다.'],
+    ['주소는 브랜드명 하나','<b class=mono>theprlist.net/glowlab</b> — 셀·채널은 내부 라우팅. 주소가 복잡하면 공유가 죽습니다.'],
     ['링크는 숨기고 공유는 버튼','화면에 URL을 상시 노출하지 않습니다. <b>↗ 공유</b>를 누르면 복사.'],
-    ['로그인은 항상 커넥션 패스','어떤 링크로 들어와도 <b>패스 로그인 → 원래 가려던 방</b>으로 리다이렉트.'],
+    ['로그인은 항상 theprlist 패스','어떤 링크로 들어와도 <b>패스 로그인 → 원래 가려던 방</b>으로 리다이렉트.'],
     ['웹이자 앱','PWA — 같은 URL로 홈 화면 설치 · 오프라인 캐시 · 셀 알림 푸시.']])
   +card('02','가입 · 계정',[
     ['틱톡 또는 인스타 OAuth 필수','이메일 가입 없음. <b>본인 크리에이터 계정 연결이 곧 가입</b> — DB 품질의 시작점.'],
     ['필수 동의 3 + 선택 1','본인 확인 · 약관 · 국외 이전(필수), 교차 브랜드 추천(선택). append-only 기록.'],
-    ['한 계정 · N 브랜드 멤버십','두 번째 브랜드부터 재가입 없음. 커넥션은 <b>획득 비용 0으로 ₩50</b>을 다시 받음.']])
+    ['한 계정 · N 브랜드 멤버십','두 번째 브랜드부터 재가입 없음. theprlist은 <b>획득 비용 0으로 ₩50</b>을 다시 받음.']])
   +card('03','셀 · 커뮤니티',[
     ['상한 없음','정원 대신 <b>발화 밀도</b>로 건강을 판단. 묻히면 소그룹 스레드 제안.'],
     ['캠페인과 무관한 자유 시딩','셀은 캠페인 단위로 묶지 않습니다. 캠페인이 끝나도 방은 계속 삽니다.'],
@@ -1094,7 +1094,7 @@ function planView(){
     ['조급함 장치 제거','타이핑 표시 · 읽음 · @everyone · 출석 보상 없음.'],
     ['브랜드도 멤버','관리자 배지 없이 브랜드 이름으로 같은 방에. 감시가 아니라 동석.'],
     ['크로스 노출 차단','셀 안에서 다른 브랜드는 <b>절대 보이지 않음.</b> 이동은 초대 링크와 옵트인 추천(같은 카테고리 제외)뿐.']])
-  +card('04','운영 에이전트 · 아리',[
+  +card('04','운영 에이전트 · theprlist',[
     ['기능이 아니라 담당자','발굴 8명 체제 — 각자 목표 · 진행 중 작업 · <b>한 것 / 안 한 것</b> · 다음 행동.'],
     ['활성화 플랜','주간 피드(멤버 콘텐츠 큐레이션) · 스포트라이트 · 팁 큐레이션 · 미니 챌린지 · Q&A — 요일제로 방을 살립니다.'],
     ['게이트 4종','개인정보 제공 · 정산 · 외부 발송 · 공개 게시 — <b>밖으로 나가는 건 전부 사람이 승인.</b>'],
@@ -1106,7 +1106,7 @@ function planView(){
     ['내보내기는 게이트','연락처·주소가 포함되면 CSV도 PII 승인 필요.']])
   +card('06','기술 스택 · 해자',[
     ['L1 결과 파이프라인','초대→가입→게시→검수→잔존이 한 사람에게 귀속되는 이벤트 스키마.'],
-    ['L2 평가 하네스','아리의 예측이 30일 뒤 자동 채점 → 가중치 갱신. <b>성적표가 해자.</b>'],
+    ['L2 평가 하네스','theprlist의 예측이 30일 뒤 자동 채점 → 가중치 갱신. <b>성적표가 해자.</b>'],
     ['L3 규범 메모리','커뮤니티별 통한 문구·잘린 문구, 버전 관리 + 근거 링크.'],
     ['L4 신뢰 인프라','판단 원장 · 열람·이의 제기 · 동의 철회 0.4초 전파. <b>데이터를 들고 있을 자격.</b>'],
     ['안 하는 것','자체 LLM · 스크래핑 · 범용 CRM.']])
@@ -1121,7 +1121,7 @@ function planView(){
     ['8/26','URL을 브랜드명 하나로 단순화 · <b>셀 상한 제거</b> · 틱톡/인스타 OAuth 필수 · 자유 시딩 · 활성화 플랜 도입'],
     ['8/26','<b>반출·라이선스 모듈 제외</b> · 수익은 가입당 과금으로 · 브랜드 가입 프로세스 신설'],
     ['8/26','<b>셀 찾기 노출 제거</b> — 셀 컨텍스트는 브랜드 단독 세계 · 이동은 초대 링크 + 동종 카테고리 배제 추천만']],
-   '상한 제거로 \'30명 정원\' 논거는 내려놓았지만, 조급함 장치 제거 + 아리 마중물 + 멤버 콘텐츠 피드가 <b>\'죽지 않는 방\'</b>이라는 차별점을 이어받습니다.')}
+   '상한 제거로 \'30명 정원\' 논거는 내려놓았지만, 조급함 장치 제거 + theprlist 마중물 + 멤버 콘텐츠 피드가 <b>\'죽지 않는 방\'</b>이라는 차별점을 이어받습니다.')}
   </div>
  </div></div>`;
 }
@@ -1208,7 +1208,7 @@ function dbView(){
      <td style="font-size:10.4px;color:var(--n600)">${r.last}</td></tr>`).join('')}
    ${rows.length?'':'<tr><td colspan="9" style="text-align:center;color:var(--n400);padding:22px">검색 결과가 없습니다</td></tr>'}
    </table>
-   ${NOTE('이 DB의 모든 행은 <b>본인 SNS 계정 OAuth</b>로 시작됐습니다. 수기 입력 행이 없어서 <b>가짜·중복이 구조적으로 안 생깁니다.</b> 등급·상태는 아리가 갱신하고, 근거는 전부 원장에 있어요.')}
+   ${NOTE('이 DB의 모든 행은 <b>본인 SNS 계정 OAuth</b>로 시작됐습니다. 수기 입력 행이 없어서 <b>가짜·중복이 구조적으로 안 생깁니다.</b> 등급·상태는 theprlist가 갱신하고, 근거는 전부 원장에 있어요.')}
   </div>
   <div class="dbside">
    <div class="dph"><div class="a av" style="width:38px;height:38px"></div>
@@ -1227,7 +1227,7 @@ function dbView(){
    ${sel.id==='me'?`<div class="dkv"><span>피부 타입</span><b>${ST.profile.skin} · 매칭에 사용</b></div>`:''}
    <div class="dkv"><span>정산 계좌</span><b>정산 동의 · 마스킹 보관</b></div>
    <div class="dkv"><span>타 브랜드 완주 이력</span><b>${sel.id==='me'&&!ST.me.consents[3]?'<span style="color:var(--c500)">동의 없음 · 참조 불가</span>':'교차 참조 동의'}</b></div>
-   <div class="dsec">아리 메모</div>
+   <div class="dsec">theprlist 메모</div>
    <div class="dmemo">${sel.memo}</div>
    <div style="display:flex;gap:6px;margin-top:10px">
     <button class="btn soft" style="flex:1;font-size:10.6px" onclick="ST.b='cells';render()">셀에서 보기</button>
@@ -1736,7 +1736,7 @@ https://instagram.com/june.care
   const G=ST.tech;
   body=`<div class="hero">
    <div class="ht">에이전트는 우리 기술이 아닙니다</div>
-   <p>아리의 두뇌는 사다 쓰는 것이고, 경쟁사도 같은 걸 삽니다. 프롬프트는 6개월이면 따라잡혀요.
+   <p>theprlist의 두뇌는 사다 쓰는 것이고, 경쟁사도 같은 걸 삽니다. 프롬프트는 6개월이면 따라잡혀요.
    우리가 쌓는 건 <b>에이전트가 내린 판단이 맞았는지 채점당하며 쌓이는 성적표</b>와,
    그 데이터를 <b>합법적으로 들고 있을 자격</b>입니다. 아래 4층이 그 실체예요.</p></div>
 
@@ -1756,7 +1756,7 @@ https://instagram.com/june.care
 
   <div class="sect2" style="margin-top:20px"><h3>L2 · 평가 하네스</h3>
    <span class="h2">예측 점수는 아무나 만듭니다 — 그 점수가 30일 뒤 자동으로 채점되는 회사는 드뭅니다</span></div>
-  <table><tr><th>지난주 예측</th><th style="width:92px;white-space:nowrap">아리 예측</th>
+  <table><tr><th>지난주 예측</th><th style="width:92px;white-space:nowrap">theprlist 예측</th>
    <th style="width:92px;white-space:nowrap">실제 결과</th><th style="width:64px">채점</th></tr>
   ${[['@fahbeauty · 14일 내 게시','높음 · 92','게시 D+9','<span class="chip ok">적중</span>'],
      ['@june.care · 14일 내 게시','높음 · 89','게시 D+13','<span class="chip ok">적중</span>'],
@@ -1788,7 +1788,7 @@ https://instagram.com/june.care
   <div class="sect2" style="margin-top:20px"><h3>L4 · 신뢰 인프라</h3>
    <span class="h2">경쟁사가 이 데이터를 못 모으는 이유가 기술이 없어서가 아니라 자격이 없어서가 되게</span></div>
   <div class="rule"><div class="rl"><div class="rn">판단 원장</div>
-    <div class="rd">아리의 모든 판단이 <b>근거 신호와 함께</b> 남습니다. 오늘 ${253}건.
+    <div class="rd">theprlist의 모든 판단이 <b>근거 신호와 함께</b> 남습니다. 오늘 ${253}건.
      "왜 떨어뜨렸나"에 답 못 하는 판정은 자산이 아니라 리스크예요.</div></div>
    <div class="rc"><span class="lock">전건 기록</span></div></div>
   <div class="rule"><div class="rl"><div class="rn">열람 · 이의 제기</div>
@@ -1883,7 +1883,7 @@ function bcellView(){
      ${BCELLS[x].state==='silent'?'<span class="bg2" style="background:var(--c50);color:var(--c500)">침묵 4일</span>'
        :'<span class="bg2" style="background:var(--s50);color:var(--s700)">활성</span>'}</a>`).join('')}
    <div class="sc" style="margin-top:14px">대기</div>
-   <a onclick="toast('새 셀','셀은 <b>캠페인과 무관하게</b> 자유롭게 만듭니다. 이름과 시딩 주제만 정하면 아리가 배정·마중물을 이어받아요.')"
+   <a onclick="toast('새 셀','셀은 <b>캠페인과 무관하게</b> 자유롭게 만듭니다. 이름과 시딩 주제만 정하면 theprlist가 배정·마중물을 이어받아요.')"
      style="border:1px dashed var(--n300)"><div class="nm">+ 새 셀 만들기</div>
     <div class="ds">캠페인과 무관 · 자유 개설</div></a>
   </div>
@@ -1891,7 +1891,7 @@ function bcellView(){
   <div class="mid2">
    <div class="hd2"><div><div class="t">${C.nm}</div>
      <div class="s">${bCellCount(k)}명 · 오늘 47명이 봤어요${linked?' · <b>크리에이터 앱과 같은 방</b>':''}
-      <span class="urlchip" onclick="toast('링크 복사됨','<span class=mono>connection.app/glowlab</span> — 브랜드명 하나로 끝나는 주소입니다. 받은 사람은 <b>로그인 후 자기 셀</b>로 들어와요.')">↗ 공유</span>
+      <span class="urlchip" onclick="toast('링크 복사됨','<span class=mono>theprlist.net/glowlab</span> — 브랜드명 하나로 끝나는 주소입니다. 받은 사람은 <b>로그인 후 자기 셀</b>로 들어와요.')">↗ 공유</span>
       <span class="urlchip" onclick="toast('콘솔 언어','브랜드 콘솔은 <b>브랜드 본국어(한국어) 중심</b>입니다. 태국어·영어 메시지는 한국어로 자동 번역돼 보이고, 칩을 누르면 원문이 열립니다.')">KO 중심 · 자동 번역</span></div></div>
     <div class="tabs2">${[['talk','대화'],['act','활성화'],['grow','충원'],['rule','규칙']].map(t=>
       `<span class="${ST.bTab===t[0]?'on':''}" onclick="ST.bTab='${t[0]}';render()">${t[1]}</span>`).join('')}</div></div>
@@ -1904,7 +1904,7 @@ function bcellView(){
     ${ST.bCh==='잡담'? `<div class="sy" style="text-align:center;font-size:10.2px;color:var(--n400);margin:10px 0">— 8월 22일 —</div>`
       + (msgs.length? msgs.map((m,i)=>{
         if(m.who==='seed') return `<div class="sd" style="margin-bottom:12px"><div class="a av"></div><div>
-          <div class="l">${m.f?'아리 · 이번 주 피드':'아리 · 오늘의 질문'} · <b>각자 언어로 발송</b></div><p>${m.tx}</p></div></div>`;
+          <div class="l">${m.f?'theprlist · 이번 주 피드':'theprlist · 오늘의 질문'} · <b>각자 언어로 발송</b></div><p>${m.tx}</p></div></div>`;
         if(m.who==='sys') return `<div style="text-align:center;font-size:10.2px;color:var(--n400);margin:10px 0">${m.tx}</div>`;
         if(m.brand) return `<div class="bmsg brand"><div class="a" style="width:30px;height:30px;border-radius:8px;
           background:linear-gradient(140deg,#EFC8B6,#C2543C)"></div><div>
@@ -1928,17 +1928,17 @@ function bcellView(){
         <div class="tx">8월 선쿠션 캠페인이 열렸어요. 지원은 앱 캠페인 탭에서요.</div></div></div>
        <div class="empty" style="margin-top:12px"><div class="a av"></div>
         <p>공지는 <b>읽기 전용</b>입니다. 크리에이터는 댓글을 달 수 없고 잡담 채널에서 이야기합니다.
-        아리가 공지 초안을 쓰면 <b>공개 게시 게이트</b>를 거칩니다.</p></div>`}
+        theprlist가 공지 초안을 쓰면 <b>공개 게시 게이트</b>를 거칩니다.</p></div>`}
    </div>
 
    ${ST.bCh!=='공지'? `<div class="in2"><div class="box">
      <span class="as">GLOWLAB로 게시</span>
      <input placeholder="셀에 직접 말 걸기 (엔터)" onkeydown="brandSend(event)"></div>
      <div class="hintline">대표님이 <b>직접 쓰는 글은 게이트를 거치지 않습니다.</b>
-      아리가 대신 쓰면 <b>공개 게시 게이트</b>로 올라갑니다.</div></div>`
+      theprlist가 대신 쓰면 <b>공개 게시 게이트</b>로 올라갑니다.</div></div>`
     : `<div class="in2"><div class="box" style="opacity:.55">
-      <span class="as">공지 · 읽기 전용</span><input placeholder="공지는 아리 초안 → 승인 후 게시" disabled></div>
-      <div class="hintline"><button class="btn soft" style="margin-top:7px" onclick="brandDraft()">아리에게 공지 초안 요청</button></div></div>`}
+      <span class="as">공지 · 읽기 전용</span><input placeholder="공지는 theprlist 초안 → 승인 후 게시" disabled></div>
+      <div class="hintline"><button class="btn soft" style="margin-top:7px" onclick="brandDraft()">theprlist에게 공지 초안 요청</button></div></div>`}
   `}
   </div>
 
@@ -1950,7 +1950,7 @@ function bcellView(){
     <div class="d">${bSpoke(k)===0?'<b>4일째 0명</b>':'본 사람 47명 중'}</div></div>
    <div class="st2"><div class="l">마중물</div><div class="v">${k==='TH3'?'1 / 1':'1 / 1'}</div>
     <div class="d">오늘치 질문 <b>발송됨</b></div></div>
-   <div class="sc" style="margin-top:14px">아리가 할 수 있는 것</div>
+   <div class="sc" style="margin-top:14px">theprlist가 할 수 있는 것</div>
    <div class="act"><button class="btn soft" style="width:100%" onclick="brandSeed()">마중물 한 번 더</button></div>
    <div class="act"><button class="btn line" style="width:100%"
      onclick="toast('재편성 제안','3번방을 20명으로 줄이고 활성 3명을 옮기는 안입니다. <b>사람을 옮기는 건 관계가 끊기는 일</b>이라 승인함으로 올렸습니다.','brand','gates')">재편성 제안 보기</button></div>
@@ -1969,9 +1969,9 @@ function render(){
  ['ac','ab','abj','ap'].forEach((id,i)=>{
   document.getElementById(id).className=ST.app===['creator','brand','bjoin','plan'][i]?'on':''; });
  document.getElementById('hint').innerHTML={
-  creator:'커넥션 가입 → <b>브랜드 셀 추가 가입</b> → 셀 생활',
+  creator:'theprlist 가입 → <b>브랜드 셀 추가 가입</b> → 셀 생활',
   brand:'게이트를 승인하면 <b>크리에이터 앱</b>이 바뀝니다',
-  bjoin:'브랜드는 <b>가입하면서 아리를 세팅</b>합니다',
+  bjoin:'브랜드는 <b>가입하면서 theprlist를 세팅</b>합니다',
   plan:'서비스의 <b>핵심 결정</b>이 모여 있는 곳'}[ST.app];
  const st=document.getElementById('stage');
 
@@ -1991,7 +1991,7 @@ function render(){
      ${ST.curCh==='잡담'? `<div class="sy">— 8월 22일 —</div>
       <div class="sy" style="color:var(--t700)">이 방은 3개 언어로 대화 중 · 서로 자기 언어로 봅니다</div>`+msgs.map((m,i)=>{
        if(m.who==='seed') return `<div class="sd"><div class="a av"></div><div>
-         <div class="l">${m.f?'아리 · 이번 주 피드':'아리 · 오늘의 질문'} · <b>각자 언어로 발송</b></div><p>${m.tx}</p></div></div>`;
+         <div class="l">${m.f?'theprlist · 이번 주 피드':'theprlist · 오늘의 질문'} · <b>각자 언어로 발송</b></div><p>${m.tx}</p></div></div>`;
        if(m.who==='sys') return `<div class="sy">${m.tx}</div>`;
        if(m.brand) return `<div class="m2b"><div class="a" style="width:29px;height:29px;border-radius:8px;
          background:linear-gradient(140deg,#EFC8B6,#C2543C)"></div><div>
@@ -2030,7 +2030,7 @@ function render(){
     ${v.hd?`<div class="phd">${v.back?`<button class="bk" onclick="ST.c='${v.back}';render()">‹</button>`:''}
       ${(ST.c==='cell'||ST.c==='agent'||ST.c==='hub')?'<div class="a av"></div>':''}
       <div style="flex:1;min-width:0"><div class="n">${v.hd[0]}</div><div class="s">${v.hd[1]}</div></div>
-      ${ST.c==='cell'?`<span class="hbt" onclick="toast('링크 복사됨','<b>connection.app/${(ST.me.cur||'glowlab').toLowerCase()}</b> — 받은 사람은 <b>커넥션 패스 로그인</b>을 거쳐 바로 이 방으로 들어옵니다.')">↗ 공유</span>
+      ${ST.c==='cell'?`<span class="hbt" onclick="toast('링크 복사됨','<b>theprlist.net/${(ST.me.cur||'glowlab').toLowerCase()}</b> — 받은 사람은 <b>theprlist 패스 로그인</b>을 거쳐 바로 이 방으로 들어옵니다.')">↗ 공유</span>
        <span class="hbt soft" onclick="window.notifMenu&&notifMenu()">🔔</span>
        <span class="hbt soft" onclick="window.reportFlag&&reportFlag()">⚑</span>
        <span class="hbt soft" onclick="langMenu()">${window.__LANG_LABEL||'ไทย'}</span>`:''}</div>`:''}
@@ -2042,14 +2042,14 @@ function render(){
       onclick="ST.c='${t[0]}';render()"><i>${t[1]}</i>${t[2]}</div>`).join('')}</div>`:''}
    </div>
    <div class="side"><div class="ttl">가입 여정</div>
-    ${[['커넥션 계정 만들기',ST.me.pass,'signup'],['브랜드 셀 고르기',ST.me.joined.length>0,'hub'],
+    ${[['theprlist 계정 만들기',ST.me.pass,'signup'],['브랜드 셀 고르기',ST.me.joined.length>0,'hub'],
        ['브랜드 동의 · 자격 확인',ST.me.joined.length>0,'join'],['셀 입장',ST.me.joined.length>0,'cell'],
        ['(초대 시) 다른 셀 연결',ST.me.joined.length>1,'hub']]
      .map((s,i)=>{const now=(!s[1]&&(i===0?!ST.me.pass:i===1?ST.me.pass&&!ST.me.joined.length:i===4&&ST.me.joined.length===1));
       return `<div class="step ${s[1]?'done':now?'now':''}"><div class="no">${s[1]?'✓':i+1}</div><div>${s[0]}</div></div>`}).join('')}
     <div class="card" style="margin-top:14px"><h4>이 구조의 핵심</h4>
-     <p>계정은 <b>커넥션</b>이 하나만 만들고, 회원은 <b>브랜드마다 따로</b> 생깁니다.
-     그래서 두 번째 브랜드부터는 <b>재가입이 없고</b>, 커넥션은 <b>획득 비용 0으로 ₩50</b>을 다시 받습니다.</p></div>
+     <p>계정은 <b>theprlist</b>이 하나만 만들고, 회원은 <b>브랜드마다 따로</b> 생깁니다.
+     그래서 두 번째 브랜드부터는 <b>재가입이 없고</b>, theprlist은 <b>획득 비용 0으로 ₩50</b>을 다시 받습니다.</p></div>
     <div class="card"><h4>지금 상태</h4>
      <p>패스 <b>${ST.me.pass?'있음':'없음'}</b> · 소속 셀 <b>${ST.me.joined.length}개</b>
      ${ST.me.joined.length?`<br>현재 셀 <b>${ST.me.cur?BRANDS[ST.me.cur].nm:'-'}</b>`:''}</p></div>
@@ -2065,14 +2065,14 @@ function render(){
      ${r[0]==='gates'&&gateCount()?`<span class="bdg">${gateCount()}</span>`:''}
      ${r[0]==='review'&&reviewCount()?`<span class="bdg">${reviewCount()}</span>`:''}</button>`).join('')}
     <div class="sp"></div><div class="me"></div></div>
-   <div class="chat"><div class="hd"><div class="a av"></div><div><div class="n">아리</div>
+   <div class="chat"><div class="hd"><div class="a av"></div><div><div class="n">theprlist</div>
      <div class="s">GLOWLAB 담당 · 근무 중</div></div></div>
     <div class="feed" id="feed">${ST.chat.map(node).join('')}</div>
     <div class="cmp"><div class="sgs">
      <span onclick="say('승인할 거')">승인할 거</span><span onclick="say('셀 어때')">셀 어때</span>
      <span onclick="say('모집 어때')">모집 어때</span>
      <span onclick="say('명부')">명부</span><span onclick="say('정산')">정산</span></div>
-     <div class="ipt"><input id="cmd" placeholder="아리에게 말하기…"
+     <div class="ipt"><input id="cmd" placeholder="theprlist에게 말하기…"
        onkeydown="if(event.key==='Enter'){say(this.value);this.value=''}">
       <span class="snd" onclick="const i=document.getElementById('cmd');say(i.value);i.value=''">↑</span></div></div></div>
    <div class="cvs"><div class="cvhd"><div><h1>${v.t}</h1><div class="s">${v.s}</div></div>
@@ -2085,4 +2085,4 @@ function render(){
  else if(ST.app==='bjoin'){ st.innerHTML=bjoinView(); }
 
 }
-seedChat(); render();
+if (!window.__SURFACE) { seedChat(); render(); }

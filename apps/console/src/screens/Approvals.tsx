@@ -50,7 +50,7 @@ export default function Approvals() {
               <span style={{ fontSize: 11, color: "var(--n500)" }}>{GATE_LABEL[g.kind]}</span>
               {g.state === "HELD" && <Badge color="amber">보류 중</Badge>}
               <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--n400)" }}>
-                아리 · {g.at}
+                theprlist · {g.at}
               </span>
             </div>
             <div style={{ fontWeight: 800, fontSize: 14 }}>{g.summary}</div>

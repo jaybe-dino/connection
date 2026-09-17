@@ -1,4 +1,4 @@
-/** 커넥션 크리에이터 앱 — 앱-퍼스트 코드베이스 (Expo · iOS/Android/Web 단일 코드).
+/** theprlist 크리에이터 앱 — 앱-퍼스트 코드베이스 (Expo · iOS/Android/Web 단일 코드).
  *
  * 지금은 웹으로만 서비스(expo export -p web → Vercel), 스토어가 필요해지면
  * 같은 코드로 eas build만 켠다. 하단 6탭 — 셀·담당자·캠페인·제출·정산·내 패스.
@@ -54,7 +54,7 @@ function Root() {
         flexDirection: "row", justifyContent: "space-between", alignItems: "center",
       }}>
         <Pressable onPress={() => setShowNotif(false)}>
-          <Text style={{ fontWeight: "900", fontSize: 16, color: C.n800 }}>커넥션</Text>
+          <Text style={{ fontWeight: "900", fontSize: 16, color: C.n800 }}>theprlist</Text>
         </Pressable>
         <Pressable
           onPress={() => setShowNotif((v) => !v)}

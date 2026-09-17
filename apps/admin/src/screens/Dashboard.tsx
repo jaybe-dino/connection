@@ -18,7 +18,7 @@ export default function Dashboard({ summary }: { summary: Summary | null }) {
     <div style={{ maxWidth: 880 }}>
       <h1 style={{ fontSize: 20, fontWeight: 900, margin: "0 0 4px" }}>대시보드</h1>
       <div style={{ fontSize: 12, color: "var(--n500)", marginBottom: 16 }}>
-        아리가 못 푸는 일은 결국 사람에게 옵니다 — 여기가 그 사람의 작업대예요.
+        theprlist가 못 푸는 일은 결국 사람에게 옵니다 — 여기가 그 사람의 작업대예요.
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
         {tiles.map(([label, value, note]) => (

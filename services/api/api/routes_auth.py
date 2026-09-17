@@ -205,10 +205,10 @@ def invite_brand(body: InviteIn, authorization: str = Header(default=""),
         out["demoLink"] = link      # 실모드에선 메일로만 발송
     else:
         sent = _send_system_mail(
-            email, "The PR List — 브랜드 콘솔 초대",
-            f"안녕하세요, The PR List입니다.\n\n{body.brand_id} 브랜드 콘솔 계정이"
+            email, "theprlist — 브랜드 콘솔 초대",
+            f"안녕하세요, theprlist입니다.\n\n{body.brand_id} 브랜드 콘솔 계정이"
             f" 준비됐어요. 아래 링크에서 비밀번호를 설정하면 바로 시작됩니다"
-            f" (72시간 유효).\n\n{link}\n\n— 아리 드림")
+            f" (72시간 유효).\n\n{link}\n\n— theprlist 드림")
         out["sent"] = sent
         if not sent:
             out["demoLink"] = link
@@ -264,9 +264,9 @@ def magic_request(body: MagicIn) -> dict:
         out["demoLink"] = link
     else:
         out["sent"] = _send_system_mail(
-            email, "The PR List — 로그인 링크",
+            email, "theprlist — 로그인 링크",
             f"안녕하세요! 아래 링크를 누르면 바로 로그인됩니다 (15분 유효).\n\n"
-            f"{link}\n\n본인이 요청하지 않았다면 이 메일은 무시하세요.\n— 아리")
+            f"{link}\n\n본인이 요청하지 않았다면 이 메일은 무시하세요.\n— theprlist")
         if not out["sent"]:
             out["hint"] = "메일 발송 실패 — 잠시 후 다시 시도해 주세요"
     return out

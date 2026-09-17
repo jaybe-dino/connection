@@ -8,7 +8,7 @@ interface Msg {
   jump?: { label: string; to: string };
 }
 
-/** 아리 채팅 패널 — 상시. 대화가 곧 내비게이션 · 툴카드 · 캔버스 점프. */
+/** theprlist 채팅 패널 — 상시. 대화가 곧 내비게이션 · 툴카드 · 캔버스 점프. */
 export default function AriPanel() {
   const nav = useNavigate();
   const { pendingCount } = useGates();
@@ -61,7 +61,7 @@ export default function AriPanel() {
           A
         </div>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 13 }}>아리</div>
+          <div style={{ fontWeight: 800, fontSize: 13 }}>theprlist</div>
           <div style={{ fontSize: 10, color: "var(--s700)" }}>● L2 · 8명 근무 중</div>
         </div>
       </div>
@@ -96,7 +96,7 @@ export default function AriPanel() {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
-          placeholder="아리에게 물어보기"
+          placeholder="theprlist에게 물어보기"
           style={{ flex: 1, padding: "9px 12px", border: "1px solid var(--n200)", borderRadius: 999, fontSize: 12.5 }}
         />
         <button onClick={send} style={{ padding: "9px 14px", border: "none", borderRadius: 999, background: "var(--p500)", color: "#fff", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>

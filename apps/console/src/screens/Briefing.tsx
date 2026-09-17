@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { Card, SectionTitle } from "@connection/ui";
 import { useGates } from "../gateStore";
 
-/** 브리핑 — 지표 4 · 오늘 결정할 것 · 아리 노트 */
+/** 브리핑 — 지표 4 · 오늘 결정할 것 · theprlist 노트 */
 export default function Briefing() {
   const nav = useNavigate();
   const { gates, pendingCount } = useGates();
@@ -44,7 +44,7 @@ export default function Briefing() {
         ))}
       </div>
 
-      <SectionTitle>아리 노트</SectionTitle>
+      <SectionTitle>theprlist 노트</SectionTitle>
       <Card style={{ background: "var(--p50)", borderColor: "transparent" }}>
         <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.8 }}>
           <li>틱톡샵 아웃바운드 수락률 41% — 3일 평균 상승세, 초대권 20장 유지 제안.</li>

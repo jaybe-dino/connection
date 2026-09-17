@@ -442,15 +442,22 @@
     return String(value == null ? '' : value).replace(/[&<>"']/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
   }
   var outreachData = null;
+  var outreachError = '';
+  var outreachLoading = false;
   var outreachBusy = false;
   var outreachVersion = 0;
   function loadOutreach() {
     var brand=BRAND(), version=++outreachVersion;
+    outreachLoading=true;outreachError='';
     req('GET','/brands/'+brand+'/outreach').then(function(r){
       if(version!==outreachVersion || BRAND()!==brand) return;
-      outreachData=r;
+      outreachData=r;outreachLoading=false;
       if(typeof ST!=='undefined' && ST.b==='src' && window.render) render();
-    }).catch(function(){ outreachData=null; });
+    }).catch(function(){
+      if(version!==outreachVersion || BRAND()!==brand)return;
+      outreachData=null;outreachLoading=false;outreachError='발송 내역을 불러오지 못했습니다. 로그인 상태를 확인하고 다시 시도해 주세요.';
+      if(typeof ST!=='undefined' && ST.b==='src' && window.render)render();
+    });
   }
   window.outreachDraft = function() {
     if(outreachBusy)return;
@@ -497,7 +504,7 @@
       '<label>수신자 이메일 · 최대 20명<textarea id="outRecipients" rows="3" style="width:100%;box-sizing:border-box" placeholder="이메일을 줄바꿈 또는 쉼표로 구분"></textarea></label>'+
       '<label>제목<input id="outSubject" maxlength="150" style="width:100%;box-sizing:border-box"></label>'+
       '<label>본문<textarea id="outBody" rows="6" style="width:100%;box-sizing:border-box"></textarea></label>'+
-      '<button class="cbt" onclick="outreachDraft()">초안 저장</button> <button class="cbt no" onclick="outreachRefresh()">내역 새로고침</button>'+rows+'</div>';
+      '<button class="cbt" onclick="outreachDraft()">초안 저장</button> <button class="cbt no" onclick="outreachRefresh()">내역 새로고침</button>'+(outreachError?'<p role="alert">'+mailEscape(outreachError)+'</p>':outreachLoading?'<p role="status">발송 내역을 불러오는 중입니다.</p>':!rows?'<p>저장된 초안과 발송 내역이 없습니다.</p>':'')+rows+'</div>';
   }
 
   /* ── 지메일 연동 — 브랜드 명의 발송(구글 OAuth) + 답장 인박스 ── */
@@ -726,7 +733,7 @@
   window.__ME = null;
 
   function reloadBrand() {
-    outreachData=null; outreachVersion++; window.__INBOX_OPEN=null;
+    outreachData=null;outreachError='';outreachLoading=false; outreachVersion++; window.__INBOX_OPEN=null;
     try { loadOutreach(); loadBilling(); loadSenders(); loadGmail(); loadInbox(); loadDispatch(); } catch (e) {}
     if (window.render) try { render(); } catch (e) {}
   }
@@ -802,12 +809,12 @@
   window.liveNav=function(page){livePage=page;ST.b=page==='mail'?'src':page==='billing'?'settle':'brief';ST.srcTab='mail';render();};
   window.profileUrlChanged=function(v){if(v!==profileUrl){profileUrl=v;profileDraft=null;profileNotice="주소가 바뀌었습니다. 다시 분석해 주세요.";var save=document.getElementById("profileSave");if(save){save.disabled=true;save.textContent="새 주소로 다시 분석해 주세요";}}};
   window.liveLearn=async function(){
-    if(profileBusy)return;profileUrl=(document.getElementById('brandSite').value||'').trim();if(!profileUrl)return;
+    if(profileBusy)return;profileUrl=(document.getElementById('brandSite').value||'').trim();if(!profileUrl)return toast('주소 입력 필요','분석할 홈페이지 주소를 입력해 주세요.');
     profileBusy=true;profileDraft=null;profileNotice='공개 페이지를 읽고 분석하고 있습니다…';render();var brand=BRAND();
     try{var r=await req('POST','/brand-learning',{url:profileUrl});if(BRAND()!==brand)return;profileDraft=r;Object.keys(r.fields||{}).forEach(function(k){profileAnswers[k]=r.fields[k].value;});profileNotice='실제 페이지 '+r.pagesRead+'개 · 본문 '+r.charactersRead+'자 분석 완료. 근거를 확인한 뒤 저장해 주세요.';}
     catch(e){profileNotice=e.message;}finally{profileBusy=false;render();}
   };
-  window.liveSaveProfile=async function(){if(profileBusy)return;if(!profileDraft&&!Object.values(profileAnswers).some(function(v){return v.trim();}))return toast('입력 필요','브랜드 정보를 입력하거나 홈페이지를 분석하세요.');profileBusy=true;render();var brand=BRAND();
+  window.liveSaveProfile=async function(){if(profileBusy)return;if(!profileDraft&&!Object.values(profileAnswers).some(function(v){return v.trim();})&&!(profileData&&Object.keys(profileData.fields||{}).some(function(k){return Object.prototype.hasOwnProperty.call(profileAnswers,k);})))return toast('입력 필요','브랜드 정보를 입력하거나 홈페이지를 분석하세요.');profileBusy=true;render();var brand=BRAND();
     try{var r=await req('POST','/brands/'+brand+'/profile/learned',{learning_id:profileDraft?profileDraft.learningId:null,answers:profileAnswers});if(BRAND()!==brand)return;profileData=r;profileDraft=null;profileNotice='브랜드 프로필 v'+r.version+' 저장 완료. 이제 대화와 캠페인 초안에서 이 내용을 참고합니다.';}
     catch(e){profileNotice=e.message;}finally{profileBusy=false;render();}
   };

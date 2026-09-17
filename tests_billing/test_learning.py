@@ -136,3 +136,25 @@ def test_provider_credit_failure_is_actionable(monkeypatch):
     def fail(**kwargs):raise RuntimeError('Your credit balance is too low')
     monkeypatch.setattr(reader.ai,'_client',lambda:SimpleNamespace(messages=SimpleNamespace(create=fail)))
     with pytest.raises(reader.LearningUnavailable,match='직접 입력'):reader.extract('public source')
+
+def test_profile_clear_persists_without_removing_omitted_fields(setup):
+    c,db,h=setup
+    url='/brands/learn-brand/profile/learned'
+    assert c.post(url,headers=h,json={'answers':{'hero_product':'크림','banned_words':'최고'}}).status_code==200
+    saved=c.post(url,headers=h,json={'answers':{'banned_words':'  '}})
+    assert saved.status_code==200
+    loaded=c.get(url,headers=h).json()
+    assert 'banned_words' not in loaded['fields']
+    assert loaded['fields']['hero_product']['value']=='크림'
+
+def test_unknown_profile_fields_do_not_create_version(setup):
+    c,db,h=setup
+    url='/brands/learn-brand/profile/learned'
+    before=c.get(url,headers=h).json()['version']
+    assert c.post(url,headers=h,json={'answers':{'invented':'value'}}).status_code==400
+    assert c.get(url,headers=h).json()['version']==before
+
+def test_provider_timeout_is_actionable(monkeypatch):
+    def fail(**kwargs):raise TimeoutError('provider timeout')
+    monkeypatch.setattr(reader.ai,'_client',lambda:SimpleNamespace(messages=SimpleNamespace(create=fail)))
+    with pytest.raises(reader.LearningUnavailable,match='직접 입력'):reader.extract('public source')

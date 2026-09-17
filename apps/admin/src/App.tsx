@@ -32,7 +32,7 @@ function AuthGate({ onDone }: { onDone: () => void }) {
         setAllowSkip(!s.authRequired);
         setMode(s.hasAdmin ? "login" : "bootstrap");
       })
-      .catch(() => { setAllowSkip(true); setMode("login"); });
+      .catch(() => { setAllowSkip(false); setMode("login"); });
   }, []);
 
   const submit = async () => {
@@ -176,7 +176,7 @@ export default function App() {
           theprlist 어드민
         </div>
         <div style={{ padding: "0 10px 14px", fontSize: 10, color: live ? "var(--s300)" : "var(--c300)" }}>
-          {live ? "● 서버 연결됨 · jay (총괄)" : "● API 미연결 — 서버를 켜주세요"}
+          {live ? "● 서버 연결됨 · 관리자" : "● 서버 연결 확인 필요"}
         </div>
         {RAIL.map((r) => {
           const n = summary && "badge" in r ? summary[r.badge as keyof Summary] : 0;

@@ -51,14 +51,17 @@ def save_profile(brand:str,body:ProfileIn,authorization:str=Header(default='')):
         if not c.execute('SELECT 1 FROM brands WHERE brand_id=%s',(brand,)).fetchone():raise HTTPException(404,'브랜드를 찾을 수 없습니다')
         row=c.execute("SELECT fields FROM brand_learning WHERE learning_id=%s AND state='ready'",(body.learning_id,)).fetchone() if body.learning_id else None
         if body.learning_id and not row:raise HTTPException(400,'완료된 학습 결과가 필요합니다')
-        if not row and not any(v.strip() for v in body.answers.values()):raise HTTPException(400,'분석 결과나 직접 입력한 브랜드 정보가 필요합니다')
         previous=c.execute('SELECT fields FROM brand_profile_versions WHERE brand_id=%s ORDER BY version DESC LIMIT 1',(brand,)).fetchone()
         fields=dict((previous or {}).get('fields') or {})
         fields.update((row or {}).get('fields') or {})
-        for k,v in body.answers.items():
-            if k in {'brand_one_liner','hero_product','ingredients','price_range','ideal_creator','banned_words','sample_criteria','voice'} and v.strip():
+        answers={k:v.strip()[:2000] for k,v in body.answers.items() if k in {'brand_one_liner','hero_product','ingredients','price_range','ideal_creator','banned_words','sample_criteria','voice'}}
+        if not row and not any(v or k in fields for k,v in answers.items()):raise HTTPException(400,'분석 결과나 직접 입력한 브랜드 정보가 필요합니다')
+        for k,v in answers.items():
+            if v:
                 old=fields.get(k,{})
-                fields[k]={**(old if isinstance(old,dict) and old.get('value')==v else {}),'value':v[:2000],'source':'brand_confirmed','confirmed':True}
+                fields[k]={**(old if isinstance(old,dict) and old.get('value')==v else {}),'value':v,'source':'brand_confirmed','confirmed':True}
+            else:
+                fields.pop(k,None)
         version=c.execute('SELECT COALESCE(max(version),0)+1 AS v FROM brand_profile_versions WHERE brand_id=%s',(brand,)).fetchone()['v']
         c.execute('INSERT INTO brand_profile_versions(brand_id,version,fields,note) VALUES(%s,%s,%s,%s)',(brand,version,json.dumps(fields,ensure_ascii=False),'website + brand answers'))
     return {'saved':True,'version':version,'fields':fields}

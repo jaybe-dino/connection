@@ -9,16 +9,16 @@ export default function Dashboard({ summary }: { summary: Summary | null }) {
     ["신고 대기", s?.openReports ?? "—", "심각 24h · 일반 72h SLA"],
     ["분쟁 대기", s?.openDisputes ?? "—", "1차 응답 24h · 판정 72h"],
     ["검수 대기", s?.inReviewSubmissions ?? "—", "통과 = 정산 대상 편입"],
-    ["브랜드", s?.brands ?? "—", "활성 브랜드 수"],
-    ["크리에이터", s?.creators ?? "—", "전원 OAuth 검증"],
-    ["게이트 대기", s?.pendingGates ?? "—", "브랜드 콘솔 승인함"],
+    ["브랜드", s?.brands ?? "—", "저장된 브랜드 수"],
+    ["크리에이터", s?.creators ?? "—", "저장된 계정 수 · SNS 검증 여부와 별개"],
+    ["게이트 대기", s?.pendingGates ?? "—", "기존 운영 데이터 · 공개 콘솔 승인 기능 준비 중"],
     ["원장 이벤트", s?.ledgerEvents ?? "—", "append-only · 해시 체인"],
   ];
   return (
     <div style={{ maxWidth: 880 }}>
       <h1 style={{ fontSize: 20, fontWeight: 900, margin: "0 0 4px" }}>대시보드</h1>
       <div style={{ fontSize: 12, color: "var(--n500)", marginBottom: 16 }}>
-        theprlist가 못 푸는 일은 결국 사람에게 옵니다 — 여기가 그 사람의 작업대예요.
+        저장된 운영 데이터 기준입니다. 기존 테스트 데이터가 포함될 수 있으며, 실제 검증 가입·결제 실적을 의미하지 않습니다.
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
         {tiles.map(([label, value, note]) => (

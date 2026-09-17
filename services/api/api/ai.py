@@ -23,7 +23,7 @@ def _client():
         return None
     from anthropic import Anthropic
 
-    return Anthropic()
+    return Anthropic(timeout=45.0,max_retries=0)
 
 
 def ai_available() -> bool:

@@ -80,7 +80,7 @@ def test_learn_save_reload_and_tenant_boundary(setup,monkeypatch):
     pending={'Authorization':'Bearer '+auth.issue_jwt({'kind':'admin','otp':'pending'})}
     assert c.get('/brands/learn-brand/profile/learned',headers=pending).status_code==401
     slug='qa-'+uuid.uuid4().hex[:8]
-    application={'slug':slug,'name':'QA Brand','biz_no':'000-00-00000','contact':slug+'@example.com','learning_id':payload['learning_id'],'answers':{'voice':'친절하게'}}
+    application={'terms_accepted':True,'profile_confirmed':True,'slug':slug,'name':'QA Brand','biz_no':'000-00-00000','contact':slug+'@example.com','learning_id':payload['learning_id'],'answers':{'voice':'친절하게'}}
     applied=c.post('/applications',json=application)
     assert applied.status_code==200
     assert c.post('/applications',json=application).status_code==409
@@ -116,3 +116,23 @@ def test_saved_profile_reaches_assistant_and_legacy_operations_are_private(setup
     assert client.get('/db/creators').status_code==401
     assert client.get('/gates',headers=h).status_code==401
     assert client.post('/inbound',json={}).status_code==401
+
+def test_manual_profile_and_consent_recording(setup):
+    c,db,h=setup
+    saved=c.post('/brands/learn-brand/profile/learned',headers=h,json={'answers':{'brand_one_liner':'직접 작성한 브랜드','hero_product':'크림'}})
+    assert saved.status_code==200 and saved.json()['fields']['brand_one_liner']['confirmed'] is True
+    assert c.post('/brands/learn-brand/profile/learned',headers=h,json={}).status_code==400
+    slug='manual-'+uuid.uuid4().hex[:8]
+    body={'slug':slug,'name':'Manual Brand','contact':slug+'@example.test','biz_no':'000-00-00000','answers':{'hero_product':'직접 입력한 제품'}}
+    assert c.post('/applications',json=body).status_code==400
+    body.update(terms_accepted=True,profile_confirmed=True)
+    r=c.post('/applications',json=body)
+    assert r.status_code==200
+    with db() as conn:
+        row=conn.execute('SELECT terms_accepted_at,profile_confirmed_at,learning_id FROM brand_applications WHERE app_id=%s',(r.json()['app_id'],)).fetchone()
+        assert row['terms_accepted_at'] and row['profile_confirmed_at'] and row['learning_id'] is None
+
+def test_provider_credit_failure_is_actionable(monkeypatch):
+    def fail(**kwargs):raise RuntimeError('Your credit balance is too low')
+    monkeypatch.setattr(reader.ai,'_client',lambda:SimpleNamespace(messages=SimpleNamespace(create=fail)))
+    with pytest.raises(reader.LearningUnavailable,match='직접 입력'):reader.extract('public source')

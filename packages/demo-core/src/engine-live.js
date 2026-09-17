@@ -780,7 +780,7 @@
       if(r.needOtp){authPanel('<b>2단계 인증</b><input id="axOtp" inputmode="numeric" maxlength="6" placeholder="인증 앱의 6자리 코드"><button class="cbt" onclick="authOtp()">확인</button>');return;}
       window.__ME = r.user; authPanel(null); authChip();
       reloadBrand();
-      toast("로그인 완료", "<b>" + r.user.email + "</b> — 이제 <b>" + (r.user.brandId || "") + "</b> 브랜드로 동작합니다.");
+      toast("로그인 완료", "<b>" + mailEscape(r.user.email) + "</b> — 이제 <b>" + (r.user.brandId || "") + "</b> 브랜드로 동작합니다.");
     }).catch(function () { toast("로그인 실패", "이메일 또는 비밀번호를 확인하세요."); });
   };
   window.authOtp = function(){req('POST','/auth/otp/verify',{code:document.getElementById('axOtp').value}).then(function(r){jwtSet(r.token);window.__ME=r.user;authPanel(null);authChip();reloadBrand();}).catch(function(){toast('인증 실패','인증 코드를 확인하세요.');});};
@@ -796,19 +796,19 @@
 
   /* Public console only exposes workflows backed by durable server results. */
   var profileData=null, profileError='', profileDraft=null, profileUrl='', profileBusy=false, profileNotice='';
-  var livePage='home', chatMessages=[], chatBusy=false;
+  var livePage='home', chatMessages=[], chatBusy=false, profileAnswers={};
   var profileLabels={brand_one_liner:'브랜드 소개',hero_product:'주력 제품',ingredients:'성분·특징',price_range:'가격대',voice:'말투',ideal_creator:'원하는 크리에이터',banned_words:'금지 표현',sample_criteria:'샘플 기준'};
-  function loadProfile(){var brand=BRAND();profileError='';req('GET','/brands/'+brand+'/profile/learned').then(function(r){if(BRAND()!==brand)return;profileData=r;if(window.__SURFACE==='brand')render();}).catch(function(e){profileError=e.message;if(window.__SURFACE==='brand')render();});}
+  function loadProfile(){var brand=BRAND();profileError='';req('GET','/brands/'+brand+'/profile/learned').then(function(r){if(BRAND()!==brand)return;profileData=r;Object.keys(r.fields||{}).forEach(function(k){profileAnswers[k]=typeof r.fields[k]==='string'?r.fields[k]:(r.fields[k].value||'');});if(window.__SURFACE==='brand')render();}).catch(function(e){profileError=e.message;if(window.__SURFACE==='brand')render();});}
   window.liveNav=function(page){livePage=page;ST.b=page==='mail'?'src':page==='billing'?'settle':'brief';ST.srcTab='mail';render();};
   window.profileUrlChanged=function(v){if(v!==profileUrl){profileUrl=v;profileDraft=null;profileNotice="주소가 바뀌었습니다. 다시 분석해 주세요.";var save=document.getElementById("profileSave");if(save){save.disabled=true;save.textContent="새 주소로 다시 분석해 주세요";}}};
   window.liveLearn=async function(){
     if(profileBusy)return;profileUrl=(document.getElementById('brandSite').value||'').trim();if(!profileUrl)return;
     profileBusy=true;profileDraft=null;profileNotice='공개 페이지를 읽고 분석하고 있습니다…';render();var brand=BRAND();
-    try{var r=await req('POST','/brand-learning',{url:profileUrl});if(BRAND()!==brand)return;profileDraft=r;profileNotice='실제 페이지 '+r.pagesRead+'개 · 본문 '+r.charactersRead+'자 분석 완료. 근거를 확인한 뒤 저장해 주세요.';}
+    try{var r=await req('POST','/brand-learning',{url:profileUrl});if(BRAND()!==brand)return;profileDraft=r;Object.keys(r.fields||{}).forEach(function(k){profileAnswers[k]=r.fields[k].value;});profileNotice='실제 페이지 '+r.pagesRead+'개 · 본문 '+r.charactersRead+'자 분석 완료. 근거를 확인한 뒤 저장해 주세요.';}
     catch(e){profileNotice=e.message;}finally{profileBusy=false;render();}
   };
-  window.liveSaveProfile=async function(){if(profileBusy||!profileDraft)return;profileBusy=true;render();var brand=BRAND();
-    try{var r=await req('POST','/brands/'+brand+'/profile/learned',{learning_id:profileDraft.learningId});if(BRAND()!==brand)return;profileData=r;profileDraft=null;profileNotice='브랜드 프로필 v'+r.version+' 저장 완료. 이제 대화와 캠페인 초안에서 이 내용을 참고합니다.';}
+  window.liveSaveProfile=async function(){if(profileBusy)return;if(!profileDraft&&!Object.values(profileAnswers).some(function(v){return v.trim();}))return toast('입력 필요','브랜드 정보를 입력하거나 홈페이지를 분석하세요.');profileBusy=true;render();var brand=BRAND();
+    try{var r=await req('POST','/brands/'+brand+'/profile/learned',{learning_id:profileDraft?profileDraft.learningId:null,answers:profileAnswers});if(BRAND()!==brand)return;profileData=r;profileDraft=null;profileNotice='브랜드 프로필 v'+r.version+' 저장 완료. 이제 대화와 캠페인 초안에서 이 내용을 참고합니다.';}
     catch(e){profileNotice=e.message;}finally{profileBusy=false;render();}
   };
   window.liveChat=async function(){var input=document.getElementById('liveQuestion'),q=input.value.trim();if(!q||chatBusy)return;input.value='';var history=chatMessages.slice(-8);chatMessages.push({role:'user',content:q});chatBusy=true;render();var brand=BRAND();
@@ -816,7 +816,9 @@
     catch(e){if(BRAND()===brand)chatMessages.push({role:'assistant',content:'응답 실패: '+e.message});}finally{chatBusy=false;render();}
   };
   function learnedFields(fields){return Object.keys(fields||{}).map(function(k){var f=fields[k];return '<div class="cc"><b>'+mailEscape(profileLabels[k]||k)+'</b><p>'+mailEscape(typeof f==='string'?f:f.value||'')+'</p>'+(f.evidence?'<blockquote>근거: '+mailEscape(f.evidence)+'</blockquote>':'')+'</div>';}).join('');}
-  function liveLearningCard(){return '<h1>theprlist에 브랜드를 알려주세요</h1><p>공개 홈페이지 한 페이지를 읽어 브랜드 정보를 추출합니다. 모델 자체를 재훈련하거나 SNS·리뷰 전체를 수집하는 기능은 아닙니다.</p><label>브랜드 홈페이지<input id="brandSite" oninput="profileUrlChanged(this.value)" type="url" placeholder="https://brand.com/about" value="'+mailEscape(profileUrl)+'" '+(profileBusy?'disabled':'')+'></label><button class="btn" onclick="liveLearn()" '+(profileBusy?'disabled':'')+'>홈페이지 분석</button><p role="status">'+mailEscape(profileNotice||profileError)+'</p>'+(profileDraft?'<h2>분석 결과 · 아직 저장 전</h2><p>출처: '+mailEscape(profileDraft.sourceUrl)+'</p>'+learnedFields(profileDraft.fields)+'<button id="profileSave" class="btn" onclick="liveSaveProfile()" '+(profileBusy?'disabled':'')+'>확인하고 브랜드 프로필에 저장</button>':'')+'<h2>저장된 브랜드 프로필'+(profileData?' · v'+profileData.version:'')+'</h2>'+(profileData&&profileData.version?learnedFields(profileData.fields):'<p>저장된 정보가 없습니다. 분석 후 저장해 주세요.</p>');}
+  window.profileAnswer=function(k,v){profileAnswers[k]=v;};
+  function manualProfileCard(){return '<h2>직접 입력하거나 수정하기</h2><p>자동 분석이 불가능한 경우에도 직접 작성해 저장할 수 있습니다.</p>'+['brand_one_liner','hero_product','ideal_creator','banned_words','sample_criteria','voice'].map(function(k){return '<label>'+mailEscape(profileLabels[k])+'<textarea maxlength="2000" oninput="profileAnswer(\''+k+'\',this.value)">'+mailEscape(profileAnswers[k]||'')+'</textarea></label>';}).join('')+'<button class="btn" onclick="liveSaveProfile()" '+(profileBusy?'disabled':'')+'>내용 확인하고 저장</button>';}
+  function liveLearningCard(){return '<h1>theprlist에 브랜드를 알려주세요</h1><p>공개 홈페이지 한 페이지를 읽어 브랜드 정보를 추출합니다. 모델 자체를 재훈련하거나 SNS·리뷰 전체를 수집하는 기능은 아닙니다.</p><label>브랜드 홈페이지<input id="brandSite" oninput="profileUrlChanged(this.value)" type="url" placeholder="https://brand.com/about" value="'+mailEscape(profileUrl)+'" '+(profileBusy?'disabled':'')+'></label><button class="btn" onclick="liveLearn()" '+(profileBusy?'disabled':'')+'>홈페이지 분석</button><p role="status">'+mailEscape(profileNotice||profileError)+'</p>'+(profileDraft?'<h2>분석 결과 · 아직 저장 전</h2><p>출처: '+mailEscape(profileDraft.sourceUrl)+'</p>'+learnedFields(profileDraft.fields)+'<button id="profileSave" class="btn" onclick="liveSaveProfile()" '+(profileBusy?'disabled':'')+'>확인하고 브랜드 프로필에 저장</button>':'')+manualProfileCard()+'<h2>저장된 브랜드 프로필'+(profileData?' · v'+profileData.version:'')+'</h2>'+(profileData&&profileData.version?learnedFields(profileData.fields):'<p>저장된 정보가 없습니다. 분석 후 저장해 주세요.</p>');}
   var originalRender=window.render;
   if(window.__SURFACE==='brand'){
     window.render=function(){
@@ -835,12 +837,12 @@
       Object.keys(preserved).forEach(function(id){var el=document.getElementById(id);if(el)el.value=preserved[id];});
     };
     var previousReload=reloadBrand;
-    reloadBrand=function(){['outRecipients','outSubject','outBody','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});profileData=null;profileDraft=null;profileNotice='';profileUrl='';chatMessages=[];window.__GMAIL=null;window.__INBOX=null;previousReload();if(window.__ME)loadProfile();};
+    reloadBrand=function(){['outRecipients','outSubject','outBody','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;previousReload();if(window.__ME)loadProfile();};
     var style=document.createElement('style');style.textContent='body{background:#f5f4ef}.stage{display:block!important;overflow:auto!important;height:calc(100vh - 1px)!important}.live-head{padding:24px 5%;display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid #dadbd2;background:#fafbf5}.live-head>a{font-size:25px;font-weight:800;color:#163f35;text-decoration:none}.live-head span{font-size:12px;font-weight:400}.live-head nav{display:flex;gap:8px;flex-wrap:wrap}.live-main{max-width:1050px;margin:0 auto;padding:55px 24px 95px;font-size:15px;line-height:1.8}.live-main h1{font-size:40px;line-height:1.25;margin:0 0 25px}.live-main h2{font-size:21px;margin:18px 0 10px}.live-main p{margin:12px 0}.live-main .cc{background:#fff;border:1px solid #dadbd2;border-radius:12px;padding:24px;margin:15px 0;text-align:left}.live-main input,.live-main textarea{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid #aebcb1;border-radius:6px;margin:8px 0 14px;font:inherit}.live-main .btn,.live-main .cbt{font-size:14px;padding:10px 16px;cursor:pointer}.live-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.live-eyebrow{letter-spacing:.1em;color:#41684c}.live-footer{padding:20px 24px 75px;text-align:center}.live-main blockquote{padding:12px;border-left:3px solid #5e8c6a;color:#526157;overflow-wrap:anywhere}@media(max-width:700px){.live-head{display:block}.live-head nav{margin-top:15px}.live-main{padding-top:30px}.live-main h1{font-size:30px}.live-grid{grid-template-columns:1fr}}';document.head.appendChild(style);render();
   }
 
   if(window.__SURFACE==='bjoin'||window.__SURFACE==='creator'){
-    window.render=function(){document.querySelector('.svcbar').style.display='none';document.getElementById('stage').innerHTML='<main style="max-width:650px;margin:70px auto;padding:24px"><h1>theprlist</h1><h2>'+(window.__SURFACE==='creator'?'크리에이터 서비스 준비 중':'계정 초대 수락')+'</h2><p>'+(window.__SURFACE==='creator'?'크리에이터 계정 검증·캠페인 참여 기능을 준비하고 있습니다. 공개 일정은 별도로 안내합니다.':'초대받은 계정은 아래 입력창에서 비밀번호를 설정해 주세요.')+'</p><a class="btn" href="https://theprlist.net">서비스 소개</a> <a class="btn line" href="https://console.theprlist.net">브랜드 로그인</a></main>';};render();
+    window.render=function(){document.querySelector('.svcbar').style.display='none';document.getElementById('stage').innerHTML='<main style="max-width:650px;margin:70px auto;padding:24px"><h1>theprlist</h1><h2>'+(window.__SURFACE==='creator'?'크리에이터 서비스 준비 중':window.__ME?'계정 생성 완료':'계정 초대 수락')+'</h2><p>'+(window.__SURFACE==='creator'?'크리에이터 계정 검증·캠페인 참여 기능을 준비하고 있습니다. 공개 일정은 별도로 안내합니다.':window.__ME?'브랜드 로그인으로 이동해 설정한 계정으로 로그인하세요.':'초대받은 계정은 아래 입력창에서 비밀번호를 설정해 주세요.')+'</p><a class="btn" href="https://theprlist.net">서비스 소개</a> <a class="btn line" href="https://console.theprlist.net">브랜드 로그인</a></main>';};render();
   }
   try {
     var sp = new URLSearchParams(location.search);
@@ -848,15 +850,16 @@
     if (inviteTok) {
       authPanel("<b>브랜드 계정 만들기</b><div style='margin-top:6px;color:#5a6560'>초대를 수락하고 비밀번호를 정하세요 (10자 이상).</div>" +
         "<input id='axPw' type='password' placeholder='새 비밀번호' style='width:100%;padding:6px;margin-top:8px;box-sizing:border-box'>" +
-        "<div style='margin-top:8px'><span class='cbt' onclick='authAccept(\"" + inviteTok + "\")'>수락하고 시작</span></div>");
+        "<div style='margin-top:8px'><span class='cbt' onclick='authAcceptInvite()'>수락하고 시작</span></div>");
     }
+    window.authAcceptInvite=function(){window.authAccept(inviteTok);};
     window.authAccept = function (tk) {
       var pw = (document.getElementById("axPw") || {}).value || "";
       req("POST", "/auth/accept", { token: tk, password: pw }).then(function (r) {
         jwtSet(r.token); window.__ME = r.user; authPanel(null); authChip();
         reloadBrand();
         history.replaceState(null, "", location.pathname);
-        toast("계정 생성 완료 🎉", "<b>" + r.user.email + "</b> — 콘솔(console.theprlist.net)에서 이 계정으로 로그인하세요.");
+        toast("계정 생성 완료 🎉", "<b>" + mailEscape(r.user.email) + "</b> — 콘솔(console.theprlist.net)에서 이 계정으로 로그인하세요.");
       }).catch(function () { toast("수락 실패", "링크가 만료됐을 수 있어요 — 초대를 다시 요청하세요. 비밀번호는 10자 이상."); });
     };
     if (magicTok) {

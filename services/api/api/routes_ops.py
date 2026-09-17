@@ -68,10 +68,15 @@ class ApplicationIn(BaseModel):
     answers: dict[str, str] = {}
     contact: str = Field(default="",max_length=254)
     learning_id: UUID | None = None
+    terms_accepted: bool = False
+    profile_confirmed: bool = False
 
 
 @public.post("/applications")
 def submit_application(body: ApplicationIn) -> dict:
+    from . import auth
+    if auth.auth_required() and (not body.terms_accepted or not body.profile_confirmed):
+        raise HTTPException(400,"약관 동의와 브랜드 정보 확인이 필요합니다")
     body.plan = "per_signup"  # Single usage-based tariff; ignore legacy client plans.
     slug = body.slug.lower().strip()
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,39}",slug) or slug in {"www","api","admin","app","console","signup","privacy","terms"}:
@@ -80,7 +85,7 @@ def submit_application(body: ApplicationIn) -> dict:
         raise HTTPException(400,"브랜드명을 입력하세요")
     if body.contact and not re.fullmatch(r"[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+",body.contact.strip()):
         raise HTTPException(400,"담당자 이메일을 확인하세요")
-    if body.learning_id and (not body.contact.strip() or not body.biz_no.strip()):
+    if (body.learning_id or auth.auth_required()) and (not body.contact.strip() or not body.biz_no.strip()):
         raise HTTPException(400,"담당자 이메일과 사업자등록번호를 입력하세요")
     if len(body.answers)>12 or any(len(k)>80 or len(v)>2000 for k,v in body.answers.items()):
         raise HTTPException(400,"브랜드 소개 내용이 너무 깁니다")
@@ -101,6 +106,7 @@ def submit_application(body: ApplicationIn) -> dict:
             (slug, body.name, body.biz_no, body.category, body.countries,
              body.plan, body.site_url, _j(body.answers), body.contact)).fetchone()
         conn.execute("UPDATE brand_applications SET learning_id=%s WHERE app_id=%s",(body.learning_id,row["app_id"]))
+        conn.execute("UPDATE brand_applications SET terms_accepted_at=CASE WHEN %s THEN now() ELSE NULL END,profile_confirmed_at=CASE WHEN %s THEN now() ELSE NULL END WHERE app_id=%s",(body.terms_accepted,body.profile_confirmed,row['app_id']))
         ledger_append(conn, "system", "BRAND_APPLIED", slug,
                       {"app_id": str(row["app_id"]), "plan": body.plan})
     return {"app_id": str(row["app_id"]), "status": "pending",

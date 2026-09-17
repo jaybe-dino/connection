@@ -57,8 +57,8 @@ def read_page(url):
                 url=urljoin(url,r.getheader('Location') or '');continue
             if r.status!=200:raise LearningError('사이트가 접근을 허용하지 않았습니다. 공개 소개 페이지를 입력하세요.')
             if 'text/html' not in (r.getheader('Content-Type') or '').lower():raise LearningError('HTML 소개 페이지 주소를 입력하세요.')
-            data=r.read(1_000_001)
-            if len(data)>1_000_000:raise LearningError('페이지가 너무 큽니다. 간단한 브랜드 소개 페이지를 입력하세요.')
+            data=r.read(2_000_001)
+            if len(data)>2_000_000:raise LearningError('페이지가 너무 큽니다. 간단한 브랜드 소개 페이지를 입력하세요.')
         except (OSError,http.client.HTTPException):raise LearningError('사이트를 읽지 못했습니다. 잠시 후 다시 시도하세요.')
         finally:conn.close()
         parser=VisibleText();parser.feed(data.decode('utf-8',errors='replace'))

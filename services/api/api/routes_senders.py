@@ -223,8 +223,11 @@ class StatsIn(BaseModel):
 
 
 @router.post("/senders/{sender_id}/stats")
-def report_stats(sender_id: str, body: StatsIn) -> dict:
-    """발송 엔진·웹훅이 평판 지표를 보고 — 임계 초과면 자동 정지."""
+def report_stats(sender_id: str, body: StatsIn, authorization: str = Header(default="")) -> dict:
+    """인증된 운영자가 평판 지표를 보고 — 임계 초과면 자동 정지."""
+    from . import auth
+    if auth.auth_required():
+        auth.require_admin_jwt(authorization)
     with connect() as conn:
         r = _get(conn, sender_id)
         pause = (body.bounce_rate >= BOUNCE_PAUSE

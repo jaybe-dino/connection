@@ -168,20 +168,29 @@ def _sync_gate(conn, b: dict) -> dict:
     return b
 
 
+def _authorized_batch(conn, batch_id, authorization, x_admin_key):
+    from . import auth
+    if auth.auth_required() and not auth.current_user(authorization):
+        raise HTTPException(401, "로그인이 필요합니다")
+    batch = conn.execute("SELECT * FROM dispatch_batches WHERE batch_id=%s", (batch_id,)).fetchone()
+    if not batch:
+        raise HTTPException(404, "batch not found")
+    auth.require_brand(batch["brand_id"], authorization, x_admin_key)
+    return batch
+
+
 @router.get("/dispatch-batches/{batch_id}")
-def get_batch(batch_id: str) -> dict:
+def get_batch(batch_id: str, authorization: str = Header(default=""), x_admin_key: str = Header(default="")) -> dict:
     with connect() as conn:
-        b = conn.execute("SELECT * FROM dispatch_batches WHERE batch_id=%s",
-                         (batch_id,)).fetchone()
-        if not b:
-            raise HTTPException(404, "batch not found")
+        b = _authorized_batch(conn, batch_id, authorization, x_admin_key)
         b = _sync_gate(conn, b)
         return _batch_out(conn, b)
 
 
 @router.get("/dispatch-batches/{batch_id}/rows")
-def batch_rows(batch_id: str) -> list[dict]:
+def batch_rows(batch_id: str, authorization: str = Header(default=""), x_admin_key: str = Header(default="")) -> list[dict]:
     with connect() as conn:
+        _authorized_batch(conn, batch_id, authorization, x_admin_key)
         rows = conn.execute(
             "SELECT * FROM dispatches WHERE batch_id=%s ORDER BY dispatch_id",
             (batch_id,)).fetchall()
@@ -194,13 +203,10 @@ def batch_rows(batch_id: str) -> list[dict]:
 # ── 셀러센터 CSV 내보내기 / 결과 가져오기 (반자동의 핵심) ────────
 
 @router.get("/dispatch-batches/{batch_id}/export.csv")
-def export_csv(batch_id: str) -> PlainTextResponse:
+def export_csv(batch_id: str, authorization: str = Header(default=""), x_admin_key: str = Header(default="")) -> PlainTextResponse:
     """게이트 승인된 배치 → 틱톡 셀러센터 타겟 협업 대량 업로드 형식."""
     with connect() as conn:
-        b = conn.execute("SELECT * FROM dispatch_batches WHERE batch_id=%s",
-                         (batch_id,)).fetchone()
-        if not b:
-            raise HTTPException(404, "batch not found")
+        b = _authorized_batch(conn, batch_id, authorization, x_admin_key)
         b = _sync_gate(conn, b)
         if b["state"] not in ("SENDING", "DONE"):
             raise HTTPException(400, "게이트 승인 후에 내보낼 수 있습니다")

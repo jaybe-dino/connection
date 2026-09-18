@@ -75,3 +75,19 @@ def test_held_gate_holds_batch(client):
     held = client.get(f"/dispatch-batches/{b['batchId']}").json()
     assert held["state"] == "HELD"               # 보류 = 아무것도 안 나감
     assert client.get(f"/dispatch-batches/{b['batchId']}/export.csv").status_code == 400
+
+
+def test_dispatch_reads_require_owner_and_sender_stats_require_admin(client, monkeypatch):
+    from api.auth import issue_jwt
+    batches=client.get('/brands/glowlab/dispatch-batches').json()
+    batch=batches[0]['batchId']
+    monkeypatch.setenv('AUTH_REQUIRED','1')
+    owner={'Authorization':'Bearer '+issue_jwt({'kind':'brand','brand_id':'glowlab'})}
+    other={'Authorization':'Bearer '+issue_jwt({'kind':'brand','brand_id':'unrelated'})}
+    for suffix in ['', '/rows', '/export.csv']:
+        url='/dispatch-batches/'+batch+suffix
+        assert client.get(url).status_code==401
+        assert client.get(url,headers=other).status_code==403
+        assert client.get(url,headers=owner).status_code in (200,400)
+    for headers in ({},owner):
+        assert client.post('/senders/00000000-0000-0000-0000-000000000000/stats',headers=headers,json={'bounce_rate':0,'complaint_rate':0}).status_code==401

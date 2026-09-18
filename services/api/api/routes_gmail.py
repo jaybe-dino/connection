@@ -1,14 +1,4 @@
-"""지메일 연동 — 브랜드별 구글 OAuth 발송 + 답장 인박스 (GMAIL_SETUP.md).
-
-심사 최소화 설계:
-  · 구글 권한은 gmail.send(민감 등급) + 이메일 주소 확인용 openid/email 만 쓴다.
-    받은편지함 읽기(제한 등급, CASA 보안점검 대상)는 쓰지 않는다.
-  · 답장은 발신 메일의 Reply-To를 전용 주소(reply+<brand>@…)로 지정해
-    우리 인바운드(POST /inbound/reply)로 직접 수신 → 콘솔 인박스 구성.
-
-GOOGLE_CLIENT_ID 가 없으면 **데모 모드**: 연결·발송이 즉시 성공(기록만).
-실키가 들어오면 같은 API 그대로 구글 OAuth·Gmail API 발송으로 전환된다.
-"""
+"""브랜드별 OAuth 발송 및 수신 동기화. 실제 승인된 권한만 사용하며 기존 연결은 수신 권한 재동의가 필요합니다."""
 
 import base64
 import json
@@ -28,7 +18,8 @@ from .db import connect, ledger_append
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-SCOPES = "https://www.googleapis.com/auth/gmail.send openid email"
+READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+SCOPES = "https://www.googleapis.com/auth/gmail.send " + READ_SCOPE + " openid email"
 # 실제 발송한 날에만 증가. 전달/반송 피드백 연결 전에는 최대 20통으로 제한.
 WARMUP_PLAN = (2, 4, 6, 8, 12, 16, 20)
 REPLY_DOMAIN = os.environ.get("REPLY_DOMAIN", "reply.theprlist.net")
@@ -115,6 +106,9 @@ def _acct_out(r: dict) -> dict:
             "email": r["email"], "state": r["state"],
             "connectedAt": r["connected_at"].isoformat(),
             "todayCap": cap, "sentToday": sent,
+            "canRead": READ_SCOPE in r.get("scopes", "").split(),
+            "syncedAt": r["synced_at"].isoformat() if r.get("synced_at") else None,
+            "syncError": r.get("sync_error", ""),
             "remainingToday": max(0, cap-sent) if not r.get('sending_paused') else 0,
             "sendingPaused": r.get('sending_paused',False), "pauseReason": r.get('pause_reason',''),
             "warmupDay": completed_days+1, "warmupPlan": list(WARMUP_PLAN),
@@ -131,7 +125,7 @@ def list_gmail(brand_id: str,
     with connect() as conn:
         rows = conn.execute(
             "SELECT * FROM gmail_accounts WHERE brand_id=%s AND state='connected'"
-            " ORDER BY connected_at", (brand_id,)).fetchall()
+            " ORDER BY connected_at,account_id", (brand_id,)).fetchall()
     return {"demo": _demo_mode(), "inboundReady": _inbound_ready(), "accounts": [_acct_out(r) for r in rows]}
 
 
@@ -172,13 +166,13 @@ def connect_gmail(brand_id: str, body: ConnectIn,
     if not _demo_mode():
         redirect = os.environ.get(
             "GOOGLE_REDIRECT_URI",
-            "https://connectioncreator-app-production.up.railway.app/gmail/callback")
+            "https://api.theprlist.net/gmail/callback")
         from urllib.parse import urlencode
         q = urlencode({
             "client_id": os.environ["GOOGLE_CLIENT_ID"],
             "redirect_uri": redirect, "response_type": "code",
-            "scope": SCOPES, "state": _sign_state(brand_id),
-            "access_type": "offline", "prompt": "consent"})
+            "scope": SCOPES, "state": _new_oauth_state(brand_id),
+            "access_type": "offline", "prompt": "consent select_account", "include_granted_scopes": "true"})
         return {"authUrl": f"https://accounts.google.com/o/oauth2/v2/auth?{q}"}
     email = body.email.strip().lower() or f"{brand_id}@gmail.com"
     with connect() as conn:
@@ -199,11 +193,11 @@ def gmail_callback(code: str = "", state: str = "", error: str = "") -> HTMLResp
         return HTMLResponse(f"<h3>연결 취소됨</h3><p>{escape(error or 'code 없음')}</p>", 400)
     if _demo_mode():
         raise HTTPException(400, "데모 모드에서는 콜백을 쓰지 않습니다")
-    brand_id = _verify_state(state)
+    brand_id = _consume_oauth_state(state)
     import httpx
     redirect = os.environ.get(
         "GOOGLE_REDIRECT_URI",
-        "https://connectioncreator-app-production.up.railway.app/gmail/callback")
+        "https://api.theprlist.net/gmail/callback")
     tok = httpx.post("https://oauth2.googleapis.com/token", data={
         "code": code, "grant_type": "authorization_code",
         "client_id": os.environ["GOOGLE_CLIENT_ID"],
@@ -212,11 +206,22 @@ def gmail_callback(code: str = "", state: str = "", error: str = "") -> HTMLResp
     if "access_token" not in tok:
         return HTMLResponse(f"<h3>토큰 교환 실패</h3><pre>{escape(str(tok.get('error','')))}</pre>", 400)
     # id_token(구글이 TLS로 직접 준 값)에서 이메일만 꺼낸다
-    payload = tok.get("id_token", "").split(".")[1]
-    payload += "=" * (-len(payload) % 4)
-    email = json.loads(base64.urlsafe_b64decode(payload)).get("email", "").lower()
+    try:
+        payload = tok.get("id_token", "").split(".")[1]
+        claims=json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        email=claims.get("email", "").strip().lower()
+        if not claims.get('email_verified') or '@' not in email:raise ValueError()
+    except (ValueError,IndexError,TypeError,AttributeError):raise HTTPException(400,'Google 이메일 확인에 실패했습니다. 다시 연결하세요.')
+    granted=tok.get('scope','')
+    if 'https://www.googleapis.com/auth/gmail.send' not in granted.split():raise HTTPException(400,'메일 발송 권한을 허용해 주세요.')
     expiry = datetime.now(UTC) + timedelta(seconds=int(tok.get("expires_in", 3600)))
     with connect() as conn:
+        conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('gmail-email:'+email,))
+        if conn.execute("SELECT 1 FROM gmail_accounts WHERE email=%s AND brand_id<>%s AND state<>'revoked'",(email,brand_id)).fetchone():
+            raise HTTPException(409,'다른 브랜드에 연결된 이메일입니다. 브랜드별 전용 계정을 사용하세요.')
+        conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('gmail-brand:'+brand_id,))
+        if conn.execute("SELECT 1 FROM gmail_accounts WHERE brand_id=%s AND email<>%s AND state='connected'",(brand_id,email)).fetchone():
+            raise HTTPException(409,'기존 이메일 연결을 해제한 뒤 새 계정을 연결하세요. 브랜드당 하나의 발신 계정을 사용합니다.')
         r = conn.execute(
             "INSERT INTO gmail_accounts (brand_id, email, access_token,"
             " refresh_token, token_expiry, scopes) VALUES (%s,%s,%s,%s,%s,%s)"
@@ -224,9 +229,9 @@ def gmail_callback(code: str = "", state: str = "", error: str = "") -> HTMLResp
             " access_token=EXCLUDED.access_token,"
             " refresh_token=COALESCE(NULLIF(EXCLUDED.refresh_token,''),"
             "                        gmail_accounts.refresh_token),"
-            " token_expiry=EXCLUDED.token_expiry RETURNING *",
+            " token_expiry=EXCLUDED.token_expiry,scopes=EXCLUDED.scopes,sync_error='' RETURNING *",
             (brand_id, email, _enc(tok["access_token"]),
-             _enc(tok.get("refresh_token", "")), expiry, SCOPES)).fetchone()
+             (_enc(tok["refresh_token"]) if tok.get("refresh_token") else ""), expiry, granted)).fetchone()
         ledger_append(conn, f"brand:{brand_id}", "GMAIL_CONNECTED",
                       str(r["account_id"]), {"email": email})
     return HTMLResponse(
@@ -278,14 +283,14 @@ def _refresh_if_needed(conn, r: dict) -> str:
 
 
 def send_via_brand_gmail(conn, brand_id: str, to: str, subject: str,
-                         body: str) -> dict | None:
+                         body: str, *, account_id=None, reply_headers=None) -> dict | None:
     """연결된 지메일이 있으면 그 주소로 발송. 없으면 None(호출측이 폴백).
 
     중지 또는 일일 한도 초과 시 None. 아웃리치는 다른 계정으로 우회하지 않고 대기한다.
     """
     r = conn.execute(
         "SELECT * FROM gmail_accounts WHERE brand_id=%s AND state='connected'"
-        " ORDER BY connected_at LIMIT 1 FOR UPDATE", (brand_id,)).fetchone()
+        " AND (%s::uuid IS NULL OR account_id=%s::uuid) ORDER BY connected_at,account_id LIMIT 1 FOR UPDATE", (brand_id,account_id,account_id)).fetchone()
     if not r:
         return None
     out = _acct_out(r)
@@ -298,22 +303,28 @@ def send_via_brand_gmail(conn, brand_id: str, to: str, subject: str,
         msg["To"], msg["Subject"] = to, subject
         msg["From"] = r["email"]
         msg["Reply-To"] = out["replyTo"]
+        if reply_headers and reply_headers.get('rfc_message_id'):
+            mid=reply_headers['rfc_message_id']
+            if '\r' not in mid and '\n' not in mid:
+                msg['In-Reply-To']=mid;msg['References']=mid
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        payload={'raw':raw}
+        if reply_headers and reply_headers.get('gmail_thread_id'):payload['threadId']=reply_headers['gmail_thread_id']
         import httpx
         resp = httpx.post(
             "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
             headers={"Authorization": f"Bearer {token}"},
-            json={"raw": raw}, timeout=20)
+            json=payload, timeout=20)
         if resp.status_code >= 300:
             raise HTTPException(502, "지메일 발송 실패 — Gmail에서 발송 여부를 확인하세요")
         message_id = resp.json().get("id")
         if not message_id:
             raise HTTPException(502, "발송 결과 확인 필요")
     conn.execute(
-        "UPDATE gmail_accounts SET sent_today=CASE WHEN sent_date=CURRENT_DATE"
-        " THEN sent_today+1 ELSE 1 END, sent_date=CURRENT_DATE,"
-        " warmup_days=warmup_days+CASE WHEN warmup_last_date=CURRENT_DATE THEN 0 ELSE 1 END,"
-        " warmup_last_date=CURRENT_DATE"
+        "UPDATE gmail_accounts SET sent_today=CASE WHEN sent_date=(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date"
+        " THEN sent_today+1 ELSE 1 END, sent_date=(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date,"
+        " warmup_days=warmup_days+CASE WHEN warmup_last_date=(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date THEN 0 ELSE 1 END,"
+        " warmup_last_date=(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date"
         " WHERE account_id=%s", (r["account_id"],))
     return {"via": "gmail" if not _demo_mode() else "demo",
             "fromEmail": r["email"], "messageId": message_id}
@@ -484,7 +495,9 @@ def send_reply(thread_id: str, msg_id: int, authorization: str = Header(default=
         if not m: raise HTTPException(409, '이미 발송했거나 확인이 필요한 메일입니다')
     try:
         with connect() as conn:
-            sent = send_via_brand_gmail(conn,t['brand_id'],t['creator_email'],'Re: '+t['subject'],m['body'])
+            inbound=conn.execute("SELECT * FROM mail_messages WHERE thread_id=%s AND direction='in' AND gmail_account_id IS NOT NULL ORDER BY created_at DESC LIMIT 1",(thread_id,)).fetchone()
+            extra={'account_id':inbound['gmail_account_id'],'reply_headers':inbound} if inbound else {}
+            sent = send_via_brand_gmail(conn,t['brand_id'],t['creator_email'],'Re: '+(inbound['subject'] if inbound else t['subject']),m['body'],**extra)
             if not sent:
                 conn.execute("UPDATE mail_messages SET state='pending_gate' WHERE msg_id=%s",(msg_id,))
                 return {'state':'pending_gate'}
@@ -497,3 +510,35 @@ def send_reply(thread_id: str, msg_id: int, authorization: str = Header(default=
         with connect() as conn:
             conn.execute("UPDATE mail_messages SET state='review' WHERE msg_id=%s",(msg_id,))
         raise HTTPException(502,'Gmail 보낸편지함에서 발송 여부를 확인하세요. 자동 재발송하지 않습니다.')
+
+
+def _new_oauth_state(brand):
+    import secrets,hashlib
+    state=secrets.token_urlsafe(32)
+    with connect() as conn:
+        conn.execute("INSERT INTO gmail_oauth_states(state_hash,brand_id,expires_at) VALUES(%s,%s,now()+interval '15 minutes')",(hashlib.sha256(state.encode()).hexdigest(),brand))
+    return state
+
+
+def _consume_oauth_state(state):
+    import hashlib
+    with connect() as conn:
+        row=conn.execute("UPDATE gmail_oauth_states SET used_at=now() WHERE state_hash=%s AND used_at IS NULL AND expires_at>now() RETURNING brand_id",(hashlib.sha256(state.encode()).hexdigest(),)).fetchone()
+    if not row:raise HTTPException(400,'연결 요청이 만료되었거나 이미 사용됐습니다. 다시 연결하세요.')
+    return row['brand_id']
+
+
+@router.post('/brands/{brand_id}/gmail/sync')
+def sync_gmail(brand_id: str, authorization: str = Header(default='')):
+    from .auth import current_user
+    from . import gmail_sync
+    u=current_user(authorization)
+    if not u or u.get('otp')=='pending':raise HTTPException(401,'로그인이 필요합니다')
+    _guard(brand_id,authorization,'')
+    if _demo_mode():raise HTTPException(503,'실제 Google 계정 연결이 필요합니다')
+    try:return gmail_sync.sync(brand_id)
+    except Exception as e:
+        message=e.detail if isinstance(e,HTTPException) else 'Gmail 동기화에 실패했습니다. 권한과 연결 상태를 확인해 주세요.'
+        with connect() as conn:
+            conn.execute("UPDATE gmail_accounts SET sync_error=%s WHERE brand_id=%s AND state='connected'",(message,brand_id))
+        raise HTTPException(e.status_code if isinstance(e,HTTPException) else 502,message)

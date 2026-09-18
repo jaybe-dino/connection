@@ -565,6 +565,15 @@
       toast("연결 완료 (데모)", "실서비스에선 구글 로그인 창이 뜹니다. 이제 theprlist가 <b>" + v + "</b> 명의로 보냅니다.");
     }).catch(function () {});
   };
+  var gmailSyncBusy=false,gmailSyncNotice='';
+  window.gmailSync=async function(){
+    if(gmailSyncBusy)return;
+    var current=jwtGet(),brand=BRAND();gmailSyncBusy=true;gmailSyncNotice='받은 메일을 동기화하고 있습니다…';render();
+    try{var r=await req('POST','/brands/'+brand+'/gmail/sync',{});if(jwtGet()!==current||BRAND()!==brand)return;
+      gmailSyncNotice=r.imported+'통 가져왔습니다.'+(r.hasMore?' 이전 메일이 더 있습니다. 다시 동기화하면 이어서 가져옵니다.':'');loadInbox();loadGmail();
+    }catch(e){if(jwtGet()===current)gmailSyncNotice=e.message;}finally{gmailSyncBusy=false;render();}
+  };
+  setInterval(function(){if(window.__ME&&livePage==='mail'&&window.__GMAIL&&window.__GMAIL.accounts[0]&&window.__GMAIL.accounts[0].canRead)window.gmailSync();},60000);
   window.gmailRefresh=loadGmail;
   window.gmailSending=function(id,paused){req('POST','/gmail/accounts/'+id+'/sending',{paused:paused}).then(loadGmail).catch(function(e){toast('변경 실패',mailEscape(e.message));});};
   window.gmailDisconnect = function (id) {
@@ -603,7 +612,7 @@
       inner = '<p style="font-size:10.6px;color:var(--n600)">서버에 연결되면 회사 지메일을 연동할 수 있어요.</p>';
     } else if (!g.accounts.length) {
       inner = "<p><b>회사 지메일로 직접 발송</b> — 구글 로그인 한 번이면 theprlist가 그 주소 명의로 보냅니다. " +
-        "비밀번호는 저장하지 않고, 구글 계정 설정에서 언제든 해제할 수 있어요.</p>" +
+        "이 브랜드 전용 Google 계정을 선택하고 발송·받은 메일 읽기 권한을 허용하세요. 다른 브랜드에 연결된 이메일은 사용할 수 없습니다.</p>" +
         (g.demo
           ? '<div style="display:flex;gap:6px;margin-top:9px"><input id="gmEmail" placeholder="hello@brand.com" style="flex:1">' +
             '<span class="cbt" onclick="gmailConnect()">구글로 연결 (데모)</span></div>'
@@ -616,7 +625,8 @@
         '<p>웜업 '+(a.warmupDay==null?'확인 중':a.warmupDay)+'단계 · 실제 발송한 날에만 한도 증가 · 2 → 4 → 6 → 8 → 12 → 16 → 20통</p>'+
         '<p>전달률·스팸함 도착률·반송률: 아직 측정되지 않았습니다. 웜업 완료나 수신함 도착을 보장하지 않습니다.</p>'+
         (a.sendingPaused?'<p role="alert">발송 일시 중지: '+mailEscape(a.pauseReason)+'</p>':'')+
-        '<p>'+(g.inboundReady?'전용 답장 수신 경로가 설정되어 있습니다.':'답장은 브랜드 Gmail 받은편지함으로 들어갑니다. theprlist 자동 수신은 아직 연결되지 않았습니다.')+'</p>'+
+        (a.canRead?'<p>받은편지함 최근 30일을 10통씩 가져옵니다. 이 화면을 열어 두면 1분마다 동기화합니다. 첨부파일·읽음 표시·삭제는 Gmail에서 관리하세요.</p><p>마지막 동기화: '+mailEscape(a.syncedAt?new Date(a.syncedAt).toLocaleString():'아직 없음')+'</p><button class="cbt" onclick="gmailSync()" '+(gmailSyncBusy?'disabled':'')+'>받은 메일 동기화</button>':'<p>수신 권한이 없습니다. 받은 메일도 관리하려면 Google 계정을 다시 연결하고 읽기 권한을 허용하세요.</p>')+
+        '<button class="cbt no" onclick="gmailConnect()">Google 발송·수신 권한 연결</button><p role="status">'+mailEscape(gmailSyncNotice||a.syncError||'')+'</p>'+
         '<button class="cbt" onclick="gmailSending(\''+a.accountId+'\','+(!a.sendingPaused)+')">'+(a.sendingPaused?'확인 후 발송 재개':'발송 일시 중지')+'</button> '+
         '<button class="cbt no" onclick="gmailRefresh()">연결·한도 새로고침</button> '+
         '<button class="cbt no" onclick="gmailDisconnect(\''+a.accountId+'\')">연결 해제</button>'+
@@ -626,7 +636,7 @@
   }
   function inboxCard() {
     var L = window.__INBOX;
-    if (L === null || !L.length) return '<div class="cc"><h2>대화 내역</h2><p>아직 기록된 대화가 없습니다. 답장 자동 수신 연결 여부는 위 이메일 설정에서 확인하세요.</p></div>';
+    if (L === null || !L.length) return '<div class="cc"><h2>대화 내역</h2><p>아직 기록된 대화가 없습니다. Google 수신 권한을 연결한 뒤 받은 메일 동기화를 눌러 주세요.</p></div>';
     var open = window.__INBOX_OPEN;
     var items = L.slice(0, 6).map(function (t) {
       var lb = ARI_LABELS[t.ariLabel] || ARI_LABELS.other;
@@ -868,7 +878,7 @@
       Object.keys(preserved).forEach(function(id){var el=document.getElementById(id);if(el)el.value=preserved[id];});
     };
     var previousReload=reloadBrand;
-    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;previousReload();if(window.__ME)loadProfile();};
+    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});gmailSyncNotice='';profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;previousReload();if(window.__ME)loadProfile();};
     var style=document.createElement('style');style.textContent='body{background:#f5f4ef}.stage{display:block!important;overflow:auto!important;height:calc(100vh - 1px)!important}.live-head{padding:24px 5%;display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid #dadbd2;background:#fafbf5}.live-head>a{font-size:25px;font-weight:800;color:#163f35;text-decoration:none}.live-head span{font-size:12px;font-weight:400}.live-head nav{display:flex;gap:8px;flex-wrap:wrap}.live-main{max-width:1050px;margin:0 auto;padding:55px 24px 95px;font-size:15px;line-height:1.8}.live-main h1{font-size:40px;line-height:1.25;margin:0 0 25px}.live-main h2{font-size:21px;margin:18px 0 10px}.live-main p{margin:12px 0}.live-main .cc{background:#fff;border:1px solid #dadbd2;border-radius:12px;padding:24px;margin:15px 0;text-align:left}.live-main input,.live-main textarea{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid #aebcb1;border-radius:6px;margin:8px 0 14px;font:inherit}.live-main .btn,.live-main .cbt{font-size:14px;padding:10px 16px;cursor:pointer}.live-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.live-eyebrow{letter-spacing:.1em;color:#41684c}.live-footer{padding:20px 24px 75px;text-align:center}.live-main blockquote{padding:12px;border-left:3px solid #5e8c6a;color:#526157;overflow-wrap:anywhere}@media(max-width:700px){.live-head{display:block}.live-head nav{margin-top:15px}.live-main{padding-top:30px}.live-main h1{font-size:30px}.live-grid{grid-template-columns:1fr}}';document.head.appendChild(style);render();
   }
 

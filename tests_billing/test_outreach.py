@@ -179,3 +179,90 @@ def test_ai_draft_uses_saved_profile_and_never_sends(setup,monkeypatch):
     assert calls==[]
     assert c.post('/brands/other/outreach/compose',headers=h,json={'brief':'한국어 협업 제안 작성'}).status_code==403
     with db() as conn:assert conn.execute('SELECT count(*) AS n FROM outreach_batches').fetchone()['n']==0
+
+
+def test_gmail_sync_requires_read_grant_and_brand_access(setup):
+    c,db,h,calls=setup
+    assert c.post('/brands/other/gmail/sync',headers=h).status_code==403
+    assert c.post('/brands/real/gmail/sync',headers=h).status_code==409
+    assert c.post('/brands/real/gmail/sync').status_code==401
+
+
+def test_gmail_import_is_idempotent_and_tenant_private(setup,monkeypatch):
+    import base64,httpx
+    from types import SimpleNamespace
+    c,db,h,calls=setup
+    with db() as conn:conn.execute("UPDATE gmail_accounts SET scopes=%s WHERE brand_id='real'",(gmail.SCOPES,))
+    monkeypatch.setattr(gmail,'_refresh_if_needed',lambda *a:'test')
+    body=base64.urlsafe_b64encode('Hello, interested in your brand'.encode()).decode()
+    data={'id':'gm1','threadId':'gt1','internalDate':'1789742726000','labelIds':['INBOX'],'payload':{'mimeType':'text/plain','headers':[{'name':'From','value':'Creator <creator@example.com>'},{'name':'Subject','value':'Reply subject'},{'name':'Message-ID','value':'<one@example.com>'}],'body':{'data':body}}}
+    class Client:
+        def __init__(self,**kw):pass
+        def __enter__(self):return self
+        def __exit__(self,*a):pass
+        def get(self,url,**kw):return SimpleNamespace(status_code=200,raise_for_status=lambda:None,json=lambda: data if url.endswith('/gm1') else {'messages':[{'id':'gm1'}]})
+    monkeypatch.setattr(httpx,'Client',Client)
+    assert c.post('/brands/real/gmail/sync',headers=h).json()['imported']==1
+    assert c.post('/brands/real/gmail/sync',headers=h).json()['imported']==0
+    with db() as conn:
+        row=conn.execute("SELECT * FROM mail_messages WHERE gmail_message_id='gm1'").fetchone()
+        assert row['body']=='Hello, interested in your brand'
+        assert row['gmail_thread_id']=='gt1' and row['rfc_message_id']=='<one@example.com>'
+    other={'Authorization':'Bearer '+issue_jwt({'kind':'brand','brand_id':'other'})}
+    assert c.get('/inbox/threads/'+str(row['thread_id']),headers=other).status_code==403
+    assert calls==[]
+
+
+def test_oauth_nonce_is_single_use_and_brand_bound(setup):
+    from fastapi import HTTPException
+    c,db,h,calls=setup
+    nonce=gmail._new_oauth_state('real')
+    assert gmail._consume_oauth_state(nonce)=='real'
+    with pytest.raises(HTTPException):gmail._consume_oauth_state(nonce)
+    with pytest.raises(HTTPException):gmail._consume_oauth_state('tampered')
+
+
+def test_callback_stores_granted_scope_and_blocks_shared_brand_mailbox(setup,monkeypatch):
+    import base64,json,httpx
+    from types import SimpleNamespace
+    c,db,h,calls=setup
+    claims=base64.urlsafe_b64encode(json.dumps({'email':'sender@example.com','email_verified':True}).encode()).decode().rstrip('=')
+    token={'access_token':'test','id_token':'header.'+claims+'.signature','scope':'https://www.googleapis.com/auth/gmail.send openid email'}
+    monkeypatch.setattr(httpx,'post',lambda *a,**kw:SimpleNamespace(json=lambda:token))
+    with db() as conn:conn.execute("UPDATE gmail_accounts SET refresh_token='original-refresh' WHERE brand_id='real'")
+    nonce=gmail._new_oauth_state('real')
+    assert c.get('/gmail/callback',params={'code':'test','state':nonce}).status_code==200
+    with db() as conn:
+        row=conn.execute("SELECT * FROM gmail_accounts WHERE brand_id='real'").fetchone()
+        assert row['refresh_token']=='original-refresh'
+        assert gmail._acct_out(row)['canRead'] is False
+    nonce=gmail._new_oauth_state('other')
+    assert c.get('/gmail/callback',params={'code':'test','state':nonce}).status_code==409
+
+
+def test_reply_provider_payload_is_bound_to_receiving_account(setup,monkeypatch):
+    import base64,httpx
+    from email import message_from_bytes
+    from types import SimpleNamespace
+    c,db,h,calls=setup
+    with db() as conn:aid=conn.execute("SELECT account_id FROM gmail_accounts WHERE brand_id='real'").fetchone()['account_id']
+    observed=[]
+    monkeypatch.setattr(gmail,'_refresh_if_needed',lambda *a:'test-token')
+    def post(url,**kw):
+        observed.append(kw['json'])
+        return SimpleNamespace(status_code=200,json=lambda:{'id':'reply-id'})
+    monkeypatch.setattr(httpx,'post',post)
+    with db() as conn:
+        assert REAL_GMAIL_SEND(conn,'other','creator@example.com','Re: Hello','reply',account_id=aid) is None
+        assert REAL_GMAIL_SEND(conn,'real','creator@example.com','Re: Hello','reply',account_id=aid,reply_headers={'rfc_message_id':'<in@example.com>','gmail_thread_id':'thread-1'})
+    assert len(observed)==1 and observed[0]['threadId']=='thread-1'
+    msg=message_from_bytes(base64.urlsafe_b64decode(observed[0]['raw']))
+    assert msg['In-Reply-To']==msg['References']=='<in@example.com>'
+
+
+def test_inbox_html_and_attachments_are_not_executed():
+    import base64
+    from api.gmail_sync import text_body
+    def payload(text,**extra):return dict(mimeType='text/html',body={'data':base64.urlsafe_b64encode(text.encode()).decode()},**extra)
+    assert text_body(payload('<script>bad()</script><p>Hello</p>')).strip()=='Hello'
+    assert text_body(payload('secret',filename='attachment.html'))==''

@@ -612,8 +612,8 @@
     } else {
       var a = g.accounts[0];
       inner = '<p><b>실제 발신 주소: '+mailEscape(a.email)+'</b></p><p>Google Workspace 회사 도메인 또는 연결된 Gmail 계정으로 발송합니다.</p>'+
-        '<p>오늘 Gmail 접수 '+a.sentToday+' / '+a.todayCap+'통 · 남은 한도 '+a.remainingToday+'통</p>'+
-        '<p>웜업 '+a.warmupDay+'단계 · 실제 발송한 날에만 한도 증가 · 2 → 4 → 6 → 8 → 12 → 16 → 20통</p>'+
+        '<p>오늘 Gmail 접수 '+a.sentToday+' / '+a.todayCap+'통 · 남은 한도 '+(a.remainingToday==null?'확인 중':a.remainingToday)+'통</p>'+
+        '<p>웜업 '+(a.warmupDay==null?'확인 중':a.warmupDay)+'단계 · 실제 발송한 날에만 한도 증가 · 2 → 4 → 6 → 8 → 12 → 16 → 20통</p>'+
         '<p>전달률·스팸함 도착률·반송률: 아직 측정되지 않았습니다. 웜업 완료나 수신함 도착을 보장하지 않습니다.</p>'+
         (a.sendingPaused?'<p role="alert">발송 일시 중지: '+mailEscape(a.pauseReason)+'</p>':'')+
         '<p>'+(g.inboundReady?'전용 답장 수신 경로가 설정되어 있습니다.':'답장은 브랜드 Gmail 받은편지함으로 들어갑니다. theprlist 자동 수신은 아직 연결되지 않았습니다.')+'</p>'+

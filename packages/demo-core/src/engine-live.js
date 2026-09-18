@@ -459,6 +459,20 @@
       if(typeof ST!=='undefined' && ST.b==='src' && window.render)render();
     });
   }
+  var composeBusy=false;
+  window.outreachCompose=async function(){
+    if(composeBusy)return;
+    var brief=document.getElementById('outBrief').value.trim();
+    if(brief.length<5)return toast('내용 입력','협업 제안 내용을 5자 이상 입력하세요.');
+    if(document.getElementById('outSubject').value||document.getElementById('outBody').value)return toast('기존 초안 확인','입력한 제목과 본문을 비운 뒤 AI 작성을 실행하세요.');
+    var current=jwtGet(),brand=BRAND();composeBusy=true;toast('AI 작성 중','브랜드 정보를 참고해 제안 메일을 작성하고 있습니다.');
+    try{var r=await req('POST','/brands/'+brand+'/outreach/compose',{brief:brief});
+      if(jwtGet()!==current||BRAND()!==brand)return;
+      var subject=document.getElementById('outSubject'),body=document.getElementById('outBody');
+      if(subject&&body&&!subject.value&&!body.value){subject.value=r.subject;body.value=r.body;toast('초안 작성 완료','아직 저장·발송되지 않았습니다. 내용을 확인해 주세요.');}
+      else toast('다시 시도','화면이나 작성 내용이 바뀌어 AI 결과를 덮어쓰지 않았습니다.');
+    }catch(e){toast('AI 작성 실패',mailEscape(e.message));}finally{composeBusy=false;}
+  };
   window.outreachDraft = function() {
     if(outreachBusy)return;
     var recipients=document.getElementById('outRecipients').value.split(/[\s,;]+/).filter(Boolean);
@@ -501,6 +515,7 @@
         (b.state==='draft'?'<button class="cbt no" onclick="outreachCancel(\''+b.id+'\')">초안 취소</button>':'')+'</details>';
     }).join('');
     return '<div class="cc"><div class="t">아웃리치 메일</div><p>수신자와 내용을 저장한 뒤 확인하고 발송합니다. 발송 한도를 넘긴 수신자는 대기하며, 수신 거부·90일 내 중복 발송은 제외합니다.</p>'+
+      '<label>협업 제안 내용<textarea id="outBrief" maxlength="2000" placeholder="제안할 제품, 협업 방식, 언어를 적어 주세요."></textarea></label><button class="cbt no" onclick="outreachCompose()">AI로 제안 메일 작성</button><p>AI는 저장한 브랜드 정보로 초안만 작성합니다. 내용을 확인하고 저장한 뒤 발송하세요.</p>'+
       '<label>수신자 이메일 · 최대 20명<textarea id="outRecipients" rows="3" style="width:100%;box-sizing:border-box" placeholder="이메일을 줄바꿈 또는 쉼표로 구분"></textarea></label>'+
       '<label>제목<input id="outSubject" maxlength="150" style="width:100%;box-sizing:border-box"></label>'+
       '<label>본문<textarea id="outBody" rows="6" style="width:100%;box-sizing:border-box"></textarea></label>'+
@@ -550,6 +565,8 @@
       toast("연결 완료 (데모)", "실서비스에선 구글 로그인 창이 뜹니다. 이제 theprlist가 <b>" + v + "</b> 명의로 보냅니다.");
     }).catch(function () {});
   };
+  window.gmailRefresh=loadGmail;
+  window.gmailSending=function(id,paused){req('POST','/gmail/accounts/'+id+'/sending',{paused:paused}).then(loadGmail).catch(function(e){toast('변경 실패',mailEscape(e.message));});};
   window.gmailDisconnect = function (id) {
     req("DELETE", "/gmail/accounts/" + id).then(function () {
       loadGmail(); toast("연결 해제", "이 지메일로는 더 이상 발송하지 않습니다.");
@@ -593,22 +610,29 @@
           : '<div style="margin-top:9px"><span class="cbt" onclick="gmailConnect()">🔐 구글로 연결</span>' +
             ' <span class="cbt no" onclick="location.reload()">새로고침</span></div>');
     } else {
-      var a = g.accounts[g.accounts.length - 1];
-      inner = "<p>✅ <b>" + mailEscape(a.email) + "</b> 연결됨 — 오늘 " + a.sentToday + "/" + a.todayCap + "통 " +
-        "(워밍업 자동 증가). " + (g.inboundReady ? "답장은 아래 인박스로 들어옵니다." : "답장은 연결된 Gmail 받은편지함에서 확인하세요.") + "</p>" +
-        '<div style="margin-top:8px"><span class="cbt no" onclick="gmailDisconnect(\'' + a.accountId + '\')">연결 해제</span></div>';
+      var a = g.accounts[0];
+      inner = '<p><b>실제 발신 주소: '+mailEscape(a.email)+'</b></p><p>Google Workspace 회사 도메인 또는 연결된 Gmail 계정으로 발송합니다.</p>'+
+        '<p>오늘 Gmail 접수 '+a.sentToday+' / '+a.todayCap+'통 · 남은 한도 '+a.remainingToday+'통</p>'+
+        '<p>웜업 '+a.warmupDay+'단계 · 실제 발송한 날에만 한도 증가 · 2 → 4 → 6 → 8 → 12 → 16 → 20통</p>'+
+        '<p>전달률·스팸함 도착률·반송률: 아직 측정되지 않았습니다. 웜업 완료나 수신함 도착을 보장하지 않습니다.</p>'+
+        (a.sendingPaused?'<p role="alert">발송 일시 중지: '+mailEscape(a.pauseReason)+'</p>':'')+
+        '<p>'+(g.inboundReady?'전용 답장 수신 경로가 설정되어 있습니다.':'답장은 브랜드 Gmail 받은편지함으로 들어갑니다. theprlist 자동 수신은 아직 연결되지 않았습니다.')+'</p>'+
+        '<button class="cbt" onclick="gmailSending(\''+a.accountId+'\','+(!a.sendingPaused)+')">'+(a.sendingPaused?'확인 후 발송 재개':'발송 일시 중지')+'</button> '+
+        '<button class="cbt no" onclick="gmailRefresh()">연결·한도 새로고침</button> '+
+        '<button class="cbt no" onclick="gmailDisconnect(\''+a.accountId+'\')">연결 해제</button>'+
+        (g.accounts.length>1?'<p>여러 계정 중 위 주소를 발신자로 사용합니다. 변경하려면 현재 발신 계정을 해제하세요.</p>':'');
     }
     return '<div class="cc" style="margin-bottom:12px"><div class="t">지메일 연동 — 구글 로그인으로 브랜드 명의 발송</div>' + inner + "</div>";
   }
   function inboxCard() {
     var L = window.__INBOX;
-    if (L === null || !L.length) return "";
+    if (L === null || !L.length) return '<div class="cc"><h2>대화 내역</h2><p>아직 기록된 대화가 없습니다. 답장 자동 수신 연결 여부는 위 이메일 설정에서 확인하세요.</p></div>';
     var open = window.__INBOX_OPEN;
     var items = L.slice(0, 6).map(function (t) {
       var lb = ARI_LABELS[t.ariLabel] || ARI_LABELS.other;
       var row = "<div style='margin-top:8px;padding-top:8px;border-top:1px solid var(--n100,#eee);cursor:pointer' onclick=\"inboxOpen('" + t.threadId + "')\">" +
         "<b>@" + mailEscape(t.handle || t.creatorEmail) + "</b> " +
-        "<span style='font-size:9.6px;padding:1px 6px;border-radius:8px;border:1px solid " + lb[1] + ";color:" + lb[1] + "'>theprlist: " + lb[0] + "</span>" +
+        "<span style='font-size:9.6px;padding:1px 6px;border-radius:8px;border:1px solid " + lb[1] + ";color:" + lb[1] + "'>규칙 분류: " + lb[0] + "</span>" +
         (t.lastDirection === "in" ? " <span style='font-size:9.6px;color:var(--bd,#8E3B2A)'>● 답장 옴</span>" : "") +
         "</div>";
       if (open && open.id === t.threadId && open.data) {
@@ -626,7 +650,7 @@
       }
       return row;
     }).join("");
-    return '<div class="cc" style="margin-bottom:12px"><div class="t">인박스 — 크리에이터 답장 (theprlist 분류)</div>' + items + "</div>";
+    return '<div class="cc" style="margin-bottom:12px"><div class="t">대화 내역 · 발신 기록과 수신된 답장</div>' + items + "</div>";
   }
   /* ── 틱톡샵 대량 발송 P0 (반자동) — 발굴·수집 '틱톡샵' 탭 카드 ── */
   window.__DISPATCH = null;
@@ -831,8 +855,8 @@
     window.render=function(){
       var stage=document.getElementById('stage');if(!stage)return;
       document.querySelector('.svcbar').style.display='none';
-      var nav='<header class="live-head"><a href="https://theprlist.net">theprlist<span> / brand console</span></a><nav>'+[['home','홈'],['learn','브랜드 학습'],['mail','메일링'],['billing','월별 청구'],['status','서비스 상태']].map(function(x){return '<button class="btn '+(livePage===x[0]?'':'line')+'" onclick="liveNav(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+'</nav></header>';
-      var preserved={};['outRecipients','outSubject','outBody','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)preserved[id]=el.value;});
+      var nav='<header class="live-head"><a href="https://theprlist.net">theprlist<span> / brand console</span></a><nav>'+[['home','홈'],['learn','브랜드 학습'],['mail','아웃리치·인박스'],['billing','월별 청구']].map(function(x){return '<button class="btn '+(livePage===x[0]?'':'line')+'" onclick="liveNav(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+'</nav></header>';
+      var preserved={};['outRecipients','outSubject','outBody','outBrief','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)preserved[id]=el.value;});
       var body='';
       if(!window.__ME){body='<h1>브랜드와 크리에이터,<br>함께 시작할 준비.</h1><p>승인된 브랜드 계정으로 로그인해 주세요.</p><button class="btn" onclick="document.getElementById(\'authChip\').click()">로그인</button> <a class="btn line" href="https://theprlist.net/signup">가입 신청</a>';}
       else if(livePage==='learn')body=liveLearningCard();
@@ -844,7 +868,7 @@
       Object.keys(preserved).forEach(function(id){var el=document.getElementById(id);if(el)el.value=preserved[id];});
     };
     var previousReload=reloadBrand;
-    reloadBrand=function(){['outRecipients','outSubject','outBody','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;previousReload();if(window.__ME)loadProfile();};
+    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;previousReload();if(window.__ME)loadProfile();};
     var style=document.createElement('style');style.textContent='body{background:#f5f4ef}.stage{display:block!important;overflow:auto!important;height:calc(100vh - 1px)!important}.live-head{padding:24px 5%;display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid #dadbd2;background:#fafbf5}.live-head>a{font-size:25px;font-weight:800;color:#163f35;text-decoration:none}.live-head span{font-size:12px;font-weight:400}.live-head nav{display:flex;gap:8px;flex-wrap:wrap}.live-main{max-width:1050px;margin:0 auto;padding:55px 24px 95px;font-size:15px;line-height:1.8}.live-main h1{font-size:40px;line-height:1.25;margin:0 0 25px}.live-main h2{font-size:21px;margin:18px 0 10px}.live-main p{margin:12px 0}.live-main .cc{background:#fff;border:1px solid #dadbd2;border-radius:12px;padding:24px;margin:15px 0;text-align:left}.live-main input,.live-main textarea{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid #aebcb1;border-radius:6px;margin:8px 0 14px;font:inherit}.live-main .btn,.live-main .cbt{font-size:14px;padding:10px 16px;cursor:pointer}.live-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.live-eyebrow{letter-spacing:.1em;color:#41684c}.live-footer{padding:20px 24px 75px;text-align:center}.live-main blockquote{padding:12px;border-left:3px solid #5e8c6a;color:#526157;overflow-wrap:anywhere}@media(max-width:700px){.live-head{display:block}.live-head nav{margin-top:15px}.live-main{padding-top:30px}.live-main h1{font-size:30px}.live-grid{grid-template-columns:1fr}}';document.head.appendChild(style);render();
   }
 

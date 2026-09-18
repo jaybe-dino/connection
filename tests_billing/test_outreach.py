@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from api import routes_outreach as routes, routes_gmail as gmail
 from api.auth import issue_jwt
+REAL_GMAIL_SEND = gmail.send_via_brand_gmail
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -109,3 +110,72 @@ def test_inbox_read_does_not_send_and_inbound_requires_secret(setup):
     assert c.post(f'/inbox/threads/{t}/messages/{m}/send',headers=h).json()['state']=='sent'
     assert c.post(f'/inbox/threads/{t}/messages/{m}/send',headers=h).status_code==409
     assert len(calls)==1
+
+
+def test_warmup_ignores_account_age_and_counts_sending_days():
+    from datetime import datetime,UTC,timedelta
+    now=datetime.now(UTC)
+    row={'account_id':'test','brand_id':'real','email':'sender@example.com','state':'connected','connected_at':now-timedelta(days=300),'sent_date':now.date(),'sent_today':0,'warmup_days':0}
+    assert gmail._acct_out(row)['todayCap']==2
+    row.update(warmup_days=1,warmup_last_date=now.date(),sent_today=1)
+    assert gmail._acct_out(row)['todayCap']==2
+    assert gmail._acct_out(row)['remainingToday']==1
+    row['warmup_last_date']=(now-timedelta(days=1)).date()
+    assert gmail._acct_out(row)['todayCap']==4
+    row.update(sending_paused=True)
+    assert gmail._acct_out(row)['remainingToday']==0
+    assert gmail._acct_out(row)['deliveryVerified'] is False
+
+
+def test_pause_blocks_provider_and_wrong_brand_cannot_resume(setup,monkeypatch):
+    c,db,h,calls=setup
+    with db() as conn:aid=str(conn.execute("SELECT account_id FROM gmail_accounts WHERE brand_id='real'").fetchone()['account_id'])
+    assert c.post('/gmail/accounts/'+aid+'/sending',headers=h,json={'paused':True}).status_code==200
+    other={'Authorization':'Bearer '+issue_jwt({'kind':'brand','brand_id':'other'})}
+    assert c.post('/gmail/accounts/'+aid+'/sending',headers=other,json={'paused':False}).status_code==403
+    with db() as conn:
+        assert REAL_GMAIL_SEND(conn,'real','test@example.test','QA','Paused') is None
+    assert c.post('/gmail/accounts/'+aid+'/sending',headers=h,json={'paused':False}).json()['sendingPaused'] is False
+
+
+def test_actual_sender_headers_and_daily_quota(setup,monkeypatch):
+    import base64,httpx
+    from email import message_from_bytes
+    from types import SimpleNamespace
+    c,db,h,calls=setup
+    observed=[]
+    monkeypatch.setattr(gmail,'_refresh_if_needed',lambda *a:'test-token')
+    monkeypatch.setenv('INBOUND_REPLY','0')
+    def post(url,**kw):
+        observed.append(message_from_bytes(base64.urlsafe_b64decode(kw['json']['raw'])))
+        return SimpleNamespace(status_code=200,json=lambda:{'id':'accepted-id'})
+    monkeypatch.setattr(httpx,'post',post)
+    for i in range(3):
+        with db() as conn:
+            result=REAL_GMAIL_SEND(conn,'real','recipient@example.test','QA','Test message')
+        assert bool(result)==(i<2)
+    assert len(observed)==2
+    assert observed[0]['From']=='sender@example.com'
+    assert observed[0]['Reply-To']=='sender@example.com'
+    with db() as conn:
+        row=conn.execute("SELECT * FROM gmail_accounts WHERE brand_id='real'").fetchone()
+        assert row['sent_today']==2 and row['warmup_days']==1
+
+
+def test_ai_draft_uses_saved_profile_and_never_sends(setup,monkeypatch):
+    import json
+    from types import SimpleNamespace
+    c,db,h,calls=setup
+    seen=[]
+    def create(**kwargs):
+        seen.append(kwargs)
+        return SimpleNamespace(content=[SimpleNamespace(type='text',text=json.dumps({'subject':'협업 제안','body':'QA 크림을 소개합니다.'}))])
+    monkeypatch.setattr(routes.ai,'_client',lambda:SimpleNamespace(messages=SimpleNamespace(create=create)))
+    with db() as conn:
+        conn.execute("INSERT INTO brand_profile_versions(brand_id,version,fields) VALUES('real',123,%s) ON CONFLICT DO NOTHING",(json.dumps({'hero_product':{'value':'QA 크림'}}),))
+    r=c.post('/brands/real/outreach/compose',headers=h,json={'brief':'한국어 협업 제안 작성'})
+    assert r.status_code==200 and r.json()['sent'] is False
+    assert 'QA 크림' in seen[0]['messages'][0]['content']
+    assert calls==[]
+    assert c.post('/brands/other/outreach/compose',headers=h,json={'brief':'한국어 협업 제안 작성'}).status_code==403
+    with db() as conn:assert conn.execute('SELECT count(*) AS n FROM outreach_batches').fetchone()['n']==0

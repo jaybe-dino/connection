@@ -29,8 +29,8 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 SCOPES = "https://www.googleapis.com/auth/gmail.send openid email"
-# 지메일 계정 한도(무료 ~500/일)보다 보수적으로 + 워밍업 곡선(senders와 동일)
-GMAIL_HARD_CAP, WARMUP_START, WARMUP_GROWTH = 450, 20, 1.2
+# 실제 발송한 날에만 증가. 전달/반송 피드백 연결 전에는 최대 20통으로 제한.
+WARMUP_PLAN = (2, 4, 6, 8, 12, 16, 20)
 REPLY_DOMAIN = os.environ.get("REPLY_DOMAIN", "reply.theprlist.net")
 
 
@@ -107,13 +107,18 @@ def _dec(v: str) -> str:
 # ── 계정 연결 ────────────────────────────────────────────────────
 
 def _acct_out(r: dict) -> dict:
-    days = max(0, (datetime.now(UTC) - r["connected_at"]).days)
-    cap = min(GMAIL_HARD_CAP, int(WARMUP_START * (WARMUP_GROWTH ** days)))
+    today = datetime.now(UTC).date()
+    completed_days = max(0, r.get('warmup_days', 0) - int(r.get('warmup_last_date') == today))
+    cap = WARMUP_PLAN[min(completed_days, len(WARMUP_PLAN)-1)]
     sent = r["sent_today"] if r["sent_date"] == datetime.now(UTC).date() else 0
     return {"accountId": str(r["account_id"]), "brandId": r["brand_id"],
             "email": r["email"], "state": r["state"],
             "connectedAt": r["connected_at"].isoformat(),
             "todayCap": cap, "sentToday": sent,
+            "remainingToday": max(0, cap-sent) if not r.get('sending_paused') else 0,
+            "sendingPaused": r.get('sending_paused',False), "pauseReason": r.get('pause_reason',''),
+            "warmupDay": completed_days+1, "warmupPlan": list(WARMUP_PLAN),
+            "deliveryVerified": False, "healthStatus": "unverified",
             "replyTo": (f"reply+{r['brand_id']}@{REPLY_DOMAIN}"
                         if _inbound_ready() else r["email"])}
 
@@ -128,6 +133,30 @@ def list_gmail(brand_id: str,
             "SELECT * FROM gmail_accounts WHERE brand_id=%s AND state='connected'"
             " ORDER BY connected_at", (brand_id,)).fetchall()
     return {"demo": _demo_mode(), "inboundReady": _inbound_ready(), "accounts": [_acct_out(r) for r in rows]}
+
+
+class SendingControl(BaseModel):
+    paused: bool
+
+
+@router.post('/gmail/accounts/{account_id}/sending')
+def sending_control(account_id: str, body: SendingControl, authorization: str = Header(default='')):
+    from .auth import current_user
+    user=current_user(authorization)
+    if not user or user.get('otp')=='pending':raise HTTPException(401,'로그인이 필요합니다')
+    with connect() as conn:
+        r=conn.execute('SELECT * FROM gmail_accounts WHERE account_id=%s FOR UPDATE',(account_id,)).fetchone()
+        if not r:raise HTTPException(404,'계정을 찾을 수 없습니다')
+        _guard(r['brand_id'],authorization,'')
+        r=conn.execute('UPDATE gmail_accounts SET sending_paused=%s,pause_reason=%s WHERE account_id=%s RETURNING *',
+                       (body.paused,'사용자가 발송을 일시 중지했습니다.' if body.paused else '',account_id)).fetchone()
+        ledger_append(conn,str(user.get('sub') or user.get('kind')),'GMAIL_SENDING_PAUSED' if body.paused else 'GMAIL_SENDING_RESUMED',account_id,{})
+    return _acct_out(r)
+
+
+def pause_after_uncertain_send(brand: str):
+    with connect() as conn:
+        conn.execute("UPDATE gmail_accounts SET sending_paused=true,pause_reason='발송 결과 확인 필요: Gmail 보낸편지함을 확인한 뒤 재개하세요.' WHERE brand_id=%s AND state='connected'",(brand,))
 
 
 class ConnectIn(BaseModel):
@@ -252,7 +281,7 @@ def send_via_brand_gmail(conn, brand_id: str, to: str, subject: str,
                          body: str) -> dict | None:
     """연결된 지메일이 있으면 그 주소로 발송. 없으면 None(호출측이 폴백).
 
-    일일 한도(워밍업 곡선) 초과 시에도 None — 도메인 트랙으로 폴백.
+    중지 또는 일일 한도 초과 시 None. 아웃리치는 다른 계정으로 우회하지 않고 대기한다.
     """
     r = conn.execute(
         "SELECT * FROM gmail_accounts WHERE brand_id=%s AND state='connected'"
@@ -260,7 +289,7 @@ def send_via_brand_gmail(conn, brand_id: str, to: str, subject: str,
     if not r:
         return None
     out = _acct_out(r)
-    if out["sentToday"] >= out["todayCap"]:
+    if out['sendingPaused'] or out["sentToday"] >= out["todayCap"]:
         return None
     message_id = None
     if not _demo_mode():
@@ -282,7 +311,9 @@ def send_via_brand_gmail(conn, brand_id: str, to: str, subject: str,
             raise HTTPException(502, "발송 결과 확인 필요")
     conn.execute(
         "UPDATE gmail_accounts SET sent_today=CASE WHEN sent_date=CURRENT_DATE"
-        " THEN sent_today+1 ELSE 1 END, sent_date=CURRENT_DATE"
+        " THEN sent_today+1 ELSE 1 END, sent_date=CURRENT_DATE,"
+        " warmup_days=warmup_days+CASE WHEN warmup_last_date=CURRENT_DATE THEN 0 ELSE 1 END,"
+        " warmup_last_date=CURRENT_DATE"
         " WHERE account_id=%s", (r["account_id"],))
     return {"via": "gmail" if not _demo_mode() else "demo",
             "fromEmail": r["email"], "messageId": message_id}
@@ -462,6 +493,7 @@ def send_reply(thread_id: str, msg_id: int, authorization: str = Header(default=
             conn.execute("UPDATE gate_requests SET state='APPROVED',decided_by=%s,decided_at=now(),executed=true WHERE gate_id=%s",(str(u.get('sub') or u.get('kind')),m['gate_id']))
         return {'state':'sent'}
     except Exception:
+        pause_after_uncertain_send(t['brand_id'])
         with connect() as conn:
             conn.execute("UPDATE mail_messages SET state='review' WHERE msg_id=%s",(msg_id,))
         raise HTTPException(502,'Gmail 보낸편지함에서 발송 여부를 확인하세요. 자동 재발송하지 않습니다.')

@@ -10,7 +10,7 @@ def test_demo_connect_and_list(client):
     assert acct["email"] == "hello@glowlab.co"
     # 인바운드 파서(SendGrid) 설정 전엔 답장이 브랜드 지메일로 직행한다
     assert acct["replyTo"] == "hello@glowlab.co"
-    assert acct["todayCap"] >= 20            # 워밍업 첫날 한도
+    assert acct["todayCap"] == 2            # 워밍업 첫날 한도
 
     ls = client.get("/brands/glowlab/gmail").json()
     assert any(a["email"] == "hello@glowlab.co" for a in ls["accounts"])

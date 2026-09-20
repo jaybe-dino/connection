@@ -167,14 +167,15 @@ def create_product_campaign(brand: str, product_id: UUID,
             " product_id) VALUES (%s,%s,%s,%s,'affiliate',%s,%s,%s,%s,%s)"
             " RETURNING *",
             (cid, brand, body.name.strip(), p["name"],
-             int(p["commission_pct"]),
+             p["commission_pct"],
              json.dumps(body.conditions, ensure_ascii=False),
              body.capacity, body.deadline, product_id)).fetchone()
         ledger_append(conn, f"brand:{brand}", "PRODUCT_CAMPAIGN_CREATED",
                       cid, {"product": p["name"],
                             "commissionPct": float(p["commission_pct"])})
     return {"campaignId": c["campaign_id"], "productId": str(product_id),
-            "rewardType": "affiliate", "affiliatePct": c["affiliate_pct"],
+            "rewardType": "affiliate",
+            "affiliatePct": float(c["affiliate_pct"]),
             "capacity": c["capacity"], "status": c["status"]}
 
 
@@ -184,29 +185,52 @@ def create_product_campaign(brand: str, product_id: UUID,
 def product_candidates(brand: str, product_id: UUID, country: str = "",
                        limit: int = 20,
                        authorization: str = Header(default="")) -> dict:
+    """제품·브랜드 적합도를 실제 순위에 반영한 후보 추천.
+
+    적합도 = 제품 이름·프로필 필드에서 뽑은 키워드와 후보의 category/product_tags
+    (수집엔진 실측 분류)의 교집합 수. 적합도 우선, 동률은 접촉·영향력 점수순.
+    모든 순위 근거를 후보별 evidence로 반환하며 지표를 생성하지 않는다.
+    """
     _guard(brand, authorization)
     limit = max(1, min(limit, 50))
     country = country.strip().upper()[:2]
     with connect() as conn:
         p = _product(conn, brand, product_id)
         _, fields = _latest_fields(conn, product_id)
+        keywords: set[str] = set()
+        used_fields: list[str] = []
+        def _tokens(text: str) -> set[str]:
+            import re as _re
+            return {t.lower() for t in _re.split(r"[^0-9A-Za-z가-힣]+", text or "")
+                    if len(t) >= 2}
+        keywords |= _tokens(p["name"])
+        for k, f in (fields or {}).items():
+            v = f.get("value") if isinstance(f, dict) else str(f)
+            toks = _tokens(v or "")
+            if toks:
+                keywords |= toks
+                used_fields.append(k)
         rows = conn.execute(
             "SELECT platform_uid, handle, display_name, country, lang,"
-            "       category, followers, engagement_rate, influence_score,"
-            "       contact_score, email_status"
+            "       category, product_tags, followers, engagement_rate,"
+            "       influence_score, contact_score, email_status"
             " FROM creator_pool"
             " WHERE email IS NOT NULL AND email_status='valid'"
             "   AND (%s = '' OR country = %s)"
             "   AND NOT EXISTS (SELECT 1 FROM outreach_optouts o"
             "        WHERE o.brand_id=%s AND o.email=creator_pool.email"
-            "          AND o.opted_out_at IS NOT NULL)"
-            " ORDER BY contact_score DESC NULLS LAST,"
-            "          influence_score DESC NULLS LAST,"
-            "          followers DESC NULLS LAST"
-            " LIMIT %s", (country, country, brand, limit)).fetchall()
-        out = []
+            "          AND o.opted_out_at IS NOT NULL)",
+            (country, country, brand)).fetchall()
+        scored = []
         for r in rows:
+            creator_terms = {t.lower() for t in (r["category"] or [])} | {
+                t.lower() for t in (r["product_tags"] or [])}
+            matched = sorted(keywords & creator_terms)
+            fit = len(matched)
             evidence = []
+            if matched:
+                evidence.append("제품 적합: " + ", ".join(matched[:5])
+                                + " — 제품 프로필 키워드와 후보 분류 일치")
             if r["country"]:
                 evidence.append(f"국가 {r['country']}"
                                 + (" — 요청 타깃과 일치" if country and r["country"] == country else ""))
@@ -216,15 +240,20 @@ def product_candidates(brand: str, product_id: UUID, country: str = "",
                 evidence.append(f"참여율 {r['engagement_rate']:.2%}")
             if r["influence_score"] is not None:
                 evidence.append(f"영향력 점수 {r['influence_score']:.0f}/100")
-            if r["category"]:
-                evidence.append("카테고리: " + ", ".join(r["category"][:3]))
             evidence.append("이메일 검증 통과 · 수신거부 이력 없음")
-            out.append({"handle": r["handle"], "displayName": r["display_name"],
-                        "country": r["country"], "followers": r["followers"],
-                        "evidence": evidence})
+            scored.append((fit, r["contact_score"] or 0,
+                           r["influence_score"] or 0, r["followers"] or 0,
+                           {"handle": r["handle"],
+                            "displayName": r["display_name"],
+                            "country": r["country"],
+                            "followers": r["followers"],
+                            "fitScore": fit, "matchedTerms": matched,
+                            "evidence": evidence}))
+        scored.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3]))
+        out = [x[4] for x in scored[:limit]]
     return {"productId": str(product_id), "productName": p["name"],
-            "productFieldsUsed": sorted(fields.keys()),
+            "productFieldsUsed": sorted(set(used_fields)),
             "candidates": out,
-            "note": ("후보는 내부 수집 DB의 실측 필드로만 정렬·필터되며"
-                     " 지표를 생성하지 않습니다. 아웃리치 발송은 초안 검토·승인"
-                     " 후에만 진행됩니다.")}
+            "note": ("적합도는 제품 프로필 키워드와 후보의 수집된 분류의 교집합"
+                     "으로만 계산합니다. 후보 지표를 생성하지 않으며, 아웃리치"
+                     " 발송은 초안 검토·승인 후에만 진행됩니다.")}

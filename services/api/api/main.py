@@ -101,6 +101,8 @@ from .routes_identity import router as _identity_router
 app.include_router(_identity_router)
 from .routes_products import router as _products_router
 app.include_router(_products_router)
+from .routes_community import router as _community_router
+app.include_router(_community_router)
 from .routes_outreach import router as _outreach_router
 app.include_router(_outreach_router)
 app.include_router(_auth_router)

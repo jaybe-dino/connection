@@ -1,4 +1,5 @@
 """Monthly arrears invoices. A customer confirms each NICEpay card payment."""
+import os
 import re
 import uuid
 from datetime import datetime
@@ -6,6 +7,8 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+
+from pydantic import BaseModel, Field
 
 from . import nicepay
 from .auth import current_user, require_brand
@@ -35,17 +38,21 @@ def close_months(conn, brand):
     """Lazy month close; only completed Asia/Seoul months. No charges here."""
     conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ('billing:' + brand,))
     cutoff = datetime.now(ZoneInfo('Asia/Seoul')).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    # 단가 감사 미해결 행은 산입 제외 — 사람이 확정하기 전엔 청구하지 않는다.
+    audit_filter = ("AND NOT EXISTS (SELECT 1 FROM signup_usage_audit a "
+                    "WHERE a.usage_id=signup_usage.usage_id AND a.resolved_at IS NULL) ")
     groups = conn.execute(
         "SELECT date_trunc('month', verified_at AT TIME ZONE 'Asia/Seoul')::date AS period, "
         "count(*) AS quantity, sum(unit_price) AS amount FROM signup_usage WHERE brand_id=%s AND invoice_id IS NULL "
-        "AND verified_at < %s GROUP BY 1 ORDER BY 1", (brand, cutoff)).fetchall()
+        "AND verified_at < %s " + audit_filter + "GROUP BY 1 ORDER BY 1", (brand, cutoff)).fetchall()
     for group in groups:
         iid = 'PRLIST_' + uuid.uuid4().hex[:24]
         conn.execute('INSERT INTO signup_invoices(invoice_id,brand_id,period,quantity,amount) '
                      'VALUES(%s,%s,%s,%s,%s)',
                      (iid, brand, group['period'], group['quantity'], group['amount']))
         conn.execute("UPDATE signup_usage SET invoice_id=%s WHERE brand_id=%s AND invoice_id IS NULL "
-                     "AND date_trunc('month',verified_at AT TIME ZONE 'Asia/Seoul')::date=%s",
+                     "AND date_trunc('month',verified_at AT TIME ZONE 'Asia/Seoul')::date=%s "
+                     + audit_filter,
                      (iid, brand, group['period']))
 
 
@@ -173,3 +180,66 @@ def reconcile(brand_id: str, invoice_id: str, authorization: str = Header(defaul
     except nicepay.PaymentUnavailable:
         raise HTTPException(503, 'PG 거래 조회를 완료하지 못했습니다')
     return {'paid': settle(row['tid'], invoice_id, data)}
+
+
+# ── 단가 감사 큐 (어드민) — 자동 변경 금지, 증거 확인 후 수동 확정 ──
+
+def _require_admin_like(authorization: str, x_admin_key: str) -> str:
+    from . import auth as _auth
+    u = _auth.current_user(authorization)
+    if u and u.get('kind') == 'admin' and u.get('otp') != 'pending':
+        return str(u.get('sub'))
+    if not _auth.auth_required():
+        required = os.environ.get('ADMIN_KEY', '')
+        if not required or x_admin_key == required:
+            return 'legacy-key'
+    raise HTTPException(401, '어드민 권한이 필요합니다')
+
+
+@router.get('/admin/usage-audit')
+def usage_audit_list(authorization: str = Header(default=''),
+                     x_admin_key: str = Header(default='')):
+    _require_admin_like(authorization, x_admin_key)
+    with connect() as conn:
+        rows = conn.execute(
+            'SELECT a.usage_id, a.reason, a.price_at_flag, a.created_at,'
+            '       u.brand_id, u.creator_id, u.verified_at, u.unit_price'
+            ' FROM signup_usage_audit a JOIN signup_usage u USING (usage_id)'
+            ' WHERE a.resolved_at IS NULL ORDER BY u.verified_at').fetchall()
+    return [{'usageId': r['usage_id'], 'brandId': r['brand_id'],
+             'creatorId': r['creator_id'],
+             'verifiedAt': r['verified_at'].isoformat(),
+             'currentPrice': r['unit_price'], 'reason': r['reason']}
+            for r in rows]
+
+
+class AuditResolve(BaseModel):
+    unit_price: int = Field(ge=0)
+    evidence: str = Field(min_length=5, max_length=1000)
+
+
+@router.post('/admin/usage-audit/{usage_id}/resolve')
+def usage_audit_resolve(usage_id: int, body: AuditResolve,
+                        authorization: str = Header(default=''),
+                        x_admin_key: str = Header(default='')):
+    actor = _require_admin_like(authorization, x_admin_key)
+    with connect() as conn:
+        a = conn.execute(
+            'SELECT * FROM signup_usage_audit WHERE usage_id=%s'
+            ' AND resolved_at IS NULL FOR UPDATE', (usage_id,)).fetchone()
+        if not a:
+            raise HTTPException(404, '미해결 감사 항목이 없습니다')
+        u = conn.execute('SELECT invoice_id FROM signup_usage WHERE usage_id=%s'
+                         ' FOR UPDATE', (usage_id,)).fetchone()
+        if u['invoice_id']:
+            raise HTTPException(409, '이미 청구된 행은 변경할 수 없습니다')
+        conn.execute('UPDATE signup_usage SET unit_price=%s WHERE usage_id=%s',
+                     (body.unit_price, usage_id))
+        conn.execute('UPDATE signup_usage_audit SET resolved_at=now(),'
+                     ' resolved_price=%s, resolved_by=%s WHERE usage_id=%s',
+                     (body.unit_price, actor, usage_id))
+        ledger_append(conn, f'admin:{actor}', 'USAGE_PRICE_RESOLVED',
+                      str(usage_id), {'unitPrice': body.unit_price,
+                                      'evidence': body.evidence[:500]})
+    return {'resolved': True, 'usageId': usage_id,
+            'unitPrice': body.unit_price}

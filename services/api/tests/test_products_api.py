@@ -109,9 +109,68 @@ def test_product_campaign_and_candidates(client):
     assert top["handle"] == "ploy.beauty"          # contact_score 순
     assert any("팔로워" in e for e in top["evidence"])
     assert any("수신거부" in e for e in top["evidence"])
-    assert "생성하지 않습니다" in r["note"]           # 지표 비생성 명시
+    assert "생성하지 않" in r["note"]           # 지표 비생성 명시
 
     # 다른 테스트(러너 등록 수 기대치)에 영향 없도록 시드 정리
     with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
         conn.execute("DELETE FROM creator_pool WHERE platform_uid LIKE 'uid-%'")
         conn.commit()
+
+
+def test_decimal_commission_preserved(client):
+    """검수 회귀: 12.5% 커미션이 캠페인까지 소수 그대로 보존돼야 한다."""
+    t = _brand_token(client, "prod-a@ex.com", "glowlab")
+    p = client.post("/brands/glowlab/products", json={
+        "name": "소수점 테스트 세럼", "commission_pct": 12.5},
+        headers=_bearer(t)).json()
+    assert p["commissionPct"] == 12.5
+    c = client.post(f"/brands/glowlab/products/{p['productId']}/campaigns",
+                    json={"name": "소수 커미션 캠페인"},
+                    headers=_bearer(t)).json()
+    assert c["affiliatePct"] == 12.5
+    with psycopg.connect(os.environ["DATABASE_URL"],
+                         row_factory=dict_row) as conn:
+        row = conn.execute("SELECT affiliate_pct FROM campaigns"
+                           " WHERE campaign_id=%s", (c["campaignId"],)).fetchone()
+    assert float(row["affiliate_pct"]) == 12.5
+
+
+def test_candidates_ranked_by_product_fit(client):
+    """검수 반영: 제품 프로필이 실제 순위를 바꾼다 — 서로 다른 제품은
+    서로 다른 후보가 1위가 되고, 근거에 일치 키워드가 명시된다."""
+    t = _brand_token(client, "prod-a@ex.com", "glowlab")
+    def make(name, usp):
+        p = client.post("/brands/glowlab/products",
+                        json={"name": name}, headers=_bearer(t)).json()
+        client.post(f"/brands/glowlab/products/{p['productId']}/profile",
+                    json={"answers": {"usp": usp}}, headers=_bearer(t))
+        return p["productId"]
+    pid_sun = make("선쿠션 핏테스트", "sunscreen spf protection")
+    pid_amp = make("앰플 핏테스트", "ampoule serum soothing")
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+        conn.execute(
+            "INSERT INTO creator_pool (platform, platform_uid, handle, country,"
+            " category, followers, contact_score, email, email_status) VALUES"
+            " ('tiktok','fit-sun','sun.cr','TH',ARRAY['sunscreen'],1000,10,"
+            "  'sun@ex.com','valid'),"
+            " ('tiktok','fit-amp','amp.cr','TH',ARRAY['ampoule'],1000,99,"
+            "  'amp@ex.com','valid') ON CONFLICT DO NOTHING")
+        conn.commit()
+    try:
+        r1 = client.get(f"/brands/glowlab/products/{pid_sun}/candidates?country=TH",
+                        headers=_bearer(t)).json()
+        r2 = client.get(f"/brands/glowlab/products/{pid_amp}/candidates?country=TH",
+                        headers=_bearer(t)).json()
+        # 적합도가 접촉점수(99>10)를 이긴다: 선쿠션 → sun.cr 1위
+        assert r1["candidates"][0]["handle"] == "sun.cr"
+        assert r1["candidates"][0]["fitScore"] >= 1
+        assert "sunscreen" in r1["candidates"][0]["matchedTerms"]
+        assert any("제품 적합" in e for e in r1["candidates"][0]["evidence"])
+        # 앰플 → amp.cr 1위 (제품이 다르면 순위가 달라진다)
+        assert r2["candidates"][0]["handle"] == "amp.cr"
+        assert "ampoule" in r2["candidates"][0]["matchedTerms"]
+        assert "usp" in r1["productFieldsUsed"]
+    finally:
+        with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+            conn.execute("DELETE FROM creator_pool WHERE platform_uid LIKE 'fit-%'")
+            conn.commit()

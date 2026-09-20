@@ -25,7 +25,7 @@
    - `DATABASE_URL` = Postgres 서비스의 `DATABASE_URL` 참조 (Add Reference로 연결)
    - `ANTHROPIC_API_KEY` = (있으면 — 번역·아리 실동작. 없어도 서버는 뜸)
    - `ADMIN_KEY` = 아무 비밀 문자열 (어드민 간이 인증 — 어드민 접속 시 `?key=같은값`)
-   - `RUNNER_ENABLED` = `1` (에이전트 러너 상시 가동 — 메일·지급을 게이트에 자동 접수)
+   - `RUNNER_ENABLED` = `1` (Gmail 운영 루프: 수신 동기화·승인 배치 발송 재개·월마감 청구서 생성. 자동 모집 없음. 레거시 데모 루프는 별도 `LEGACY_DEMO_RUNNER=1` + 실발송 키 없는 환경에서만)
    - `RUNNER_INTERVAL_SEC` = `60` (선택 · 틱 간격)
    - `SENDGRID_API_KEY` = (있으면 실메일 발송. 없으면 드라이런 — 게이트 흐름은 동일)
    러너 상태는 `https://…/runner/status` 에서 언제든 확인.

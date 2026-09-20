@@ -24,11 +24,12 @@ def dbname():
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/012_signup_price_50.sql')],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-c',
         "CREATE TABLE schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());"
-        "INSERT INTO schema_migrations (name, applied_at) VALUES ('012_signup_price_50.sql', now() - interval '30 days');"],check=True,stdout=subprocess.DEVNULL)
+        "INSERT INTO schema_migrations (name, applied_at) VALUES ('012_signup_price_50.sql', '2020-01-01');"],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/020_signup_price_5000.sql')],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-c',
-        "INSERT INTO schema_migrations (name, applied_at) VALUES ('020_signup_price_5000.sql', now() - interval '1 day');"],check=True,stdout=subprocess.DEVNULL)
+        "INSERT INTO schema_migrations (name, applied_at) VALUES ('020_signup_price_5000.sql', '2020-06-01');"],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/022_restore_pre_5000_prices.sql')],check=True,stdout=subprocess.DEVNULL)
+    subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/024_signup_usage_audit.sql')],check=True,stdout=subprocess.DEVNULL)
     yield name
     subprocess.run(['dropdb',name],check=True)
 
@@ -176,29 +177,46 @@ def test_small_monthly_invoice_is_retained_without_card_checkout(setup):
     with db() as c:assert c.execute('SELECT status FROM signup_invoices').fetchone()['status']=='open'
 
 
-def test_pre_5000_unbilled_usage_is_preserved_not_raised(setup):
-    """소급 인상 금지 — 020 이전(과거 정책기) 미청구 기록은 50원 그대로,
-    020 이후 신규 검증 가입만 5,000원. 발행 청구서는 불변."""
+def test_uncertain_price_rows_are_audited_not_changed(setup):
+    """검수 반영: 원단가 증거가 불확실한 행은 값 자동 변경 없이 감사 큐로 가고,
+    해결 전엔 청구서에 산입되지 않는다. 발행된 청구서는 불변."""
     client,db,h,_=setup
     with db() as c:
-        # 과거 정책기(도입가 50원)에 기록됐던 미청구 사용량이 020으로 5000이 된 상황 재현
-        c.execute("UPDATE signup_usage SET unit_price=5000,"
-                  " verified_at=now()-interval '10 days' WHERE creator_id='c1'")
-        # 이미 발행된 과거 청구서 금액은 어떤 경우에도 손대지 않는다
-        c.execute("INSERT INTO signup_invoices (invoice_id,brand_id,period,quantity,amount,status)"
-                  " VALUES ('inv-old','real','2025-12-01',1,50,'paid')")
-        c.execute("UPDATE signup_usage SET invoice_id='inv-old', unit_price=5000,"
-                  " verified_at=now()-interval '40 days' WHERE creator_id='c2'")
-    import subprocess as sp
-    with db() as c:
+        # 020 적용 시각(2020-06-01) 이전에 기록된 미청구 행 재현 — 값은 그대로 5000
+        c.execute("UPDATE signup_usage SET verified_at='2020-03-01' WHERE creator_id='c1'")
         dbname_row=c.execute('SELECT current_database() d').fetchone()
+    import subprocess as sp
     sp.run(['psql','-v','ON_ERROR_STOP=1','-d',dbname_row['d'],'-f',
-            str(ROOT/'db/migrations/022_restore_pre_5000_prices.sql')],check=True,stdout=sp.DEVNULL)
+            str(ROOT/'db/migrations/024_signup_usage_audit.sql')],check=True,stdout=sp.DEVNULL)
     with db() as c:
-        rows={r['creator_id']:r for r in c.execute(
-            "SELECT creator_id,unit_price,invoice_id FROM signup_usage").fetchall()}
-        inv=c.execute("SELECT amount,status FROM signup_invoices WHERE invoice_id='inv-old'").fetchone()
-    assert rows['c1']['unit_price']==50          # 과거 미청구 → 기록가 복원
-    assert rows['c2']['unit_price']==5000 and rows['c2']['invoice_id']=='inv-old'  # 발행분 불변
-    assert rows['c3']['unit_price']==5000        # 020 이후 신규 검증 가입 → 5,000원
-    assert inv['amount']==50 and inv['status']=='paid'
+        audited=c.execute("SELECT a.*, u.unit_price FROM signup_usage_audit a"
+                          " JOIN signup_usage u USING (usage_id)"
+                          " WHERE u.creator_id='c1'").fetchone()
+    assert audited and audited['resolved_at'] is None
+    assert audited['unit_price']==5000            # 값은 건드리지 않음
+
+    # 감사 미해결 행은 월마감 산입 제외 (c2 2026-01만 청구됨)
+    i=invoice(client,h)
+    assert i['quantity']==1 and i['amount']==5000 and i['period']=='2026-01'
+
+    # 어드민이 증거와 함께 수동 확정 → 다음 월마감에 그 가격으로 산입
+    from api.auth import issue_jwt
+    ah={'Authorization':'Bearer '+issue_jwt({'kind':'admin','sub':'aud-admin'})}
+    q=client.get('/admin/usage-audit',headers=ah).json()
+    assert any(x['currentPrice']==5000 for x in q)
+    uid=[x for x in q if x['brandId']=='real'][0]['usageId']
+    r=client.post(f'/admin/usage-audit/{uid}/resolve',
+                  json={'unit_price':50,'evidence':'2020-03 당시 도입가 50원 — 012 마이그레이션 기록 확인'},
+                  headers=ah)
+    assert r.status_code==200
+    out=client.post('/brands/real/billing/invoices',headers=h).json()['invoices']
+    old=[x for x in out if x['period']=='2020-03']
+    assert old and old[0]['amount']==50 and old[0]['quantity']==1
+
+
+def test_decimal_unit_prices_summed_exactly(setup):
+    # 기록된 단가 그대로 합산(소급 인상 없음) 확인용 보조 검증
+    client,db,h,_=setup
+    with db() as c:c.execute("UPDATE signup_usage SET unit_price=50 WHERE creator_id='c1'")
+    i=invoice(client,h)
+    assert i['amount']==5050 and i['quantity']==2

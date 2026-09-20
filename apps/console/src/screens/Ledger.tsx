@@ -5,7 +5,7 @@ import { api, type LedgerEntry } from "@connection/shared/api";
 const FALLBACK: LedgerEntry[] = [
   { seq: 3, ts: "", actor: "system", type: "SNS_VERIFIED", subject: "c-mai", payload: {}, hash: "5b7e22aa" },
   { seq: 2, ts: "", actor: "ari:glowlab", type: "GATE_REQUESTED", subject: "PAYOUT ฿4,200", payload: {}, hash: "77aa04c1" },
-  { seq: 1, ts: "", actor: "system", type: "BILLING_POLICY", subject: "가입당 ₩50", payload: {}, hash: "e3f08c9d" },
+  { seq: 1, ts: "", actor: "system", type: "BILLING_POLICY", subject: "가입당 ₩5,000", payload: {}, hash: "e3f08c9d" },
 ];
 
 /** 정산 · 원장 — append-only 해시 체인. API 연결 시 실제 원장을 보여준다. */
@@ -35,7 +35,7 @@ export default function Ledger() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, margin: "16px 0" }}>
         <Card><div style={{ fontSize: 11, color: "var(--n500)" }}>고정 구독료</div><div style={{ fontSize: 19, fontWeight: 900 }}>₩0</div><div style={{ fontSize: 11, color: "var(--n400)" }}>가입당 과금</div></Card>
-        <Card><div style={{ fontSize: 11, color: "var(--n500)" }}>검증 가입 과금</div><div style={{ fontSize: 19, fontWeight: 900 }}>₩850</div><div style={{ fontSize: 11, color: "var(--n400)" }}>데모 17명 × ₩50</div></Card>
+        <Card><div style={{ fontSize: 11, color: "var(--n500)" }}>검증 가입 과금</div><div style={{ fontSize: 19, fontWeight: 900 }}>₩85,000</div><div style={{ fontSize: 11, color: "var(--n400)" }}>데모 17명 × ₩5,000</div></Card>
         <Card><div style={{ fontSize: 11, color: "var(--n500)" }}>원장 이벤트</div><div style={{ fontSize: 19, fontWeight: 900 }}>{entries.length}건</div><div style={{ fontSize: 11, color: "var(--n400)" }}>{live ? "실시간" : "데모"}</div></Card>
       </div>
 

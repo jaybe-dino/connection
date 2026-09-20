@@ -56,11 +56,17 @@ async def legacy_access_boundary(request: Request, call_next):
     path=request.url.path
     legacy = (re.match(r"^/(gates|ledger|notifications|cells|campaigns|me|db|compliance|runner|reports|disputes|submissions)(/|$)",path)
               or path == '/inbound')
+    # 커뮤니티·본인 경로는 로그인한 누구나(크리에이터·브랜드·어드민), 나머지는 어드민만
+    community = re.match(r"^/(me|campaigns|cells|notifications)(/|$)", path)
     if legacy and auth.auth_required() and request.method != 'OPTIONS':
         try:
-            auth.require_admin_jwt(request.headers.get('authorization',''))
+            if community:
+                if auth.current_user(request.headers.get('authorization','')) is None:
+                    raise HTTPException(401, '로그인이 필요합니다')
+            else:
+                auth.require_admin_jwt(request.headers.get('authorization',''))
         except HTTPException as e:
-            return JSONResponse({'detail':'이 운영 기능은 아직 공개되지 않았습니다. 관리자 로그인이 필요합니다.'},status_code=e.status_code)
+            return JSONResponse({'detail':'이 운영 기능은 아직 공개되지 않았습니다. 로그인이 필요합니다.'},status_code=e.status_code)
     return await call_next(request)
 
 # CORS — ALLOWED_ORIGINS(콤마 구분)가 있으면 화이트리스트, 없으면 개발 편의로 전체 허용.
@@ -89,6 +95,8 @@ app.include_router(_dispatch_router)
 app.include_router(_gmail_router)
 from .routes_learning import router as _learning_router
 app.include_router(_learning_router)
+from .routes_identity import router as _identity_router
+app.include_router(_identity_router)
 from .routes_outreach import router as _outreach_router
 app.include_router(_outreach_router)
 app.include_router(_auth_router)
@@ -388,12 +396,20 @@ class Apply(BaseModel):
 
 
 @app.post("/campaigns/{campaign_id}/apply")
-def apply_campaign(campaign_id: str, body: Apply) -> dict:
+def apply_campaign(campaign_id: str, body: Apply,
+                   authorization: str = Header(default="")) -> dict:
+    """캠페인 지원 — 크리에이터 JWT가 있으면 본인 계정으로 지원(데모 ID 무시)."""
+    from . import auth as _auth
+    from .routes_identity import _ensure_creator_row
+    claims = _auth.current_user(authorization)
     with connect() as conn:
+        cid = body.creator_id
+        if claims and claims.get("kind") == "creator":
+            cid = _ensure_creator_row(conn, claims)
         conn.execute(
             "INSERT INTO campaign_applications (campaign_id, creator_id)"
-            " VALUES (%s,%s) ON CONFLICT DO NOTHING", (campaign_id, body.creator_id))
-    return {"ok": True, "myStatus": "applied"}
+            " VALUES (%s,%s) ON CONFLICT DO NOTHING", (campaign_id, cid))
+    return {"ok": True, "myStatus": "applied", "creatorId": cid}
 
 
 # ── 내 패스 (본인 수정 → 실시간 반영 + 원장) ─────────────────────

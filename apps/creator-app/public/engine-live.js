@@ -606,6 +606,50 @@
                      declined: ["거절", "var(--n600)"],
                      question: ["질문", "var(--am,#8A6D1A)"],
                      other: ["기타", "var(--n600)"] };
+  /* ── 브랜드 아이덴티티(로고) — 콘솔·PR 리스트 표시, 브랜드별 격리 ── */
+  window.__BID = null;
+  function loadIdentity() {
+    req("GET", "/brands/" + BRAND() + "/identity").then(function (b) {
+      window.__BID = b;
+      if (window.render) try { render(); } catch (e) {}
+      var chip = document.getElementById("authChip");
+      if (chip && window.__ME) chip.textContent = "🔐 " + (b.name || BRAND()) + " · " + window.__ME.email;
+    }).catch(function () {});
+  }
+  window.identitySave = function () {
+    var lg = ((document.getElementById("idLogo") || {}).value || "").trim();
+    var tg = ((document.getElementById("idTag") || {}).value || "").trim();
+    req("PUT", "/brands/" + BRAND() + "/identity", { logo_url: lg, tagline: tg })
+      .then(function () { loadIdentity(); toast("저장됨", "로고·태그라인이 이 브랜드에만 적용됩니다."); })
+      .catch(function (e) {
+        toast("저장 실패", e === 400 ? "로고는 https URL 또는 200KB 이하 data:image 형식이어야 해요."
+          : e === 401 || e === 403 ? "이 브랜드 계정으로 로그인 후 시도하세요." : "잠시 후 다시.");
+      });
+  };
+  function brandLogoImg(size) {
+    var b = window.__BID;
+    if (!b || !b.logoUrl) return "";
+    return "<img src='" + b.logoUrl.replace(/'/g, "") + "' alt='' style='width:" + size + "px;height:" + size +
+      "px;border-radius:6px;object-fit:cover;vertical-align:-4px;margin-right:6px'>";
+  }
+  function identityCard() {
+    var b = window.__BID;
+    var inner;
+    if (b === null) {
+      inner = '<p style="font-size:10.6px;color:var(--n600)">서버에 연결되면 브랜드 로고를 설정할 수 있어요.</p>';
+    } else {
+      inner = "<p>" + brandLogoImg(22) + "<b>" + (b.name || BRAND()) + "</b>" +
+        (b.tagline ? " · " + b.tagline : "") +
+        " <span style='font-size:9.6px;color:var(--n600)'>— PR 리스트·가입·커뮤니티 화면에 이 로고가 보입니다 (theprlist 표기는 유지)</span></p>" +
+        '<div style="display:flex;gap:6px;margin-top:9px"><input id="idLogo" placeholder="로고 URL (https:// 또는 data:image/…)" value="' +
+        (b.logoUrl || "").replace(/"/g, "&quot;") + '" style="flex:2">' +
+        '<input id="idTag" placeholder="태그라인" value="' + (b.tagline || "").replace(/"/g, "&quot;") + '" style="flex:1">' +
+        '<span class="cbt" onclick="identitySave()">저장</span></div>';
+    }
+    return '<div class="cc" style="margin-bottom:12px"><div class="t">브랜드 로고 — ' +
+      "화면 표시 설정</div>" + inner + "</div>";
+  }
+
   function gmailCard() {
     var g = window.__GMAIL, inner;
     if (g === null) {
@@ -745,7 +789,7 @@
       window.srcView = function () {
         var h = _srcView();
         if (typeof ST !== "undefined" && ST.srcTab === "mail")
-          h = '<div class="cvbd" style="padding-bottom:0">' + gmailCard() + outreachCard() + inboxCard() + "</div>";
+          h = '<div class="cvbd" style="padding-bottom:0">' + identityCard() + gmailCard() + outreachCard() + inboxCard() + "</div>";
         if (typeof ST !== "undefined" && ST.srcTab === "tkshop")
           h = '<div class="cvbd" style="padding-bottom:0">' + dispatchCard() + "</div>" + h;
         return h;
@@ -755,10 +799,29 @@
       loadGmail();
       loadInbox();
       loadOutreach();
+      loadIdentity();
     }
   } catch (e) {}
 
   window.bjDone = window.bjLearn = function () { location.href='https://theprlist.net/signup'; };
+
+  /* ── 크리에이터 셀 입장 → 실멤버십 가입 (로그인된 계정만, 데모는 그대로) ── */
+  if (window.finishJoin) {
+    var _finishJoin = window.finishJoin;
+    window.finishJoin = function () {
+      _finishJoin();
+      try {
+        if (window.__ME && window.__ME.kind === "creator") {
+          var bslug = (((typeof ST !== "undefined" && ST.me && ST.me.joinBrand) || "glowlab") + "").toLowerCase();
+          req("POST", "/me/join", { brand_id: bslug }).then(function (r) {
+            toast("멤버십 등록", r.joined
+              ? "<b>" + r.brandId + "</b> 멤버가 됐어요." + (r.verified ? "" : " 계정 검증이 끝나면 브랜드에 정식 반영됩니다.")
+              : "이미 이 브랜드의 멤버예요 — 중복 가입은 다시 과금되지 않습니다.");
+          }).catch(function () {});
+        }
+      } catch (e) {}
+    };
+  }
 
   /* ── 실인증 — 브랜드 로그인 · 초대 수락 · 크리에이터 매직링크 ── */
   function jwtGet() { try { return localStorage.getItem("CONNECTION_JWT") || ""; } catch (e) { return ""; } }
@@ -768,7 +831,7 @@
 
   function reloadBrand() {
     outreachData=null;outreachError='';outreachLoading=false; outreachVersion++; window.__INBOX_OPEN=null;
-    try { loadOutreach(); loadBilling(); loadSenders(); loadGmail(); loadInbox(); loadDispatch(); } catch (e) {}
+    try { loadOutreach(); loadBilling(); loadSenders(); loadGmail(); loadInbox(); loadDispatch(); loadIdentity(); } catch (e) {}
     if (window.render) try { render(); } catch (e) {}
   }
   function authPanel(html) {
@@ -870,8 +933,8 @@
       var body='';
       if(!window.__ME){body='<h1>브랜드와 크리에이터,<br>함께 시작할 준비.</h1><p>승인된 브랜드 계정으로 로그인해 주세요.</p><button class="btn" onclick="document.getElementById(\'authChip\').click()">로그인</button> <a class="btn line" href="https://theprlist.net/signup">가입 신청</a>';}
       else if(livePage==='learn')body=liveLearningCard();
-      else if(livePage==='mail')body='<h1>브랜드 메일링</h1>'+gmailCard()+outreachCard()+inboxCard();
-      else if(livePage==='billing')body='<h1>월별 청구</h1><p>검증 가입 1명당 50원 · 부가세 포함 · 월 단위 합산</p><p>카드 결제 최소금액은 1,000원입니다. 미만 청구서도 보관되며 자동 결제되지 않습니다.</p><button class="btn line" onclick="refreshBilling()">새로고침</button>'+window.billingInvoicesHtml();
+      else if(livePage==='mail')body='<h1>브랜드 메일링</h1>'+identityCard()+gmailCard()+outreachCard()+inboxCard();
+      else if(livePage==='billing')body='<h1>월별 청구</h1><p>검증 가입 1명당 5,000원 · 부가세 포함 · 월 단위 합산</p><p>카드 결제 최소금액은 1,000원입니다. 미만 청구서도 보관되며 자동 결제되지 않습니다.</p><button class="btn line" onclick="refreshBilling()">새로고침</button>'+window.billingInvoicesHtml();
       else if(livePage==='status')body='<h1>서비스 상태</h1><div class="cc"><h2>이용 가능한 흐름</h2><p>브랜드 신청 → 운영자 승인 → 계정 생성 → 홈페이지 분석·프로필 저장 → Gmail 연결 → 초안 검토·발송 → 월별 청구 확인</p></div><div class="cc"><h2>준비 중</h2><p>틱톡·인스타 계정 검증과 자동 후보 수집, 크리에이터 커뮤니티·캠페인 참여, 자동 답장 수신, 크리에이터 대금 지급은 아직 공개 운영 대상이 아닙니다.</p><p>메일 답장은 연결된 Gmail에서 확인하세요. 가입 과금은 실제 검증 가입이 기록될 때만 발생합니다.</p></div>';
       else body='<p class="live-eyebrow">YOUR BRAND, IN GOOD COMPANY</p><h1>브랜드의 다음 연결을<br>만들어 보세요.</h1><p>'+mailEscape(window.__ME.email)+' · '+mailEscape(BRAND())+'</p><div class="live-grid"><button class="cc" onclick="liveNav(\'learn\')"><h2>01. 브랜드 학습</h2><p>홈페이지 분석과 근거를 확인하고 저장하세요.</p></button><button class="cc" onclick="liveNav(\'mail\')"><h2>02. 메일링</h2><p>Gmail을 연결하고 초안을 검토한 뒤 발송하세요.</p></button></div><h2>theprlist에게 물어보세요</h2><p>저장된 브랜드 프로필을 참고해 답합니다. 대화로 메일을 발송하거나 결제를 실행하지 않습니다.</p>'+chatMessages.map(function(m){return '<div class="cc"><b>'+(m.role==='user'?'나':'theprlist')+'</b><p>'+mailEscape(m.content)+'</p></div>';}).join('')+'<form onsubmit="event.preventDefault();liveChat()"><input id="liveQuestion" maxlength="2000" placeholder="우리 브랜드를 소개하는 문구를 제안해 줘" required '+(chatBusy?'disabled':'')+'><button class="btn" '+(chatBusy?'disabled':'')+'>'+(chatBusy?'답변 중…':'질문하기')+'</button></form>';
       stage.innerHTML=nav+'<main class="live-main">'+body+'</main><footer class="live-footer"><a href="https://theprlist.net/privacy">개인정보처리방침</a> · <a href="https://theprlist.net/terms">이용약관</a> · <a href="mailto:chief@dinostudio.kr">문의</a></footer>';
@@ -882,8 +945,62 @@
     var style=document.createElement('style');style.textContent='body{background:#f5f4ef}.stage{display:block!important;overflow:auto!important;height:calc(100vh - 1px)!important}.live-head{padding:24px 5%;display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid #dadbd2;background:#fafbf5}.live-head>a{font-size:25px;font-weight:800;color:#163f35;text-decoration:none}.live-head span{font-size:12px;font-weight:400}.live-head nav{display:flex;gap:8px;flex-wrap:wrap}.live-main{max-width:1050px;margin:0 auto;padding:55px 24px 95px;font-size:15px;line-height:1.8}.live-main h1{font-size:40px;line-height:1.25;margin:0 0 25px}.live-main h2{font-size:21px;margin:18px 0 10px}.live-main p{margin:12px 0}.live-main .cc{background:#fff;border:1px solid #dadbd2;border-radius:12px;padding:24px;margin:15px 0;text-align:left}.live-main input,.live-main textarea{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid #aebcb1;border-radius:6px;margin:8px 0 14px;font:inherit}.live-main .btn,.live-main .cbt{font-size:14px;padding:10px 16px;cursor:pointer}.live-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.live-eyebrow{letter-spacing:.1em;color:#41684c}.live-footer{padding:20px 24px 75px;text-align:center}.live-main blockquote{padding:12px;border-left:3px solid #5e8c6a;color:#526157;overflow-wrap:anywhere}@media(max-width:700px){.live-head{display:block}.live-head nav{margin-top:15px}.live-main{padding-top:30px}.live-main h1{font-size:30px}.live-grid{grid-template-columns:1fr}}';document.head.appendChild(style);render();
   }
 
-  if(window.__SURFACE==='bjoin'||window.__SURFACE==='creator'){
-    window.render=function(){document.querySelector('.svcbar').style.display='none';document.getElementById('stage').innerHTML='<main style="max-width:650px;margin:70px auto;padding:24px"><h1>theprlist</h1><h2>'+(window.__SURFACE==='creator'?'크리에이터 서비스 준비 중':window.__ME?'계정 생성 완료':'계정 초대 수락')+'</h2><p>'+(window.__SURFACE==='creator'?'크리에이터 계정 검증·캠페인 참여 기능을 준비하고 있습니다. 공개 일정은 별도로 안내합니다.':window.__ME?'브랜드 로그인으로 이동해 설정한 계정으로 로그인하세요.':'초대받은 계정은 아래 입력창에서 비밀번호를 설정해 주세요.')+'</p><a class="btn" href="https://theprlist.net">서비스 소개</a> <a class="btn line" href="https://console.theprlist.net">브랜드 로그인</a></main>';};render();
+  if(window.__SURFACE==='bjoin'){
+    window.render=function(){document.querySelector('.svcbar').style.display='none';document.getElementById('stage').innerHTML='<main style="max-width:650px;margin:70px auto;padding:24px"><h1>theprlist</h1><h2>'+(window.__ME?'계정 생성 완료':'계정 초대 수락')+'</h2><p>'+(window.__ME?'브랜드 로그인으로 이동해 설정한 계정으로 로그인하세요.':'초대받은 계정은 아래 입력창에서 비밀번호를 설정해 주세요.')+'</p><a class="btn" href="https://theprlist.net">서비스 소개</a> <a class="btn line" href="https://console.theprlist.net">브랜드 로그인</a></main>';};render();
+  }
+
+  /* ── 크리에이터 표면: 매직링크 로그인 → 브랜드 PR 리스트 합류 → 내 멤버십.
+        커뮤니티·캠페인 참여는 공개 전 — 과장 없이 준비 중으로 표기. ── */
+  if(window.__SURFACE==='creator'){
+    var joinTarget=null, joinBrandInfo=null, myMemberships=null, magicSent=false;
+    try{joinTarget=(new URLSearchParams(location.search).get('brand')||'').toLowerCase()||null;}catch(e){}
+    function loadCreatorData(){
+      if(joinTarget)req('GET','/brands/'+joinTarget+'/identity').then(function(b){joinBrandInfo=b;render();}).catch(function(){joinBrandInfo={missing:true};render();});
+      if(window.__ME&&window.__ME.kind==='creator')req('GET','/me/memberships').then(function(m){myMemberships=m;render();}).catch(function(){});
+    }
+    window.creatorMagic=function(){
+      var v=((document.getElementById('crEmail')||{}).value||'').trim();
+      if(v.indexOf('@')<0)return toast('이메일','주소를 확인해 주세요.');
+      req('POST','/auth/magic',{email:v}).then(function(r){
+        magicSent=true;render();
+        if(r.demoLink)toast('데모 모드','<a href="'+r.demoLink.replace('https://app.theprlist.net/',location.origin+'/').replace('https://theprlist.net/',location.origin+'/')+'">이 링크로 로그인</a> (15분 유효)');
+      }).catch(function(){toast('전송 실패','잠시 후 다시 시도해 주세요.');});
+    };
+    window.creatorJoin=function(b){
+      req('POST','/me/join',{brand_id:b}).then(function(r){
+        toast(r.joined?'합류 완료 🎉':'이미 멤버예요',(r.joined?'<b>'+mailEscape(r.brandId)+'</b> PR 리스트에 등록됐어요.':'중복 가입은 다시 등록·과금되지 않습니다.')+(r.verified?'':' 계정 검증이 끝나면 브랜드에 정식 반영됩니다.'));
+        loadCreatorData();
+      }).catch(function(e){toast('가입 실패',e===401?'이메일 로그인 후 시도해 주세요.':'잠시 후 다시.');});
+    };
+    function brandCardHtml(b,joined){
+      if(!b)return '';
+      if(b.missing)return '<div class="cc"><p>브랜드를 찾을 수 없습니다.</p></div>';
+      var logo=b.logoUrl?'<img src="'+b.logoUrl.replace(/"/g,'')+'" alt="" style="width:44px;height:44px;border-radius:10px;object-fit:cover;vertical-align:middle;margin-right:10px">':'';
+      return '<div class="cc">'+logo+'<b style="font-size:17px">'+mailEscape(b.name||b.brandId)+'</b>'+(b.tagline?'<p>'+mailEscape(b.tagline)+'</p>':'')+
+        (joined?'<p>✓ 이미 이 브랜드의 PR 리스트 멤버입니다.</p>':'<button class="btn" onclick="creatorJoin(\''+b.brandId+'\')">이 브랜드 PR 리스트에 합류</button>')+'</div>';
+    }
+    window.render=function(){
+      document.querySelector('.svcbar').style.display='none';
+      var body='';
+      if(!window.__ME){
+        body='<h2>크리에이터 로그인</h2><p>비밀번호 없이 이메일 링크로 로그인해요.</p>'+
+          (magicSent?'<div class="cc"><p>메일함의 로그인 링크를 확인하세요 (15분 유효).</p></div>':'')+
+          '<div class="cc"><input id="crEmail" type="email" placeholder="you@email.com" style="width:100%;box-sizing:border-box;padding:12px;margin-bottom:10px"><button class="btn" onclick="creatorMagic()">로그인 링크 받기</button></div>';
+        if(joinBrandInfo&&!joinBrandInfo.missing)body='<p>'+mailEscape(joinBrandInfo.name||'브랜드')+'의 PR 리스트 초대를 받으셨나요? 먼저 로그인해 주세요.</p>'+body;
+      }else{
+        var joinedIds=(myMemberships||[]).map(function(m){return m.brandId;});
+        body='<h2>'+mailEscape(window.__ME.email)+'</h2>'+
+          (joinTarget?brandCardHtml(joinBrandInfo,joinedIds.indexOf(joinTarget)>=0):'')+
+          '<h2 style="margin-top:26px">내 브랜드 멤버십</h2>'+
+          ((myMemberships&&myMemberships.length)?myMemberships.map(function(m){
+            var lg=m.logoUrl?'<img src="'+m.logoUrl.replace(/"/g,'')+'" alt="" style="width:26px;height:26px;border-radius:6px;object-fit:cover;vertical-align:-7px;margin-right:8px">':'';
+            return '<div class="cc">'+lg+'<b>'+mailEscape(m.name||m.brandId)+'</b>'+(m.tagline?' · '+mailEscape(m.tagline):'')+'</div>';}).join('')
+           :'<div class="cc"><p>아직 가입한 브랜드가 없어요. 브랜드의 초대 링크로 합류할 수 있습니다.</p></div>')+
+          '<div class="cc"><p>커뮤니티 대화·캠페인 지원·정산 기능은 공개 준비 중입니다. 지금은 멤버십 등록까지만 실제로 동작해요.</p></div>';
+      }
+      document.getElementById('stage').innerHTML='<main style="max-width:650px;margin:60px auto;padding:24px;line-height:1.8"><h1>theprlist <span style="font-size:12px;font-weight:400">/ creator</span></h1>'+body+'<p style="margin-top:34px"><a href="https://theprlist.net">서비스 소개</a> · <a href="https://theprlist.net/privacy">개인정보처리방침</a></p></main>';
+    };
+    render();loadCreatorData();
   }
   try {
     var sp = new URLSearchParams(location.search);
@@ -904,10 +1021,13 @@
       }).catch(function () { toast("수락 실패", "링크가 만료됐을 수 있어요 — 초대를 다시 요청하세요. 비밀번호는 10자 이상."); });
     };
     if (magicTok) {
+      var keepBrand = sp.get("brand");
       req("POST", "/auth/magic/verify", { token: magicTok }).then(function (r) {
         jwtSet(r.token); window.__ME = r.user; authChip();
-        history.replaceState(null, "", location.pathname);
+        history.replaceState(null, "", location.pathname + (keepBrand ? "?brand=" + keepBrand : ""));
         toast("로그인 완료 ✅", r.user.email);
+        if (window.render) try { render(); } catch (e) {}
+        if (typeof loadCreatorData === "function") try { loadCreatorData(); } catch (e) {}
       }).catch(function () { toast("로그인 실패", "링크가 만료됐어요 — 다시 요청해 주세요."); });
     }
     if (jwtGet()) {

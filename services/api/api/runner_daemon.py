@@ -101,6 +101,70 @@ def _enroll_from_pool(runner) -> int:
     return n
 
 
+_gmail_ops = {"lastSync": {}, "lastResume": {}, "synced": 0, "resumed": 0,
+              "errors": []}
+SYNC_EVERY_SEC, RESUME_EVERY_SEC = 600, 900
+
+
+def _gmail_ops_tick() -> list[str]:
+    """화면 비의존 Gmail 운영 — 수신 동기화 + 승인 배치 발송 재개.
+
+    실모드(구글 키 존재)에서만 동작. 브랜드별 최소 간격(동기화 10분·재개 15분)
+    으로 보수적으로 돌며, 실패는 기록만 하고 다음 틱에 재시도한다.
+    가짜 열람·회신을 만들지 않고, 미승인 배치를 보내지 않는다."""
+    from . import routes_gmail as gmail
+    if gmail._demo_mode():
+        return []
+    notes: list[str] = []
+    now = time.time()
+    try:
+        with connect() as conn:
+            brands = [r["brand_id"] for r in conn.execute(
+                "SELECT DISTINCT brand_id FROM gmail_accounts"
+                " WHERE state='connected'"
+                "   AND scopes LIKE %s", ("%gmail.readonly%",)).fetchall()]
+            resumable = [r["brand_id"] for r in conn.execute(
+                "SELECT DISTINCT b.brand_id FROM outreach_batches b"
+                " JOIN outreach_recipients r USING (batch_id)"
+                " WHERE b.state='approved' AND r.state='pending'").fetchall()]
+    except Exception as e:
+        _gmail_ops["errors"] = ([f"scan: {e}"] + _gmail_ops["errors"])[:5]
+        return []
+    for brand in brands:
+        if now - _gmail_ops["lastSync"].get(brand, 0) < SYNC_EVERY_SEC:
+            continue
+        _gmail_ops["lastSync"][brand] = now
+        try:
+            from . import gmail_sync
+            r = gmail_sync.sync(brand)
+            _gmail_ops["synced"] += 1
+            notes.append(f"sync {brand}: {r.get('imported', 0)}건")
+        except Exception as e:                     # 동의 철회·토큰 만료 등 — 기록만
+            _gmail_ops["errors"] = ([f"sync {brand}: {type(e).__name__}"]
+                                    + _gmail_ops["errors"])[:5]
+    for brand in resumable:
+        if now - _gmail_ops["lastResume"].get(brand, 0) < RESUME_EVERY_SEC:
+            continue
+        _gmail_ops["lastResume"][brand] = now
+        try:
+            from .routes_outreach import deliver_pending
+            with connect() as conn:
+                batches = conn.execute(
+                    "SELECT DISTINCT b.batch_id FROM outreach_batches b"
+                    " JOIN outreach_recipients r USING (batch_id)"
+                    " WHERE b.brand_id=%s AND b.state='approved'"
+                    "   AND r.state='pending' LIMIT 1", (brand,)).fetchall()
+            for b in batches:
+                n = deliver_pending(brand, b["batch_id"])
+                if n:
+                    _gmail_ops["resumed"] += n
+                    notes.append(f"resume {brand}: {n}건 발송")
+        except Exception as e:
+            _gmail_ops["errors"] = ([f"resume {brand}: {type(e).__name__}"]
+                                    + _gmail_ops["errors"])[:5]
+    return notes
+
+
 def _loop(interval: int) -> None:
     global _runner
     from harvest.runner import Runner
@@ -114,10 +178,11 @@ def _loop(interval: int) -> None:
                 enrolled = _enroll_from_pool(_runner)
                 ran = _runner.tick()
                 polled = _runner.poll_gates()
+                gmail_notes = _gmail_ops_tick()
                 _state["ticks"] += 1
                 _state["last_tick"] = datetime.now(UTC).isoformat()
                 _state["error"] = None
-                notes = ([f"등록 {enrolled}명"] if enrolled else []) + polled
+                notes = ([f"등록 {enrolled}명"] if enrolled else []) + polled + gmail_notes
                 _state["log"] = (_state["log"] + [
                     f"{_state['last_tick']} · 잡 {ran or '-'} · {' / '.join(notes) or '변화 없음'}"
                 ])[-30:]
@@ -140,6 +205,9 @@ def start_if_enabled() -> bool:
 
 def status() -> dict:
     out = dict(_state)
+    out["gmailOps"] = {"synced": _gmail_ops["synced"],
+                       "resumed": _gmail_ops["resumed"],
+                       "recentErrors": _gmail_ops["errors"]}
     if _runner is not None:
         with _lock:
             out["outreach"] = _runner.outreach.stats()

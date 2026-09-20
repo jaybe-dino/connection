@@ -56,17 +56,19 @@ async def legacy_access_boundary(request: Request, call_next):
     path=request.url.path
     legacy = (re.match(r"^/(gates|ledger|notifications|cells|campaigns|me|db|compliance|runner|reports|disputes|submissions)(/|$)",path)
               or path == '/inbound')
-    # 커뮤니티·본인 경로는 로그인한 누구나(크리에이터·브랜드·어드민), 나머지는 어드민만
-    community = re.match(r"^/(me|campaigns|cells|notifications)(/|$)", path)
-    if legacy and auth.auth_required() and request.method != 'OPTIONS':
+    # 예외는 "핸들러 안에 본인·멤버십 검사가 구현된 정확한 경로"만 허용한다.
+    # (/me/{id}/fields·/cells·/notifications 등 검사 없는 경로는 어드민 전용 유지)
+    method = request.method
+    self_checked = (
+        (path == '/me/join' and method == 'POST')                     # 크리에이터 JWT 강제
+        or (path == '/me/memberships' and method == 'GET')            # 크리에이터 JWT 강제
+        or (re.fullmatch(r"/campaigns/[^/]+/apply", path) and method == 'POST')  # 핸들러가 JWT 본인 계정 강제
+    )
+    if legacy and auth.auth_required() and method != 'OPTIONS' and not self_checked:
         try:
-            if community:
-                if auth.current_user(request.headers.get('authorization','')) is None:
-                    raise HTTPException(401, '로그인이 필요합니다')
-            else:
-                auth.require_admin_jwt(request.headers.get('authorization',''))
+            auth.require_admin_jwt(request.headers.get('authorization',''))
         except HTTPException as e:
-            return JSONResponse({'detail':'이 운영 기능은 아직 공개되지 않았습니다. 로그인이 필요합니다.'},status_code=e.status_code)
+            return JSONResponse({'detail':'이 운영 기능은 아직 공개되지 않았습니다. 관리자 로그인이 필요합니다.'},status_code=e.status_code)
     return await call_next(request)
 
 # CORS — ALLOWED_ORIGINS(콤마 구분)가 있으면 화이트리스트, 없으면 개발 편의로 전체 허용.
@@ -97,6 +99,8 @@ from .routes_learning import router as _learning_router
 app.include_router(_learning_router)
 from .routes_identity import router as _identity_router
 app.include_router(_identity_router)
+from .routes_products import router as _products_router
+app.include_router(_products_router)
 from .routes_outreach import router as _outreach_router
 app.include_router(_outreach_router)
 app.include_router(_auth_router)
@@ -402,6 +406,9 @@ def apply_campaign(campaign_id: str, body: Apply,
     from . import auth as _auth
     from .routes_identity import _ensure_creator_row
     claims = _auth.current_user(authorization)
+    if _auth.auth_required() and (not claims or claims.get("kind") != "creator"):
+        # 운영 모드에선 크리에이터 본인 JWT로만 지원 가능 — 타인 명의 지원 차단
+        raise HTTPException(401, "크리에이터 로그인이 필요합니다")
     with connect() as conn:
         cid = body.creator_id
         if claims and claims.get("kind") == "creator":

@@ -22,7 +22,13 @@ def dbname():
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'services/api/tests/sql/signup_billing.sql')],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/011_monthly_invoices.sql')],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/012_signup_price_50.sql')],check=True,stdout=subprocess.DEVNULL)
+    subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-c',
+        "CREATE TABLE schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());"
+        "INSERT INTO schema_migrations (name, applied_at) VALUES ('012_signup_price_50.sql', now() - interval '30 days');"],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/020_signup_price_5000.sql')],check=True,stdout=subprocess.DEVNULL)
+    subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-c',
+        "INSERT INTO schema_migrations (name, applied_at) VALUES ('020_signup_price_5000.sql', now() - interval '1 day');"],check=True,stdout=subprocess.DEVNULL)
+    subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/022_restore_pre_5000_prices.sql')],check=True,stdout=subprocess.DEVNULL)
     yield name
     subprocess.run(['dropdb',name],check=True)
 
@@ -168,3 +174,31 @@ def test_small_monthly_invoice_is_retained_without_card_checkout(setup):
     assert i['amount']==100 and not i['cardPayable']
     assert client.post('/brands/real/billing/invoices/'+i['id']+'/checkout',headers=h).status_code==409
     with db() as c:assert c.execute('SELECT status FROM signup_invoices').fetchone()['status']=='open'
+
+
+def test_pre_5000_unbilled_usage_is_preserved_not_raised(setup):
+    """소급 인상 금지 — 020 이전(과거 정책기) 미청구 기록은 50원 그대로,
+    020 이후 신규 검증 가입만 5,000원. 발행 청구서는 불변."""
+    client,db,h,_=setup
+    with db() as c:
+        # 과거 정책기(도입가 50원)에 기록됐던 미청구 사용량이 020으로 5000이 된 상황 재현
+        c.execute("UPDATE signup_usage SET unit_price=5000,"
+                  " verified_at=now()-interval '10 days' WHERE creator_id='c1'")
+        # 이미 발행된 과거 청구서 금액은 어떤 경우에도 손대지 않는다
+        c.execute("INSERT INTO signup_invoices (invoice_id,brand_id,period,quantity,amount,status)"
+                  " VALUES ('inv-old','real','2025-12-01',1,50,'paid')")
+        c.execute("UPDATE signup_usage SET invoice_id='inv-old', unit_price=5000,"
+                  " verified_at=now()-interval '40 days' WHERE creator_id='c2'")
+    import subprocess as sp
+    with db() as c:
+        dbname_row=c.execute('SELECT current_database() d').fetchone()
+    sp.run(['psql','-v','ON_ERROR_STOP=1','-d',dbname_row['d'],'-f',
+            str(ROOT/'db/migrations/022_restore_pre_5000_prices.sql')],check=True,stdout=sp.DEVNULL)
+    with db() as c:
+        rows={r['creator_id']:r for r in c.execute(
+            "SELECT creator_id,unit_price,invoice_id FROM signup_usage").fetchall()}
+        inv=c.execute("SELECT amount,status FROM signup_invoices WHERE invoice_id='inv-old'").fetchone()
+    assert rows['c1']['unit_price']==50          # 과거 미청구 → 기록가 복원
+    assert rows['c2']['unit_price']==5000 and rows['c2']['invoice_id']=='inv-old'  # 발행분 불변
+    assert rows['c3']['unit_price']==5000        # 020 이후 신규 검증 가입 → 5,000원
+    assert inv['amount']==50 and inv['status']=='paid'

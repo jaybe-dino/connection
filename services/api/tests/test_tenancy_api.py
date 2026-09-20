@@ -94,3 +94,43 @@ def test_admin_sees_all(client, monkeypatch):
                       headers=_bearer(tok)).status_code == 200
     assert client.get("/brands/aura/senders",
                       headers=_bearer(tok)).status_code == 200
+
+
+def test_legacy_boundary_allowlist(client, two_brands, monkeypatch):
+    """AUTH_REQUIRED=1: 검사 구현된 정확한 경로만 비어드민 허용, 나머지 어드민 전용."""
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    # 크리에이터 토큰 준비 (AUTH 강제 전 경로로)
+    monkeypatch.delenv("AUTH_REQUIRED")
+    r = client.post("/auth/magic", json={"email": "boundary@ex.com"}).json()
+    ctok = client.post("/auth/magic/verify", json={
+        "token": r["demoLink"].split("magic=")[1]}).json()["token"]
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    ch = {"Authorization": f"Bearer {ctok}"}
+
+    # 허용 3경로: 핸들러 자체 검사로 통과
+    assert client.post("/me/join", json={"brand_id": "glowlab"},
+                       headers=ch).status_code == 200
+    assert client.get("/me/memberships", headers=ch).status_code == 200
+    assert client.post("/campaigns/cmp-1/apply", json={"creator_id": "x"},
+                       headers=ch).status_code == 200
+
+    # 검사 없는 경로는 크리에이터·브랜드 토큰으로도 차단 (관리자 전용 복구)
+    btok = two_brands["glowlab"]
+    bh = {"Authorization": f"Bearer {btok}"}
+    for path, method, payload in [
+        ("/me/c-mai/fields", "PUT", {"field": "address", "value": "x"}),
+        ("/me/c-mai", "GET", None),
+        ("/notifications?user=c-mai", "GET", None),
+        ("/cells/cell-glowlab-th/messages", "GET", None),
+        ("/campaigns", "GET", None),
+    ]:
+        for h in (ch, bh, {}):
+            if method == "GET":
+                resp = client.get(path, headers=h)
+            else:
+                resp = client.put(path, json=payload, headers=h)
+            assert resp.status_code == 401, (path, h and "tok", resp.status_code)
+
+    # 캠페인 지원은 운영 모드에서 크리에이터 JWT 없이(브랜드 토큰) 불가
+    assert client.post("/campaigns/cmp-1/apply", json={"creator_id": "c-mai"},
+                       headers=bh).status_code == 401

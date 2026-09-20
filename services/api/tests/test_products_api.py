@@ -1,0 +1,117 @@
+"""복수 제품 학습(버전·근거)·제품별 캠페인·후보 추천 — 브랜드 격리 포함."""
+
+import os
+
+import psycopg
+from psycopg.rows import dict_row
+
+
+def _bearer(t):
+    return {"Authorization": f"Bearer {t}"}
+
+
+def _brand_token(client, email, brand):
+    inv = client.post("/auth/invite", json={"email": email,
+                                            "brand_id": brand}).json()
+    tok = inv["demoLink"].split("invite=")[1]
+    return client.post("/auth/accept", json={
+        "token": tok, "password": "products-pw-1"}).json()["token"]
+
+
+def test_product_crud_profile_versioning(client):
+    t = _brand_token(client, "prod-a@ex.com", "glowlab")
+    p = client.post("/brands/glowlab/products", json={
+        "name": "시카 진정 앰플", "tiktok_product_ref": "tt-12345",
+        "commission_pct": 12}, headers=_bearer(t)).json()
+    pid = p["productId"]
+    assert p["commissionPct"] == 12 and p["profileVersion"] == 0
+    # 같은 이름 중복 금지
+    assert client.post("/brands/glowlab/products", json={
+        "name": "시카 진정 앰플"}, headers=_bearer(t)).status_code == 409
+
+    # 직접 입력 저장 → v1, 재저장(수정) → v2, 이전 버전 보존
+    v1 = client.post(f"/brands/glowlab/products/{pid}/profile", json={
+        "answers": {"product_one_liner": "민감 피부 진정 앰플",
+                    "price_range": "2만원대"}}, headers=_bearer(t)).json()
+    assert v1["version"] == 1 and v1["fields"]["price_range"]["confirmed"]
+    v2 = client.post(f"/brands/glowlab/products/{pid}/profile", json={
+        "answers": {"usp": "48시간 진정 테스트"}}, headers=_bearer(t)).json()
+    assert v2["version"] == 2
+    assert v2["fields"]["product_one_liner"]["value"] == "민감 피부 진정 앰플"
+    with psycopg.connect(os.environ["DATABASE_URL"],
+                         row_factory=dict_row) as conn:
+        n = conn.execute("SELECT count(*) c FROM product_profile_versions"
+                         " WHERE product_id=%s", (pid,)).fetchone()["c"]
+    assert n == 2                                  # 버전 이력 보존
+
+    # 학습 결과 연동: 근거 인용이 있는 ready 학습만 허용
+    assert client.post(f"/brands/glowlab/products/{pid}/profile", json={
+        "learning_id": "00000000-0000-0000-0000-000000000001"},
+        headers=_bearer(t)).status_code == 400
+
+
+def test_product_isolation(client, monkeypatch):
+    a = _brand_token(client, "prod-iso-a@ex.com", "glowlab")
+    b = _brand_token(client, "prod-iso-b@ex.com", "aura")
+    pid = client.get("/brands/glowlab/products",
+                     headers=_bearer(a)).json()[0]["productId"]
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    # 타 브랜드 계정으로 제품 조회·저장·캠페인 개설 전부 403
+    assert client.get("/brands/glowlab/products",
+                      headers=_bearer(b)).status_code == 403
+    assert client.post(f"/brands/glowlab/products/{pid}/profile",
+                       json={"answers": {"usp": "x"}},
+                       headers=_bearer(b)).status_code == 403
+    assert client.post(f"/brands/glowlab/products/{pid}/campaigns",
+                       json={"name": "x"}, headers=_bearer(b)).status_code == 403
+    # aura 경로로 glowlab 제품 ID를 넘겨도 404 (경로-소유 불일치)
+    assert client.post(f"/brands/aura/products/{pid}/campaigns",
+                       json={"name": "x"}, headers=_bearer(b)).status_code == 404
+
+
+def test_product_campaign_and_candidates(client):
+    t = _brand_token(client, "prod-a@ex.com", "glowlab")
+    pid = client.get("/brands/glowlab/products",
+                     headers=_bearer(t)).json()[0]["productId"]
+    c = client.post(f"/brands/glowlab/products/{pid}/campaigns", json={
+        "name": "9월 시카 앰플 · 태국 어필리에이트", "capacity": 30,
+        "conditions": ["15초 이상", "#ad 표기"]}, headers=_bearer(t)).json()
+    assert c["rewardType"] == "affiliate" and c["affiliatePct"] == 12
+    with psycopg.connect(os.environ["DATABASE_URL"],
+                         row_factory=dict_row) as conn:
+        row = conn.execute("SELECT product_id, affiliate_pct FROM campaigns"
+                           " WHERE campaign_id=%s",
+                           (c["campaignId"],)).fetchone()
+        assert str(row["product_id"]) == pid
+        # 후보 풀 시드 (수집엔진 실데이터 형태)
+        conn.execute(
+            "INSERT INTO creator_pool (platform, platform_uid, handle,"
+            " display_name, country, category, followers, engagement_rate,"
+            " influence_score, contact_score, email, email_status)"
+            " VALUES ('tiktok','uid-th-1','ploy.beauty','Ploy','TH',"
+            " ARRAY['beauty'],52000,0.041,71,88,'ploy@ex.com','valid'),"
+            " ('tiktok','uid-th-2','nok.skin','Nok','TH',ARRAY['skincare'],"
+            " 8000,0.062,55,80,'nok@ex.com','valid'),"
+            " ('tiktok','uid-vn-1','linh.glow','Linh','VN',ARRAY['beauty'],"
+            " 90000,0.03,80,70,'linh@ex.com','valid'),"
+            " ('tiktok','uid-bad','x.spam','X','TH',ARRAY['beauty'],"
+            " 100,0.01,5,5,'bad@ex.com','none')"
+            " ON CONFLICT DO NOTHING")
+        conn.commit()
+
+    r = client.get(f"/brands/glowlab/products/{pid}/candidates?country=TH",
+                   headers=_bearer(t)).json()
+    handles = [x["handle"] for x in r["candidates"]]
+    assert "ploy.beauty" in handles and "nok.skin" in handles
+    assert "linh.glow" not in handles              # 국가 필터
+    assert "x.spam" not in handles                 # 이메일 미검증 제외
+    top = r["candidates"][0]
+    assert top["handle"] == "ploy.beauty"          # contact_score 순
+    assert any("팔로워" in e for e in top["evidence"])
+    assert any("수신거부" in e for e in top["evidence"])
+    assert "생성하지 않습니다" in r["note"]           # 지표 비생성 명시
+
+    # 다른 테스트(러너 등록 수 기대치)에 영향 없도록 시드 정리
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+        conn.execute("DELETE FROM creator_pool WHERE platform_uid LIKE 'uid-%'")
+        conn.commit()

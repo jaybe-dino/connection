@@ -10,6 +10,8 @@ API로 채운 것)에서 결정적(비생성) 기준으로 뽑고, 각 후보에
 """
 
 import json
+import re
+import unicodedata
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException
@@ -22,6 +24,34 @@ router = APIRouter()
 
 PRODUCT_KEYS = {"product_one_liner", "hero_product", "ingredients",
                 "price_range", "usp", "target_audience", "voice"}
+
+# ── 다국어 토큰 정책 (검수 반영) — 제품 텍스트와 후보 태그 양쪽에 동일 적용 ──
+# 유니코드 \w 기반이라 태국어·일본어·베트남어 등 비라틴 문자가 보존된다.
+_TOKEN_SPLIT = re.compile(r"[\W_]+", re.UNICODE)
+
+
+def _norm(text: str) -> str:
+    """NFKC 정규화 + casefold — 악센트 조합형(NFC/NFD)·전각/반각·대소문자
+    차이를 언어 무관하게 같은 비교 기준으로 만든다."""
+    return unicodedata.normalize("NFKC", text or "").casefold()
+
+
+def _fit_tokens(text: str) -> set[str]:
+    """정규화된 텍스트를 유니코드 단어 단위로 토큰화(2자 미만 소음 제거)."""
+    return {t for t in _TOKEN_SPLIT.split(_norm(text)) if len(t) >= 2}
+
+
+def _tag_terms(values) -> tuple[set[str], set[str]]:
+    """후보 category/product_tags → (원문 구문 집합, 개별 토큰 집합).
+    구문은 원문 태그 전체(정규화)로 보존해 여러 단어·미분절 언어 태그도
+    제품 텍스트와 일관되게 비교한다."""
+    phrases, toks = set(), set()
+    for v in values or []:
+        n = _norm(str(v)).strip()
+        if len(n) >= 2:
+            phrases.add(n)
+        toks |= _fit_tokens(str(v))
+    return phrases, toks
 
 
 def _guard(brand, authorization):
@@ -199,17 +229,17 @@ def product_candidates(brand: str, product_id: UUID, country: str = "",
         _, fields = _latest_fields(conn, product_id)
         keywords: set[str] = set()
         used_fields: list[str] = []
-        def _tokens(text: str) -> set[str]:
-            import re as _re
-            return {t.lower() for t in _re.split(r"[^0-9A-Za-z가-힣]+", text or "")
-                    if len(t) >= 2}
-        keywords |= _tokens(p["name"])
+        # 제품 전체 텍스트(정규화)도 보존 — 태국어처럼 띄어쓰기 없는 언어의
+        # 태그 구문은 부분 문자열로 비교한다(토큰 경계가 없으므로).
+        product_text = _norm(p["name"])
+        keywords |= _fit_tokens(p["name"])
         for k, f in (fields or {}).items():
             v = f.get("value") if isinstance(f, dict) else str(f)
-            toks = _tokens(v or "")
+            toks = _fit_tokens(v or "")
             if toks:
                 keywords |= toks
                 used_fields.append(k)
+                product_text += "\n" + _norm(v or "")
         rows = conn.execute(
             "SELECT platform_uid, handle, display_name, country, lang,"
             "       category, product_tags, followers, engagement_rate,"
@@ -223,9 +253,12 @@ def product_candidates(brand: str, product_id: UUID, country: str = "",
             (country, country, brand)).fetchall()
         scored = []
         for r in rows:
-            creator_terms = {t.lower() for t in (r["category"] or [])} | {
-                t.lower() for t in (r["product_tags"] or [])}
-            matched = sorted(keywords & creator_terms)
+            phrases, creator_tokens = _tag_terms(
+                (r["category"] or []) + (r["product_tags"] or []))
+            # 토큰 교집합 + 태그 구문의 제품 텍스트 포함(미분절 언어·다단어
+            # 구문 대응) — 양쪽 모두 동일 정규화(_norm) 기준의 문자 일치다.
+            matched = sorted((keywords & creator_tokens)
+                             | {ph for ph in phrases if ph in product_text})
             fit = len(matched)
             evidence = []
             if matched:
@@ -254,6 +287,8 @@ def product_candidates(brand: str, product_id: UUID, country: str = "",
     return {"productId": str(product_id), "productName": p["name"],
             "productFieldsUsed": sorted(set(used_fields)),
             "candidates": out,
-            "note": ("적합도는 제품 프로필 키워드와 후보의 수집된 분류의 교집합"
-                     "으로만 계산합니다. 후보 지표를 생성하지 않으며, 아웃리치"
-                     " 발송은 초안 검토·승인 후에만 진행됩니다.")}
+            "note": ("적합도는 제품 프로필 텍스트와 후보의 수집된 분류"
+                     "(category/product_tags)의 문자 일치 — 유니코드 정규화·"
+                     "대소문자 무시 키워드/태그 구문 교집합 — 로만 계산합니다."
+                     " 의미 추론 AI가 아니며, 후보 지표를 생성하지 않습니다."
+                     " 아웃리치 발송은 초안 검토·승인 후에만 진행됩니다.")}

@@ -138,6 +138,67 @@ def test_decimal_commission_preserved(client):
     assert float(row["affiliate_pct"]) == 12.5
 
 
+def test_candidates_multilingual_tokens_and_exclusions(client):
+    """검수 재현: 태국어·일본어 제품/태그가 [^0-9A-Za-z가-힣] 토큰화로 전부
+    지워져 fitScore=0이던 결함. 유니코드 정규화·casefold 공통 정책으로
+    태국어(미분절 구문 포함)·일본어·베트남어 악센트(NFD/NFC)·대소문자를
+    일관 비교하고, 국가 필터·수신거부 제외는 그대로 유지한다."""
+    import unicodedata
+    t = _brand_token(client, "prod-a@ex.com", "glowlab")
+
+    def make(name):
+        return client.post("/brands/glowlab/products", json={"name": name},
+                           headers=_bearer(t)).json()["productId"]
+    pid_th = make("ครีมกันแดดสูตรอ่อนโยน")     # 태국어 — 태그가 이름의 부분 구문
+    pid_jp = make("日焼け止め ミルク")
+    pid_vi = make("Kem Chống Nắng SPF50")       # NFC — 후보 태그는 NFD로 저장
+    vi_nfd = unicodedata.normalize("NFD", "kem chống nắng")
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+        conn.execute(
+            "INSERT INTO creator_pool (platform, platform_uid, handle, country,"
+            " category, followers, contact_score, email, email_status) VALUES"
+            " ('tiktok','ml-th','th.cr','TH',ARRAY['ครีมกันแดด'],1000,50,"
+            "  'mlth@ex.com','valid'),"
+            " ('tiktok','ml-jp','jp.cr','JP',ARRAY['日焼け止め'],1000,50,"
+            "  'mljp@ex.com','valid'),"
+            " ('tiktok','ml-vi','vi.cr','VN',ARRAY[%s],1000,50,"
+            "  'mlvi@ex.com','valid'),"
+            " ('tiktok','ml-opt','opt.cr','TH',ARRAY['ครีมกันแดด'],9000,99,"
+            "  'mlopt@ex.com','valid') ON CONFLICT DO NOTHING", (vi_nfd,))
+        conn.execute("INSERT INTO outreach_optouts (brand_id,email,opted_out_at)"
+                     " VALUES ('glowlab','mlopt@ex.com',now())"
+                     " ON CONFLICT DO NOTHING")
+        conn.commit()
+    try:
+        # 태국어: 태그(ครีมกันแดด)가 제품명(미분절 구문)의 일부 — 구문 일치
+        r = client.get(f"/brands/glowlab/products/{pid_th}/candidates?country=TH",
+                       headers=_bearer(t)).json()
+        handles = {x["handle"]: x for x in r["candidates"]}
+        assert "th.cr" in handles
+        assert handles["th.cr"]["fitScore"] >= 1
+        assert "ครีมกันแดด" in handles["th.cr"]["matchedTerms"]
+        assert "opt.cr" not in handles          # 수신거부 제외 유지
+        assert "jp.cr" not in handles           # 국가 필터 유지(JP≠TH)
+        assert "의미 추론" in r["note"]          # 키워드 매칭 한계 명시
+        # 일본어
+        r = client.get(f"/brands/glowlab/products/{pid_jp}/candidates?country=JP",
+                       headers=_bearer(t)).json()
+        jp = {x["handle"]: x for x in r["candidates"]}
+        assert jp["jp.cr"]["fitScore"] >= 1
+        assert "日焼け止め" in jp["jp.cr"]["matchedTerms"]
+        # 베트남어 악센트: NFD 태그 vs NFC 제품명 + 대소문자 차이 → 일치
+        r = client.get(f"/brands/glowlab/products/{pid_vi}/candidates?country=VN",
+                       headers=_bearer(t)).json()
+        vi = {x["handle"]: x for x in r["candidates"]}
+        assert vi["vi.cr"]["fitScore"] >= 2      # kem/chống/nắng 토큰 일치
+        assert any("chống" in m for m in vi["vi.cr"]["matchedTerms"])
+    finally:
+        with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+            conn.execute("DELETE FROM creator_pool WHERE platform_uid LIKE 'ml-%'")
+            conn.execute("DELETE FROM outreach_optouts WHERE email='mlopt@ex.com'")
+            conn.commit()
+
+
 def test_candidates_ranked_by_product_fit(client):
     """검수 반영: 제품 프로필이 실제 순위를 바꾼다 — 서로 다른 제품은
     서로 다른 후보가 1위가 되고, 근거에 일치 키워드가 명시된다."""

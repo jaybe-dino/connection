@@ -31,11 +31,17 @@ def learn(body:LearnIn,request:Request):
 
 @router.get('/brand-slugs/{slug}')
 def slug_check(slug:str):
-    if not re.fullmatch(r'[a-z0-9][a-z0-9-]{2,39}',slug) or slug in {'www','api','admin','app','console','signup','privacy','terms'}:
-        return {'available':False}
+    slug=slug.strip().lower()
+    if not re.fullmatch(r'[a-z0-9][a-z0-9-]{2,39}',slug):
+        return {'available':False,'reason':'invalid','slug':slug}
+    if slug in {'www','api','admin','app','console','signup','privacy','terms'}:
+        return {'available':False,'reason':'reserved','slug':slug}
     with connect() as c:
-        taken=c.execute("SELECT 1 FROM brands WHERE brand_id=%s UNION SELECT 1 FROM brand_applications WHERE slug=%s AND status='pending'",(slug,slug)).fetchone()
-    return {'available':not bool(taken)}
+        if c.execute('SELECT 1 FROM brands WHERE brand_id=%s',(slug,)).fetchone():
+            return {'available':False,'reason':'registered','slug':slug}
+        if c.execute("SELECT 1 FROM brand_applications WHERE slug=%s AND status='pending'",(slug,)).fetchone():
+            return {'available':False,'reason':'pending','slug':slug}
+    return {'available':True,'reason':'available','slug':slug}
 
 class ProfileIn(BaseModel):
     learning_id:UUID|None=None

@@ -53,8 +53,9 @@ def test_product_crud_profile_versioning(client):
 def test_product_isolation(client, monkeypatch):
     a = _brand_token(client, "prod-iso-a@ex.com", "glowlab")
     b = _brand_token(client, "prod-iso-b@ex.com", "aura")
-    pid = client.get("/brands/glowlab/products",
-                     headers=_bearer(a)).json()[0]["productId"]
+    # 순서 독립: 목록 인덱스가 아니라 이 테스트가 직접 만든 제품 ID를 쓴다
+    pid = client.post("/brands/glowlab/products", json={
+        "name": "격리 테스트 크림"}, headers=_bearer(a)).json()["productId"]
     monkeypatch.setenv("AUTH_REQUIRED", "1")
     # 타 브랜드 계정으로 제품 조회·저장·캠페인 개설 전부 403
     assert client.get("/brands/glowlab/products",
@@ -71,8 +72,10 @@ def test_product_isolation(client, monkeypatch):
 
 def test_product_campaign_and_candidates(client):
     t = _brand_token(client, "prod-a@ex.com", "glowlab")
-    pid = client.get("/brands/glowlab/products",
-                     headers=_bearer(t)).json()[0]["productId"]
+    # 순서 독립: 목록 인덱스가 아니라 이 테스트가 직접 만든 제품 ID를 쓴다
+    pid = client.post("/brands/glowlab/products", json={
+        "name": "캠페인·후보 테스트 앰플", "commission_pct": 12},
+        headers=_bearer(t)).json()["productId"]
     c = client.post(f"/brands/glowlab/products/{pid}/campaigns", json={
         "name": "9월 시카 앰플 · 태국 어필리에이트", "capacity": 30,
         "conditions": ["15초 이상", "#ad 표기"]}, headers=_bearer(t)).json()

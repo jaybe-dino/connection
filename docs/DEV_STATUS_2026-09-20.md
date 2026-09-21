@@ -163,3 +163,95 @@
 - 선정·수수료 합의·샘플·콘텐츠 제출·TikTok 식별자/광고 코드(종류·권한 구분) 관리
 - 크리에이터 캠페인 지원 UI(현재 API만), 담당자 1:1 DM 채널
 - 결제/취소 대사 자동화(현재 reconcile 수동 트리거), NICEpay 실거래 검증(승인 필요)
+
+---
+
+# 사이클 3 — Codex 2차 검수 반영 + 협업 흐름 완성 (2026-09-21)
+
+## 지적 → 수정 내역
+
+1. **신규 브랜드 my-cells=[] (기본 커뮤니티 없음)**:
+   - 코드: `ensure_default_cell(conn, brand_id, name)` 헬퍼(routes_community)
+     — `cell-<brand>-main` "<브랜드명> 라운지"를 멱등 생성. 신청 승인
+     (`/admin/applications/{id}/approve`)이 브랜드 INSERT 직후 호출.
+   - 백필: **026_default_cells.sql** — 셀이 하나도 없는 기존 브랜드에만
+     같은 규칙으로 멱등 생성(ON CONFLICT DO NOTHING, 기존 셀 불변).
+   - 검증: `test_new_brand_default_cell_and_isolation` — 두 신규 브랜드를
+     신청→승인→초대 수락으로 만들고, 승인 즉시 각자 기본 셀 1개, 서로의 셀
+     접근 403, 신규 크리에이터는 합류한 브랜드 셀만 보임/게시 가능.
+2. **ai.translate 장애 시 메시지 유실**:
+   - **027_translation_state.sql**: cell_messages에 translation_state
+     (done|pending|failed)+translation_attempts+pending 부분 인덱스.
+   - post_message를 "원문 선저장(pending, translations={}) → 커밋 → 번역
+     시도 → 성공 시 done"으로 재구성. 실패해도 200 + translationState 반환,
+     가짜 번역을 만들지 않음.
+   - 러너 재시도: `retry_pending_translations()`(FOR UPDATE SKIP LOCKED로
+     중복 방지, 5회 초과 시 failed 확정) + runner_daemon `_translation_tick`
+     (120초 간격, Gmail 실모드 여부와 무관하게 동작). /runner/status.translation.
+   - UI: 번역 전 메시지는 "번역 준비 중/불가 — 원문 표시" 배지.
+   - 검증(외부 호출 없음): `test_translate_failure_preserves_original`
+     (translate를 TimeoutError로 monkeypatch → 원문 저장·pending → 장애 해제
+     후 재시도 → done+번역 동봉), `test_translation_retry_gives_up_after_max`
+     (5회 실패 → failed 확정, 중복 없음, 이후 재시도 중단).
+3. **test_products의 products[0] 순서 의존**: isolation·campaign_and_candidates
+   두 테스트 모두 목록 인덱스 대신 자체 생성한 productId 사용으로 수정.
+
+## 신규 개발 — 캠페인 협업 흐름 (요구 5)
+
+- **028_campaign_terms.sql**: 선정→수수료 합의→샘플→콘텐츠 제출→완료|거절
+  상태머신. TikTok 코드 종류·권한 구분(스키마 주석에 명시):
+  spark_code=광고 권한 코드(크리에이터 제출) / affiliate_link=판매 추적
+  링크(브랜드 발급) / tiktok_handle=계정 식별자(합의 시 크리에이터 확인).
+- **routes_collab.py**:
+  - 브랜드: GET campaigns(지원·선정 수), GET applicants, POST select(수수료
+    제안, 지원자만·중복 409), sample-shipped(합의 후만), affiliate-link
+    (https만·합의 후만), complete(콘텐츠 제출 후만).
+  - 크리에이터(/me/*): GET /me/campaigns(멤버십 브랜드의 open 캠페인+내 상태),
+    GET /me/campaign-offers, agree(핸들 필수, 제안 수수료가 확정값)/거절,
+    spark-code, content(https만). 모두 핸들러가 크리에이터 JWT 본인 행만 강제,
+    main.py 미들웨어 allowlist에 정확 경로만 추가(그 외 /me/*는 관리자 전용
+    유지 — `test_me_campaign_routes_require_creator_jwt`).
+  - 전 단계 원장 기록(SELECTED/AGREED/SHIPPED/LINK/SPARK/CONTENT/COMPLETED).
+- **담당자 1:1 DM**: `/community/dm/{brand}`(크리에이터 멱등 개설)·
+  `/community/dm`(목록). visibility='dm' 셀 재사용 — 같은 브랜드의 다른
+  크리에이터도 접근 403, my-cells에 남의 DM 미노출.
+  검증: `test_dm_private_between_creator_and_brand`.
+- **UI**: 크리에이터(캠페인 목록·지원, 오퍼 카드: 합의/거절→샘플·링크 표시→
+  spark·콘텐츠 제출, 멤버십 카드 '담당자 DM'), 콘솔 제품 페이지(캠페인별
+  지원자 보기→선정+수수료 제안→샘플 발송→링크 발급→완료 처리).
+  로그인 후 새로고침 시 크리에이터 데이터 미로딩 버그도 이번에 수정
+  (/auth/me 부트스트랩에서 loadCreatorData 호출).
+- **결제/취소 대사 러너 이관**: `_reconcile_tick`(30분 간격) — NICEpay
+  크리덴셜 설정 환경에서만, status='processing'+tid 청구서의 PG 거래를
+  **조회**해 검증 통과 시 paid 확정/불일치 시 review 보류. 새 결제 생성 없음.
+  /runner/status.reconcile. (크리덴셜 없는 환경에선 완전 무동작 — 실거래
+  검증은 운영 승인 후 외부 확인 필요)
+
+## 증거 (사이클 3)
+
+- services/api **92 passed** / tests_billing **51 passed** (신규: 기본 셀
+  격리·번역 장애 2종·DM 프라이버시·협업 완주·/me 경로 가드)
+- **새 브랜드 2개 완주 테스트** `test_two_new_brands_full_campaign_journey`:
+  joyone/joytwo 신청→승인(기본 셀)→초대 수락→제품(15.5%)·캠페인→크리에이터
+  매직 로그인→합류→기본 셀 대화(태국어)→지원→선정(15.5 제안)→핸들 확인 합의
+  (15.5 확정)→샘플 발송(송장)→링크 발급→spark 제출→콘텐츠 제출→완료,
+  브랜드 간(지원자 조회 403·경로-소유 404·캠페인 목록·셀 접근) 격리, 원장
+  이벤트 7종 확인.
+- Playwright E2E: 사이클3 15체크(콘솔 협업 카드·지원→선정→합의→spark/콘텐츠
+  →완료 UI 완주·DM 개설/게시/브랜드 수신·JS 에러 0) + 사이클2 9체크 회귀 통과.
+- 빌드: console·creator-app·admin dist 재생성(sync-demo 후).
+- 실행 안 한 것(금지 준수): 실카드 결제, 외부 수신자 발송, 새 보안권한 동의,
+  운영 러너 기동, 비밀키 출력.
+
+## 막힘/외부 필요
+
+- Railway 배포 반영은 컨테이너 egress 제한으로 직접 확인 불가 — 배포 후
+  `GET /health`(마이그레이션 026~028 적용), `GET /runner/status`
+  (translation/reconcile 키), 콘솔 '제품·캠페인' 페이지의 "캠페인 지원자 ·
+  협업 진행" 카드 노출을 확인해 주세요.
+- NICEpay 대사 실동작은 운영 크리덴셜 환경에서만 검증 가능(조회성).
+
+## 다음
+
+- 정산(크리에이터 대금 지급) 화면·정책, 후보 추천→아웃리치 초안에 campaign
+  terms 컨텍스트 연결 심화, Codex 3차 검수 지적 반영.

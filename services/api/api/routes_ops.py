@@ -163,6 +163,9 @@ def approve_application(app_id: str, admin_user: dict = Depends(require_admin)) 
             "INSERT INTO brands (brand_id, name, category, locale, plan)"
             " VALUES (%s,%s,%s,'ko',%s)",
             (app_row["slug"], app_row["name"], app_row["category"], app_row["plan"]))
+        # 승인 즉시 기본 커뮤니티 셀 생성 — 신규 브랜드도 my-cells가 비지 않는다
+        from .routes_community import ensure_default_cell
+        ensure_default_cell(conn, app_row["slug"], app_row["name"])
         # theprlist 학습 답변 → 브랜드 프로필 v1 (확인됨 처리 — 모집 시작 가능)
         answers = app_row["answers"] or {}
         learned = conn.execute("SELECT fields FROM brand_learning WHERE learning_id=%s AND state='ready'",(app_row.get("learning_id"),)).fetchone()

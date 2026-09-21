@@ -63,6 +63,10 @@ async def legacy_access_boundary(request: Request, call_next):
         (path == '/me/join' and method == 'POST')                     # 크리에이터 JWT 강제
         or (path == '/me/memberships' and method == 'GET')            # 크리에이터 JWT 강제
         or (re.fullmatch(r"/campaigns/[^/]+/apply", path) and method == 'POST')  # 핸들러가 JWT 본인 계정 강제
+        or (path == '/me/campaigns' and method == 'GET')              # 크리에이터 JWT 강제 (routes_collab)
+        or (path == '/me/campaign-offers' and method == 'GET')        # 크리에이터 JWT 강제 (routes_collab)
+        or (re.fullmatch(r"/me/campaign-offers/[^/]+/(agree|spark-code|content)", path)
+            and method == 'POST')                                     # 크리에이터 JWT + 본인 terms 행만
     )
     if legacy and auth.auth_required() and method != 'OPTIONS' and not self_checked:
         try:
@@ -103,6 +107,8 @@ from .routes_products import router as _products_router
 app.include_router(_products_router)
 from .routes_community import router as _community_router
 app.include_router(_community_router)
+from .routes_collab import router as _collab_router
+app.include_router(_collab_router)
 from .routes_outreach import router as _outreach_router
 app.include_router(_outreach_router)
 app.include_router(_auth_router)

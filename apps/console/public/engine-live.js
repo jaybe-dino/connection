@@ -901,7 +901,70 @@
   /* Public console only exposes workflows backed by durable server results. */
   var profileData=null, profileError='', profileDraft=null, profileUrl='', profileBusy=false, profileNotice='';
   var productsData=null, prodNotice='', prodCandidates=null;
-  function loadProducts(){var b=BRAND();req('GET','/brands/'+b+'/products').then(function(r){if(BRAND()!==b)return;productsData=r;if(window.__SURFACE==='brand')render();}).catch(function(){});}
+  var brandCampaigns=null, collabOpen=null;   // {campaignId, rows}
+  function loadProducts(){var b=BRAND();req('GET','/brands/'+b+'/products').then(function(r){if(BRAND()!==b)return;productsData=r;if(window.__SURFACE==='brand')render();}).catch(function(){});
+    req('GET','/brands/'+b+'/campaigns').then(function(r){if(BRAND()!==b)return;brandCampaigns=r;if(window.__SURFACE==='brand')render();}).catch(function(){});}
+  window.collabShow=function(cid){
+    req('GET','/brands/'+BRAND()+'/campaigns/'+cid+'/applicants').then(function(r){collabOpen={campaignId:cid,rows:r};render();})
+      .catch(function(){toast('조회 실패','잠시 후 다시.');});
+  };
+  window.collabSelect=function(cid,creatorId){
+    var pct=parseFloat((document.getElementById('sel_'+creatorId)||{}).value);
+    if(isNaN(pct))return toast('수수료','제안 수수료(%)를 입력해 주세요.');
+    req('POST','/brands/'+BRAND()+'/campaigns/'+cid+'/select',{creator_id:creatorId,commission_pct:pct})
+      .then(function(){prodNotice='선정 완료 — 크리에이터가 합의하면 수수료가 확정됩니다.';window.collabShow(cid);})
+      .catch(function(e){toast('선정 실패',e===409?'이미 선정했거나 지원자가 아니에요.':'잠시 후 다시.');});
+  };
+  window.collabShip=function(cid,creatorId){
+    var v=((document.getElementById('shp_'+creatorId)||{}).value||'').trim();
+    if(!v)return toast('송장 번호','샘플 송장 번호를 입력해 주세요.');
+    req('POST','/brands/'+BRAND()+'/campaigns/'+cid+'/terms/'+creatorId+'/sample-shipped',{tracking:v})
+      .then(function(){prodNotice='샘플 발송 기록 완료.';window.collabShow(cid);})
+      .catch(function(){toast('처리 실패','수수료 합의 이후에 가능해요.');});
+  };
+  window.collabLink=function(cid,creatorId){
+    var v=((document.getElementById('afl_'+creatorId)||{}).value||'').trim();
+    if(v.indexOf('https://')!==0)return toast('링크','https:// 어필리에이트 링크를 입력해 주세요.');
+    req('POST','/brands/'+BRAND()+'/campaigns/'+cid+'/terms/'+creatorId+'/affiliate-link',{link:v})
+      .then(function(){prodNotice='어필리에이트 링크 발급 완료.';window.collabShow(cid);})
+      .catch(function(){toast('발급 실패','수수료 합의 이후에 가능해요.');});
+  };
+  window.collabComplete=function(cid,creatorId){
+    req('POST','/brands/'+BRAND()+'/campaigns/'+cid+'/terms/'+creatorId+'/complete')
+      .then(function(){prodNotice='협업 완료 처리됐어요.';window.collabShow(cid);})
+      .catch(function(){toast('완료 불가','콘텐츠 제출 이후에 완료할 수 있어요.');});
+  };
+  function collabCard(){
+    if(!brandCampaigns||!brandCampaigns.length)return '';
+    var h='<div class="cc"><h2>캠페인 지원자 · 협업 진행</h2>';
+    brandCampaigns.forEach(function(c){
+      h+='<p><b>'+mailEscape(c.name)+'</b> <span style="font-size:12px">'+mailEscape(c.campaignId)+' · 지원 '+c.applicants+' · 선정 '+c.selected+(c.affiliatePct!=null?' · 커미션 '+c.affiliatePct+'%':'')+'</span> <span class="cbt line" onclick="collabShow(\''+c.campaignId+'\')">지원자 보기</span></p>';
+      if(collabOpen&&collabOpen.campaignId===c.campaignId){
+        if(!collabOpen.rows.length)h+='<p style="font-size:13px">아직 지원자가 없어요.</p>';
+        collabOpen.rows.forEach(function(a){
+          var st=a.termsState||'미선정';
+          h+='<div style="border-top:1px solid #eee;padding:10px 0;margin-top:6px"><b>@'+mailEscape(a.handle)+'</b> <span style="font-size:12px">'+(a.verified?'검증됨':'미검증')+' · 상태: '+mailEscape(st)+(a.tiktokHandle?' · 핸들 '+mailEscape(a.tiktokHandle):'')+'</span>';
+          if(!a.termsState){
+            h+='<div style="display:flex;gap:6px;margin-top:6px"><input id="sel_'+a.creatorId+'" placeholder="제안 수수료 % (소수 가능)" style="flex:1;padding:8px"><span class="cbt" onclick="collabSelect(\''+c.campaignId+'\',\''+a.creatorId+'\')">선정 + 수수료 제안</span></div>';
+          }else if(a.termsState==='selected'){
+            h+='<p style="font-size:12px;margin:6px 0">제안 수수료 '+(a.commissionPct!=null?a.commissionPct+'%':'-')+' — 크리에이터 합의 대기 중.</p>';
+          }else if(a.termsState==='terms_agreed'||a.termsState==='sample_shipped'){
+            h+='<p style="font-size:12px;margin:6px 0">확정 수수료 '+(a.agreedCommissionPct!=null?a.agreedCommissionPct+'%':'-')+(a.sampleTracking?' · 송장 '+mailEscape(a.sampleTracking):'')+(a.sparkCode?' · Spark 코드 수령 ✓':'')+'</p>';
+            if(a.termsState==='terms_agreed')h+='<div style="display:flex;gap:6px;margin:4px 0"><input id="shp_'+a.creatorId+'" placeholder="샘플 송장 번호" style="flex:1;padding:8px"><span class="cbt" onclick="collabShip(\''+c.campaignId+'\',\''+a.creatorId+'\')">샘플 발송</span></div>';
+            h+='<div style="display:flex;gap:6px;margin:4px 0"><input id="afl_'+a.creatorId+'" placeholder="어필리에이트 링크 (https://… — 브랜드 발급)" value="'+mailEscape(a.affiliateLink||'')+'" style="flex:1;padding:8px"><span class="cbt" onclick="collabLink(\''+c.campaignId+'\',\''+a.creatorId+'\')">링크 발급</span></div>';
+          }else if(a.termsState==='content_submitted'){
+            h+='<p style="font-size:12px;margin:6px 0">콘텐츠: '+mailEscape(a.contentUrl)+(a.sparkCode?' · Spark 코드 ✓':'')+'</p><span class="cbt" onclick="collabComplete(\''+c.campaignId+'\',\''+a.creatorId+'\')">완료 처리</span>';
+          }else if(a.termsState==='completed'){
+            h+='<p style="font-size:12px;margin:6px 0">✓ 완료 — 콘텐츠 '+mailEscape(a.contentUrl||'')+'</p>';
+          }else if(a.termsState==='declined'){
+            h+='<p style="font-size:12px;margin:6px 0">크리에이터가 제안을 거절했어요.</p>';
+          }
+          h+='</div>';
+        });
+      }
+    });
+    return h+'</div>';
+  }
   window.prodCreate=function(){
     var nm=(document.getElementById('pNew')||{}).value||'',ref=(document.getElementById('pRef')||{}).value||'',pct=parseFloat((document.getElementById('pPct')||{}).value)||10;
     if(!nm.trim())return toast('제품 이름','제품 이름을 입력해 주세요.');
@@ -953,6 +1016,7 @@
       h+='</div>';
     });
     if(productsData&&!productsData.length)h+='<div class="cc"><p>등록된 제품이 없습니다.</p></div>';
+    h+=collabCard();
     return h;
   }
   var livePage='home', chatMessages=[], chatBusy=false, profileAnswers={};
@@ -1010,6 +1074,7 @@
   if(window.__SURFACE==='creator'){
     var joinTarget=null, joinBrandInfo=null, myMemberships=null, magicSent=false;
     var commCells=null, commOpen=null;   // {cellId, name, msgs}
+    var myCampaigns=null, myOffers=null;
 
     try{joinTarget=(new URLSearchParams(location.search).get('brand')||'').toLowerCase()||null;}catch(e){}
     function loadCreatorData(){
@@ -1017,7 +1082,80 @@
       if(window.__ME&&window.__ME.kind==='creator'){
         req('GET','/me/memberships').then(function(m){myMemberships=m;render();}).catch(function(){});
         req('GET','/community/my-cells').then(function(c){commCells=c;render();}).catch(function(){});
+        req('GET','/me/campaigns').then(function(c){myCampaigns=c;render();}).catch(function(){});
+        req('GET','/me/campaign-offers').then(function(o){myOffers=o;render();}).catch(function(){});
       }
+    }
+    window.crApply=function(cid){
+      req('POST','/campaigns/'+cid+'/apply',{creator_id:'me'}).then(function(){
+        toast('지원 완료','브랜드가 검토 후 선정하면 여기서 수수료 합의를 진행해요.');loadCreatorData();
+      }).catch(function(){toast('지원 실패','잠시 후 다시.');});
+    };
+    window.crAgree=function(cid,accept){
+      var h=((document.getElementById('ofHandle_'+cid)||{}).value||'').trim();
+      if(accept&&!h)return toast('TikTok 핸들','합의에는 본인 TikTok 핸들 확인이 필요해요.');
+      req('POST','/me/campaign-offers/'+cid+'/agree',{accept:!!accept,tiktok_handle:h})
+        .then(function(r){toast(accept?'수수료 합의 완료':'거절 처리',accept?'확정 수수료 '+r.agreedCommissionPct+'% — 샘플 발송을 기다려 주세요.':'이 캠페인 제안을 거절했어요.');loadCreatorData();})
+        .catch(function(){toast('처리 실패','잠시 후 다시.');});
+    };
+    window.crSpark=function(cid){
+      var v=((document.getElementById('ofSpark_'+cid)||{}).value||'').trim();
+      if(!v)return toast('Spark 코드','코드를 입력해 주세요.');
+      req('POST','/me/campaign-offers/'+cid+'/spark-code',{spark_code:v})
+        .then(function(){toast('Spark 코드 제출','광고 사용 권한 코드가 브랜드에 전달됐어요.');loadCreatorData();})
+        .catch(function(){toast('제출 실패','합의 이후에 제출할 수 있어요.');});
+    };
+    window.crContent=function(cid){
+      var v=((document.getElementById('ofUrl_'+cid)||{}).value||'').trim();
+      if(v.indexOf('https://')!==0)return toast('콘텐츠 링크','https:// 링크를 입력해 주세요.');
+      req('POST','/me/campaign-offers/'+cid+'/content',{content_url:v})
+        .then(function(){toast('콘텐츠 제출 완료','브랜드 확인 후 완료 처리됩니다.');loadCreatorData();})
+        .catch(function(){toast('제출 실패','합의/샘플 수령 후 제출할 수 있어요.');});
+    };
+    window.crDm=function(b){
+      req('POST','/community/dm/'+b,{}).then(function(r){
+        window.commOpenCell(r.cellId,'담당자 DM');
+      }).catch(function(){toast('DM 열기 실패','멤버십 가입 후 이용할 수 있어요.');});
+    };
+    function campHtml(){
+      if(!myCampaigns||!myCampaigns.length)return '';
+      var h='<h2 style="margin-top:26px">참여 가능한 캠페인</h2>';
+      myCampaigns.forEach(function(c){
+        h+='<div class="cc"><b>'+esc(c.brandName||c.brandId)+'</b> · '+esc(c.name)+
+          (c.affiliatePct!=null?' <span style="font-size:12px">커미션 '+c.affiliatePct+'%</span>':'')+
+          '<p style="font-size:12px;margin:6px 0">'+esc(c.product||'')+(c.deadline?' · 마감 '+esc(c.deadline):'')+'</p>'+
+          (c.myStatus==='none'?'<button class="btn" onclick="crApply(\''+esc(c.campaignId)+'\')">이 캠페인에 지원</button>'
+            :'<p style="font-size:12px">내 상태: '+esc(c.termsState||c.myStatus)+'</p>')+'</div>';
+      });
+      return h;
+    }
+    function offersHtml(){
+      if(!myOffers||!myOffers.length)return '';
+      var h='<h2 style="margin-top:26px">내 캠페인 진행</h2>';
+      myOffers.forEach(function(o){
+        var id=esc(o.campaignId);
+        h+='<div class="cc"><b>'+esc(o.brandName||o.brandId)+'</b> · '+esc(o.campaignName||o.campaignId)+
+          ' <span style="font-size:12px">상태: '+esc(o.state)+'</span>';
+        if(o.state==='selected'){
+          h+='<p style="font-size:13px">브랜드 제안 수수료 <b>'+(o.commissionPct!=null?o.commissionPct+'%':'-')+'</b> — 합의하면 확정됩니다.</p>'+
+            '<input id="ofHandle_'+id+'" placeholder="본인 TikTok 핸들 (예: @myhandle)" style="width:100%;box-sizing:border-box;padding:8px;margin:6px 0">'+
+            '<button class="btn" onclick="crAgree(\''+id+'\',true)">수수료 합의</button> <span class="cbt no" onclick="crAgree(\''+id+'\',false)">거절</span>';
+        }else if(o.state==='terms_agreed'||o.state==='sample_shipped'){
+          h+='<p style="font-size:13px">확정 수수료 '+(o.agreedCommissionPct!=null?o.agreedCommissionPct+'%':'-')+
+            (o.sampleTracking?' · 샘플 송장 '+esc(o.sampleTracking):' · 샘플 발송 대기')+
+            (o.affiliateLink?'<br>어필리에이트 링크(브랜드 발급): '+esc(o.affiliateLink):'')+'</p>'+
+            '<div style="display:flex;gap:6px;margin:6px 0"><input id="ofSpark_'+id+'" placeholder="Spark 코드 (광고 권한 — 내가 발급)" value="'+esc(o.sparkCode||'')+'" style="flex:1;padding:8px"><span class="cbt" onclick="crSpark(\''+id+'\')">코드 제출</span></div>'+
+            '<div style="display:flex;gap:6px"><input id="ofUrl_'+id+'" placeholder="게시한 콘텐츠 URL (https://…)" style="flex:1;padding:8px"><span class="cbt" onclick="crContent(\''+id+'\')">콘텐츠 제출</span></div>';
+        }else if(o.state==='content_submitted'){
+          h+='<p style="font-size:13px">제출 완료: '+esc(o.contentUrl)+'<br>브랜드 확인을 기다리고 있어요.</p>';
+        }else if(o.state==='completed'){
+          h+='<p style="font-size:13px">✓ 완료 — 확정 수수료 '+(o.agreedCommissionPct!=null?o.agreedCommissionPct+'%':'-')+' 기준으로 정산됩니다.</p>';
+        }else if(o.state==='declined'){
+          h+='<p style="font-size:13px">거절한 제안입니다.</p>';
+        }
+        h+='</div>';
+      });
+      return h;
     }
     window.commOpenCell=function(id,name){
       req('GET','/community/cells/'+id+'/messages').then(function(m){
@@ -1049,9 +1187,10 @@
       h+=(commOpen.msgs||[]).map(function(m){
         var shown=(m.translations&&m.translations[lang])||m.original;
         var isTr=shown!==m.original;
+        var pending=m.translationState&&m.translationState!=='done'&&m.originalLocale!==lang;
         return '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee">'+
           '<b style="font-size:12px">'+(m.channel==='notice'?'📢 ':'')+esc(m.author)+'</b> <span style="font-size:10px;color:#5a6560">'+esc(m.at.slice(0,16).replace('T',' '))+'</span>'+
-          '<div style="margin-top:3px">'+esc(shown)+'</div>'+
+          '<div style="margin-top:3px">'+esc(shown)+(pending?' <span style="font-size:10px;color:#8a6d3b">('+(m.translationState==='failed'?'번역 불가 — 원문 표시':'번역 준비 중 — 원문 표시')+')</span>':'')+'</div>'+
           (isTr?'<div style="font-size:11px;color:#5a6560;margin-top:2px">원문('+esc(m.originalLocale)+'): '+esc(m.original)+'</div>':'')+
           '</div>';
       }).join('')||'<p style="margin-top:8px">아직 메시지가 없어요 — 첫 인사를 남겨보세요.</p>';
@@ -1094,10 +1233,10 @@
           '<h2 style="margin-top:26px">내 브랜드 멤버십</h2>'+
           ((myMemberships&&myMemberships.length)?myMemberships.map(function(m){
             var lg=m.logoUrl?'<img src="'+m.logoUrl.replace(/"/g,'')+'" alt="" style="width:26px;height:26px;border-radius:6px;object-fit:cover;vertical-align:-7px;margin-right:8px">':'';
-            return '<div class="cc">'+lg+'<b>'+mailEscape(m.name||m.brandId)+'</b>'+(m.tagline?' · '+mailEscape(m.tagline):'')+'</div>';}).join('')
+            return '<div class="cc">'+lg+'<b>'+mailEscape(m.name||m.brandId)+'</b>'+(m.tagline?' · '+mailEscape(m.tagline):'')+' <span class="cbt line" onclick="crDm(\''+esc(m.brandId)+'\')">담당자 DM</span></div>';}).join('')
            :'<div class="cc"><p>아직 가입한 브랜드가 없어요. 브랜드의 초대 링크로 합류할 수 있습니다.</p></div>')+
-          commHtml()+
-          '<div class="cc"><p>캠페인 지원·정산 화면은 공개 준비 중입니다. 멤버십 등록과 커뮤니티 대화(번역·원문 보존)까지 실제로 동작해요.</p></div>';
+          campHtml()+offersHtml()+commHtml()+
+          '<div class="cc"><p style="font-size:12px">지원→선정→수수료 합의→샘플→Spark 코드·콘텐츠 제출까지 여기서 진행돼요. 대금 지급(정산 송금) 화면은 공개 준비 중입니다.</p></div>';
       }
       document.getElementById('stage').innerHTML='<main style="max-width:650px;margin:60px auto;padding:24px;line-height:1.8"><h1>theprlist <span style="font-size:12px;font-weight:400">/ creator</span></h1>'+body+'<p style="margin-top:34px"><a href="https://theprlist.net">서비스 소개</a> · <a href="https://theprlist.net/privacy">개인정보처리방침</a></p></main>';
     };
@@ -1132,8 +1271,10 @@
       }).catch(function () { toast("로그인 실패", "링크가 만료됐어요 — 다시 요청해 주세요."); });
     }
     if (jwtGet()) {
-      req("GET", "/auth/me").then(function (u) { window.__ME = u; authChip(); reloadBrand(); })
-        .catch(function () { jwtClear(); authChip(); });
+      req("GET", "/auth/me").then(function (u) { window.__ME = u; authChip(); reloadBrand();
+        if (window.render) try { render(); } catch (e) {}
+        if (typeof loadCreatorData === "function") try { loadCreatorData(); } catch (e) {}
+      }).catch(function () { jwtClear(); authChip(); });
     } else if (window.__SURFACE === "brand" || window.__SURFACE === "creator" || inviteTok) {
       authChip();
     }

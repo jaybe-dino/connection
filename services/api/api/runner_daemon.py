@@ -169,6 +169,72 @@ def _gmail_ops_tick() -> list[str]:
     return notes
 
 
+_tr_state = {"last": 0.0, "done": 0, "failed": 0, "errors": []}
+TRANSLATE_EVERY_SEC = 120
+
+
+def _translation_tick() -> list[str]:
+    """pending 번역 재시도 — Gmail 실모드 여부와 무관하게 항상 돈다.
+
+    원문은 이미 저장돼 있으므로 재시도는 표시 품질 회복일 뿐, 실패해도
+    데이터 유실이 없다. 한도 초과 메시지는 'failed'로 확정한다."""
+    now = time.time()
+    if now - _tr_state["last"] < TRANSLATE_EVERY_SEC:
+        return []
+    _tr_state["last"] = now
+    try:
+        from .routes_community import retry_pending_translations
+        r = retry_pending_translations()
+        _tr_state["done"] += r["done"]
+        _tr_state["failed"] += r["failed"]
+        if r["scanned"]:
+            return [f"번역 재시도 {r['scanned']}건"
+                    f" (완료 {r['done']}·포기 {r['failed']})"]
+    except Exception as e:
+        _tr_state["errors"] = ([f"{type(e).__name__}"]
+                               + _tr_state["errors"])[:5]
+    return []
+
+
+_recon_state = {"last": 0.0, "checked": 0, "settled": 0, "errors": []}
+RECONCILE_EVERY_SEC = 1800
+
+
+def _reconcile_tick() -> list[str]:
+    """결제 대사 — processing으로 남은 청구서의 PG 거래를 '조회'해 확정/보류.
+
+    NICEpay 크리덴셜이 설정된 환경에서만 동작하며, 새 결제를 만들지 않는다
+    (승인 결과 조회 → 검증 통과 시 paid 확정, 불일치 시 review 보류)."""
+    from . import nicepay
+    if not nicepay.configured():
+        return []
+    now = time.time()
+    if now - _recon_state["last"] < RECONCILE_EVERY_SEC:
+        return []
+    _recon_state["last"] = now
+    notes: list[str] = []
+    try:
+        with connect() as conn:
+            rows = conn.execute(
+                "SELECT invoice_id, tid FROM signup_invoices"
+                " WHERE status='processing' AND tid IS NOT NULL"
+                " ORDER BY period LIMIT 20").fetchall()
+        from .routes_payments import settle
+        for r in rows:
+            try:
+                data = nicepay.request('GET', r["tid"])
+            except nicepay.PaymentUnavailable:
+                continue                       # PG 응답 없음 — 다음 틱에 재시도
+            _recon_state["checked"] += 1
+            if settle(r["tid"], r["invoice_id"], data):
+                _recon_state["settled"] += 1
+                notes.append(f"대사 확정 {r['invoice_id']}")
+    except Exception as e:
+        _recon_state["errors"] = ([f"{type(e).__name__}"]
+                                  + _recon_state["errors"])[:5]
+    return notes
+
+
 _billing_state = {"lastClose": 0.0, "closedInvoices": 0, "errors": []}
 BILLING_CLOSE_EVERY_SEC = 6 * 3600
 
@@ -209,7 +275,8 @@ def _gmail_loop(interval: int) -> None:
     while True:
         try:
             with _lock:
-                notes = _gmail_ops_tick() + _billing_tick()
+                notes = (_translation_tick() + _gmail_ops_tick()
+                         + _billing_tick() + _reconcile_tick())
                 _state["ticks"] += 1
                 _state["last_tick"] = datetime.now(UTC).isoformat()
                 _state["error"] = None
@@ -279,6 +346,12 @@ def status() -> dict:
                        "recentErrors": _gmail_ops["errors"]}
     out["billing"] = {"closedInvoices": _billing_state["closedInvoices"],
                       "recentErrors": _billing_state["errors"]}
+    out["translation"] = {"done": _tr_state["done"],
+                          "failed": _tr_state["failed"],
+                          "recentErrors": _tr_state["errors"]}
+    out["reconcile"] = {"checked": _recon_state["checked"],
+                        "settled": _recon_state["settled"],
+                        "recentErrors": _recon_state["errors"]}
     if _runner is not None:
         with _lock:
             out["outreach"] = _runner.outreach.stats()

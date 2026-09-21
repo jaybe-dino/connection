@@ -188,6 +188,138 @@ def test_gmail_sync_requires_read_grant_and_brand_access(setup):
     assert c.post('/brands/real/gmail/sync').status_code==401
 
 
+def _gmail_msg(mid,body_text='Hello, interested in your brand',sender='Creator <creator@example.com>'):
+    import base64
+    body=base64.urlsafe_b64encode(body_text.encode()).decode()
+    return {'id':mid,'threadId':'t-'+mid,'internalDate':'1789742726000','labelIds':['INBOX'],
+            'payload':{'mimeType':'text/plain','headers':[{'name':'From','value':sender},
+            {'name':'Subject','value':'Reply '+mid},{'name':'Message-ID','value':f'<{mid}@example.com>'}],
+            'body':{'data':body}}}
+
+
+def _fake_client(routes_by_token,captured=None):
+    """토큰(계정)별로 다른 받은편지함을 돌려주는 가짜 Gmail HTTP 클라이언트."""
+    from types import SimpleNamespace
+
+    class Client:
+        def __init__(self,**kw):
+            self.token=kw.get('headers',{}).get('Authorization','').replace('Bearer ','')
+        def __enter__(self):return self
+        def __exit__(self,*a):pass
+        def get(self,url,**kw):
+            if captured is not None:captured.append((self.token,url,kw.get('params',{})))
+            box=routes_by_token[self.token]
+            for m in box['messages']:
+                if url.endswith('/'+m['id']):
+                    return SimpleNamespace(status_code=200,raise_for_status=lambda:None,json=lambda m=m:m)
+            listing={'messages':[{'id':m['id']} for m in box['messages']]}
+            if box.get('next'):listing['nextPageToken']=box['next']
+            return SimpleNamespace(status_code=200,raise_for_status=lambda:None,json=lambda:listing)
+    return Client
+
+
+def test_sync_skips_send_only_account_and_uses_readable(setup,monkeypatch):
+    """검수 재현: 오래된 발송 전용(gmail.send) 계정 + 새 읽기(readonly) 계정
+    혼재 시, 예전 LIMIT 1 선택은 발송 계정을 골라 409였다. 이제 읽기 계정으로
+    동기화되고 발송 전용 계정은 건드리지 않으며, 발송은 여전히 승인(선착)
+    계정을 쓴다(읽기 계정으로 우회 금지)."""
+    import httpx
+    c,db,h,calls=setup
+    with db() as conn:
+        # 기본 시드 sender@ = 발송 전용(먼저 연결됨)
+        conn.execute("UPDATE gmail_accounts SET scopes='https://www.googleapis.com/auth/gmail.send openid email',connected_at=now()-interval '30 days' WHERE email='sender@example.com'")
+        conn.execute("INSERT INTO gmail_accounts(brand_id,email,scopes) VALUES('real','reader@example.com',%s)",(gmail.SCOPES,))
+    monkeypatch.setattr(gmail,'_refresh_if_needed',lambda conn,a:'tok-'+a['email'])
+    monkeypatch.setattr(httpx,'Client',_fake_client({'tok-reader@example.com':{'messages':[_gmail_msg('mx1')]}}))
+    r=c.post('/brands/real/gmail/sync',headers=h)
+    assert r.status_code==200 and r.json()['imported']==1
+    assert r.json()['accounts']==[{'email':'reader@example.com','imported':1,'error':''}]
+    with db() as conn:
+        reader=conn.execute("SELECT * FROM gmail_accounts WHERE email='reader@example.com'").fetchone()
+        sender=conn.execute("SELECT * FROM gmail_accounts WHERE email='sender@example.com'").fetchone()
+        msg=conn.execute("SELECT gmail_account_id FROM mail_messages WHERE gmail_message_id='mx1'").fetchone()
+    assert msg['gmail_account_id']==reader['account_id']
+    assert reader['synced_at'] is not None and reader['sync_error']==''
+    # 발송 전용 계정은 동기화가 손대지 않는다 (커서·오류·스코프·상태 불변)
+    assert sender['synced_at'] is None and sender['sync_error']==''
+    assert sender['scopes'].startswith('https://www.googleapis.com/auth/gmail.send')
+    assert sender['state']=='connected'
+    # 발송 계정 선택은 그대로: 승인(선착) 계정 sender@ — 읽기 계정으로 우회 안 함
+    with db() as conn:
+        pick=conn.execute("SELECT email FROM gmail_accounts WHERE brand_id='real'"
+                          " AND state='connected' ORDER BY connected_at,account_id"
+                          " LIMIT 1").fetchone()
+    assert pick['email']=='sender@example.com'
+    from email import message_from_bytes
+    import base64 as b64
+    observed=[]
+    def post(url,**kw):
+        observed.append(message_from_bytes(b64.urlsafe_b64decode(kw['json']['raw'])))
+        from types import SimpleNamespace
+        return SimpleNamespace(status_code=200,json=lambda:{'id':'sent-id'})
+    monkeypatch.setattr(httpx,'post',post)
+    with db() as conn:
+        assert REAL_GMAIL_SEND(conn,'real','someone@example.test','제목','본문')
+    assert observed and observed[0]['From']=='sender@example.com'
+
+
+def test_sync_multiple_read_accounts_each_have_own_cursor(setup,monkeypatch):
+    """복수 읽기 계정: 각자 받은편지함을 가져오고 커서(sync_page_token)와
+    성공 기록이 계정별로 저장된다. 다음 동기화는 각자 커서에서 재개."""
+    import httpx
+    c,db,h,calls=setup
+    with db() as conn:
+        conn.execute("UPDATE gmail_accounts SET scopes=%s WHERE email='sender@example.com'",(gmail.SCOPES,))
+        conn.execute("INSERT INTO gmail_accounts(brand_id,email,scopes) VALUES('real','r2@example.com',%s)",(gmail.SCOPES,))
+    monkeypatch.setattr(gmail,'_refresh_if_needed',lambda conn,a:'tok-'+a['email'])
+    captured=[]
+    monkeypatch.setattr(httpx,'Client',_fake_client({
+        'tok-sender@example.com':{'messages':[_gmail_msg('m-a1',sender='A <a@ex.com>')],'next':'page-2'},
+        'tok-r2@example.com':{'messages':[_gmail_msg('m-b1',sender='B <b@ex.com>')]}},captured))
+    r=c.post('/brands/real/gmail/sync',headers=h).json()
+    assert r['imported']==2 and r['hasMore'] is True
+    with db() as conn:
+        a1=conn.execute("SELECT * FROM gmail_accounts WHERE email='sender@example.com'").fetchone()
+        a2=conn.execute("SELECT * FROM gmail_accounts WHERE email='r2@example.com'").fetchone()
+        rows=conn.execute("SELECT gmail_message_id,gmail_account_id FROM mail_messages ORDER BY gmail_message_id").fetchall()
+    assert a1['sync_page_token']=='page-2' and a2['sync_page_token']==''   # 계정별 커서
+    assert a1['synced_at'] and a2['synced_at'] and a1['sync_error']==a2['sync_error']==''
+    assert {x['gmail_message_id']:x['gmail_account_id'] for x in rows}=={'m-a1':a1['account_id'],'m-b1':a2['account_id']}
+    # 재동기화: 계정1은 자기 커서(page-2)에서 재개, 중복 없음
+    captured.clear()
+    r2=c.post('/brands/real/gmail/sync',headers=h).json()
+    assert r2['imported']==0
+    listing=[p for t,u,p in captured if t=='tok-sender@example.com' and u.endswith('/messages')]
+    assert listing and listing[0].get('pageToken')=='page-2'
+
+
+def test_sync_one_expired_account_does_not_block_others(setup,monkeypatch):
+    """한 읽기 계정 토큰 만료(갱신 실패)여도 다른 읽기 계정은 계속 동기화되고,
+    오류는 만료 계정에만 기록된다. 전 계정 실패면 502."""
+    import httpx
+    from fastapi import HTTPException as HX
+    c,db,h,calls=setup
+    with db() as conn:
+        conn.execute("UPDATE gmail_accounts SET scopes=%s WHERE email='sender@example.com'",(gmail.SCOPES,))
+        conn.execute("INSERT INTO gmail_accounts(brand_id,email,scopes) VALUES('real','ok@example.com',%s)",(gmail.SCOPES,))
+    def refresh(conn,a):
+        if a['email']=='sender@example.com':raise HX(502,'구글 토큰 갱신 실패 — 재연결이 필요합니다')
+        return 'tok-'+a['email']
+    monkeypatch.setattr(gmail,'_refresh_if_needed',refresh)
+    monkeypatch.setattr(httpx,'Client',_fake_client({'tok-ok@example.com':{'messages':[_gmail_msg('m-ok1')]}}))
+    r=c.post('/brands/real/gmail/sync',headers=h)
+    assert r.status_code==200 and r.json()['imported']==1
+    accounts={a['email']:a for a in r.json()['accounts']}
+    assert accounts['ok@example.com']['error']=='' and '갱신 실패' in accounts['sender@example.com']['error']
+    with db() as conn:
+        bad=conn.execute("SELECT sync_error FROM gmail_accounts WHERE email='sender@example.com'").fetchone()
+        good=conn.execute("SELECT sync_error,synced_at FROM gmail_accounts WHERE email='ok@example.com'").fetchone()
+    assert '갱신 실패' in bad['sync_error'] and good['sync_error']=='' and good['synced_at']
+    # 전 계정 실패 → 502 (오류는 각 계정에 기록)
+    monkeypatch.setattr(gmail,'_refresh_if_needed',lambda conn,a:(_ for _ in ()).throw(HX(502,'구글 토큰 갱신 실패 — 재연결이 필요합니다')))
+    assert c.post('/brands/real/gmail/sync',headers=h).status_code==502
+
+
 def test_gmail_import_is_idempotent_and_tenant_private(setup,monkeypatch):
     import base64,httpx
     from types import SimpleNamespace

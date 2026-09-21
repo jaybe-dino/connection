@@ -423,3 +423,57 @@ resolve의 billing advisory lock 미사용.
 ## 다음
 
 - Codex 추가 검수 지적 반영.
+
+---
+
+# 사이클 7 — Codex 6차 검수 반영: Gmail 수신 동기화 계정 선택 결함 (2026-09-21)
+
+## 지적 → 수정 내역
+
+**재현된 결함**: 같은 브랜드에 오래된 gmail.send 전용 연결 계정과 새
+gmail.readonly 연결 계정이 함께 있으면, gmail_sync.sync가
+`ORDER BY connected_at LIMIT 1`로 오래된 발송 전용 계정을 골라
+"받은 메일 권한이 필요합니다" 409 — 유효한 읽기 계정이 있어도
+자동 동기화(러너 포함)가 계속 실패.
+
+수정(gmail_sync.py + routes_gmail.py):
+- **읽기 계정만 대상**: 연결 계정 전체를 잠근 뒤 gmail.readonly 스코프가
+  있는 **모든** 계정을 순회 동기화. 발송 전용 계정은 선택하지도, 손대지도
+  않는다(커서·오류·스코프·상태 불변).
+- **계정별 격리**: 커서(sync_page_token)·synced_at·sync_error를 계정별로
+  기록. 한 계정의 토큰 만료·API 오류는 그 계정의 sync_error에만 남고
+  나머지 읽기 계정은 계속 진행. 전 읽기 계정 실패 시에만 502.
+  sync 응답에 계정별 결과(accounts[]) 포함. 엔드포인트의 "브랜드 전
+  계정 sync_error 덮어쓰기"도 제거(격리 유지). 브랜드 격리는 기존
+  brand_id 스코프·advisory lock(gmail-sync:<brand>) 그대로.
+- **발송 우회 금지**: send_via_brand_gmail의 승인 계정 선택 로직은
+  변경하지 않았다 — 읽기 스코프를 추가 요구하지 않고, 읽기 계정으로
+  발송을 우회하지도 않는다(테스트로 고정).
+
+## 검증 (사이클 7)
+
+- 신규 회귀 3종 (tests_billing/test_outreach.py, 외부 HTTP는 가짜
+  클라이언트 — 실계정 호출 없음):
+  - `test_sync_skips_send_only_account_and_uses_readable`: 검수 시나리오
+    그대로(오래된 send 전용 + 새 readonly) → 409가 아니라 읽기 계정으로
+    imported 1, 메시지의 gmail_account_id=읽기 계정, 발송 전용 계정 불변,
+    발송은 여전히 선착 승인 계정(From=sender@)으로 나감.
+  - `test_sync_multiple_read_accounts_each_have_own_cursor`: 읽기 계정
+    2개 각자 가져오기, 계정별 sync_page_token('page-2' vs '') 저장,
+    재동기화 시 각자 커서에서 재개(pageToken 전달 검증)·중복 0.
+  - `test_sync_one_expired_account_does_not_block_others`: 한 계정 갱신
+    실패(502 모사) → 나머지 계정 정상 수입, 오류는 만료 계정에만 기록,
+    전 계정 실패 시 502.
+- 전체: services/api **95 passed** / tests_billing **58 passed**
+  (기존 158개 전부 회귀 통과). 서버 로직만 변경(콘솔 JS 불변).
+- 실행 안 한 것(금지 준수): 실계정 발송·실 Google API 호출, 실결제,
+  새 보안권한 동의(스코프 요구 변화 없음), 비밀키 출력.
+
+## 운영 미검증
+
+실계정 다중 연결 상태의 운영 동기화(러너 GMAIL_OPS)는 여전히 운영
+크리덴셜·실계정에서만 확인 가능 — 기존 미검증 목록에 포함 유지.
+
+## 다음
+
+- Codex 추가 검수 지적 반영.

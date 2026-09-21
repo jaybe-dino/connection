@@ -536,9 +536,9 @@ def sync_gmail(brand_id: str, authorization: str = Header(default='')):
     if not u or u.get('otp')=='pending':raise HTTPException(401,'로그인이 필요합니다')
     _guard(brand_id,authorization,'')
     if _demo_mode():raise HTTPException(503,'실제 Google 계정 연결이 필요합니다')
+    # 계정별 오류는 gmail_sync.sync가 해당 계정 행에만 기록한다 —
+    # 여기서 브랜드 전 계정에 덮어쓰지 않는다(검수 반영: 계정별 격리).
     try:return gmail_sync.sync(brand_id)
-    except Exception as e:
-        message=e.detail if isinstance(e,HTTPException) else 'Gmail 동기화에 실패했습니다. 권한과 연결 상태를 확인해 주세요.'
-        with connect() as conn:
-            conn.execute("UPDATE gmail_accounts SET sync_error=%s WHERE brand_id=%s AND state='connected'",(message,brand_id))
-        raise HTTPException(e.status_code if isinstance(e,HTTPException) else 502,message)
+    except HTTPException:raise
+    except Exception:
+        raise HTTPException(502,'Gmail 동기화에 실패했습니다. 권한과 연결 상태를 확인해 주세요.')

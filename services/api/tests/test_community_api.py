@@ -104,16 +104,33 @@ def test_new_brand_default_cell_and_isolation(client, monkeypatch):
                        json={"text": "invade"},
                        headers=_bearer(t2)).status_code == 403
 
+    # 합류 전에는 멤버 0 (실시간 집계 — 저장된 고정값이 아님)
+    before = client.get("/community/my-cells", headers=_bearer(t1)).json()[0]
+    assert before["memberCount"] == 0 and before["verifiedCount"] == 0
+
     # 새 크리에이터: 합류한 브랜드 셀만 보이고 글도 그 셀에만 써진다
     ctok = _creator_token(client, "comm.new.creator@ex.com")
     ch = _bearer(ctok)
-    client.post("/me/join", json={"brand_id": "commnew1"}, headers=ch)
+    j = client.post("/me/join", json={"brand_id": "commnew1"},
+                    headers=ch).json()
     mine = client.get("/community/my-cells", headers=ch).json()
     assert [c["cellId"] for c in mine] == ["cell-commnew1-main"]
     assert client.post("/community/cells/cell-commnew1-main/messages",
                        json={"text": "첫 인사!"}, headers=ch).status_code == 200
     assert client.get("/community/cells/cell-commnew2-main/messages",
                       headers=ch).status_code == 403
+
+    # 멤버 수 = 실제 멤버십 집계: 합류 1명(미검증) → 검증 후 verified 1
+    after = client.get("/community/my-cells", headers=_bearer(t1)).json()[0]
+    assert after["memberCount"] == 1 and after["verifiedCount"] == 0
+    other = client.get("/community/my-cells", headers=_bearer(t2)).json()[0]
+    assert other["memberCount"] == 0                     # 브랜드 간 미혼입
+    monkeypatch.delenv("AUTH_REQUIRED")
+    client.post(f"/admin/creators/{j['creatorId']}/verify",
+                headers={"X-Admin-Id": "jay"})
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    verified = client.get("/community/my-cells", headers=_bearer(t1)).json()[0]
+    assert verified["memberCount"] == 1 and verified["verifiedCount"] == 1
 
 
 def test_translate_failure_preserves_original(client, monkeypatch):

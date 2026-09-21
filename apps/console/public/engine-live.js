@@ -1072,6 +1072,24 @@
   /* ── 크리에이터 표면: 매직링크 로그인 → 브랜드 PR 리스트 합류 → 내 멤버십.
         커뮤니티·캠페인 참여는 공개 전 — 과장 없이 준비 중으로 표기. ── */
   if(window.__SURFACE==='creator'){
+    // 검수 반영: demo.css 다크 테마(body #131218) 위에서 라이브 표면 텍스트가
+    // 안 보이던 문제 — 크리에이터 표면 전용으로 밝은 배경·본문/제목/링크
+    // 색을 명시한다(로그인 전후 공통, 이 표면에서만 주입되어 콘솔 등
+    // 다른 표면에는 영향 없음).
+    var crStyle=document.createElement('style');
+    crStyle.textContent='body{background:#f7f6f1!important;color:#22261f!important}'
+      +'.stage{display:block!important;overflow:auto!important;height:auto!important;min-height:calc(100vh - 1px)}'
+      +'#stage main{color:#22261f;line-height:1.8}'
+      +'#stage h1,#stage h2{color:#163f35}'
+      +'#stage a{color:#2f6b53}'
+      +'#stage p{color:#22261f}'
+      +'#stage .cc{background:#fff;border:1px solid #dadbd2;border-radius:12px;padding:16px;margin:12px 0;color:#22261f}'
+      +'#stage input{background:#fff;color:#22261f;border:1px solid #aebcb1;border-radius:6px;padding:8px;font:inherit}'
+      +'#stage .btn{background:#163f35;color:#fff;border:0;border-radius:8px;padding:10px 16px;cursor:pointer}'
+      +'#stage .cbt{background:#e8ece5;color:#163f35;border-radius:8px;padding:8px 12px;cursor:pointer;display:inline-block}'
+      +'#stage .cbt.no{background:transparent;color:#5a6560}'
+      +'@media(max-width:420px){#stage main{padding:16px!important;margin-top:24px!important}}';
+    document.head.appendChild(crStyle);
     var joinTarget=null, joinBrandInfo=null, myMemberships=null, magicSent=false;
     var commCells=null, commOpen=null;   // {cellId, name, msgs}
     var myCampaigns=null, myOffers=null;
@@ -1176,9 +1194,11 @@
       if(!commCells||!commCells.length)return '';
       var h='<h2 style="margin-top:26px">커뮤니티</h2>';
       if(!commOpen){
+        h+='<p style="font-size:11px;color:#5a6560;margin:2px 0 8px">멤버 = PR 리스트 합류 계정 · 검증 = 본인 확인 완료 (실시간 집계)</p>';
         h+=commCells.map(function(c){
           var lg=c.logoUrl?'<img src="'+c.logoUrl.replace(/"/g,'')+'" alt="" style="width:22px;height:22px;border-radius:6px;object-fit:cover;vertical-align:-5px;margin-right:6px">':'';
-          return '<div class="cc" style="cursor:pointer" onclick="commOpenCell(\''+c.cellId+'\',\''+esc(c.name).replace(/'/g,'')+'\')">'+lg+'<b>'+esc(c.brandName)+'</b> · '+esc(c.name)+' <span style="font-size:11px;color:#5a6560">멤버 '+c.memberCount+' · 열기 →</span></div>';
+          var meta=c.kind==='dm'?'1:1 대화':'멤버 '+c.memberCount+' · 검증 '+(c.verifiedCount||0);
+          return '<div class="cc" style="cursor:pointer" onclick="commOpenCell(\''+c.cellId+'\',\''+esc(c.name).replace(/'/g,'')+'\')">'+lg+'<b>'+esc(c.brandName)+'</b> · '+esc(c.name)+' <span style="font-size:11px;color:#5a6560">'+meta+' · 열기 →</span></div>';
         }).join('');
         return h;
       }

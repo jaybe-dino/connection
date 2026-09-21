@@ -98,12 +98,22 @@ def _member_or_owner(conn, claims: dict, cell: dict) -> str:
 @router.get("/my-cells")
 def my_cells(authorization: str = Header(default="")) -> list[dict]:
     claims = _actor(authorization)
+    # 멤버 수는 저장된 cells.member_count(레거시 데모 고정값)가 아니라
+    # 실시간 집계다(검수 반영): memberCount = 그 브랜드 PR 리스트 멤버십 수,
+    # verifiedCount = 그중 본인 확인(verified) 완료 크리에이터 수.
+    counts = (", (SELECT count(*) FROM memberships mm"
+              "   WHERE mm.brand_id=c.brand_id) AS live_members"
+              ", (SELECT count(*) FROM memberships mm"
+              "   JOIN creators cr USING (creator_id)"
+              "   WHERE mm.brand_id=c.brand_id AND cr.verified)"
+              "   AS live_verified")
     with connect() as conn:
         if claims.get("kind") == "creator":
             from .routes_identity import _ensure_creator_row
             cid = _ensure_creator_row(conn, claims)
             rows = conn.execute(
-                "SELECT c.*, b.name AS brand_name, b.logo_url FROM cells c"
+                "SELECT c.*, b.name AS brand_name, b.logo_url" + counts
+                + " FROM cells c"
                 " JOIN brands b USING (brand_id)"
                 " JOIN memberships m ON m.brand_id=c.brand_id"
                 " WHERE m.creator_id=%s"
@@ -112,17 +122,20 @@ def my_cells(authorization: str = Header(default="")) -> list[dict]:
                 " ORDER BY c.cell_id", (cid,)).fetchall()
         elif claims.get("kind") == "brand":
             rows = conn.execute(
-                "SELECT c.*, b.name AS brand_name, b.logo_url FROM cells c"
+                "SELECT c.*, b.name AS brand_name, b.logo_url" + counts
+                + " FROM cells c"
                 " JOIN brands b USING (brand_id)"
                 " WHERE c.brand_id=%s ORDER BY c.cell_id",
                 (claims.get("brand_id"),)).fetchall()
         else:
             rows = conn.execute(
-                "SELECT c.*, b.name AS brand_name, b.logo_url FROM cells c"
+                "SELECT c.*, b.name AS brand_name, b.logo_url" + counts
+                + " FROM cells c"
                 " JOIN brands b USING (brand_id) ORDER BY c.cell_id").fetchall()
     return [{"cellId": r["cell_id"], "brandId": r["brand_id"],
              "name": r["name"], "brandName": r["brand_name"],
-             "logoUrl": r["logo_url"], "memberCount": r["member_count"],
+             "logoUrl": r["logo_url"], "memberCount": r["live_members"],
+             "verifiedCount": r["live_verified"],
              "kind": "dm" if r["visibility"] == "dm" else "lounge"}
             for r in rows]
 

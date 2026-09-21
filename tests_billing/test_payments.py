@@ -30,6 +30,7 @@ def dbname():
         "INSERT INTO schema_migrations (name, applied_at) VALUES ('020_signup_price_5000.sql', '2020-06-01');"],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/022_restore_pre_5000_prices.sql')],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/024_signup_usage_audit.sql')],check=True,stdout=subprocess.DEVNULL)
+    subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/029_invoice_supplements.sql')],check=True,stdout=subprocess.DEVNULL)
     yield name
     subprocess.run(['dropdb',name],check=True)
 
@@ -212,6 +213,100 @@ def test_uncertain_price_rows_are_audited_not_changed(setup):
     out=client.post('/brands/real/billing/invoices',headers=h).json()['invoices']
     old=[x for x in out if x['period']=='2020-03']
     assert old and old[0]['amount']==50 and old[0]['quantity']==1
+
+
+def _admin_headers():
+    from api.auth import issue_jwt
+    return {'Authorization': 'Bearer ' + issue_jwt({'kind': 'admin',
+                                                    'sub': 'aud-admin'})}
+
+
+def _hold(db, creator_id):
+    """같은 달 사용량 1건을 감사 보류(미해결) 상태로 만든다."""
+    with db() as c:
+        c.execute("INSERT INTO signup_usage_audit (usage_id, reason, price_at_flag)"
+                  " SELECT usage_id, '검수 재현: 원단가 증거 확인 대기', unit_price"
+                  " FROM signup_usage WHERE creator_id=%s"
+                  " ON CONFLICT (usage_id) DO NOTHING", (creator_id,))
+        return c.execute("SELECT usage_id FROM signup_usage WHERE creator_id=%s",
+                         (creator_id,)).fetchone()['usage_id']
+
+
+def test_same_month_late_resolution_creates_supplement(setup):
+    """검수 재현(4차): 같은 달(2026-01) 2건 중 1건 감사 보류 → 선청구(1건)
+    → 결제(paid) → 보류건 50원 확정 → 재조회. 기존 paid 청구서는 불변으로
+    보존되고, 같은 월의 추가 청구서(seq>0)가 생성되며, 반복 호출에도
+    중복·누락 과금이 없어야 한다."""
+    client, db, h, _ = setup
+    uid = _hold(db, 'c1')
+
+    # ① 선청구: 보류건 제외 → 2026-01 본청구 1건 5,000원
+    first = invoice(client, h)
+    assert first['quantity'] == 1 and first['amount'] == 5000
+    assert first['period'] == '2026-01' and not first['supplement']
+
+    # ② 결제 완료 상태 모사(실결제 아님) — 발행·결제분 불변성 검증용
+    with db() as c:
+        c.execute("UPDATE signup_invoices SET status='paid', paid_at=now()"
+                  " WHERE invoice_id=%s", (first['id'],))
+
+    # ③ 보류건을 증거와 함께 50원으로 확정
+    r = client.post(f'/admin/usage-audit/{uid}/resolve',
+                    json={'unit_price': 50,
+                          'evidence': '가입 당시 도입가 50원 — 정책 이력 확인'},
+                    headers=_admin_headers())
+    assert r.status_code == 200
+
+    # ④ 재조회: UniqueViolation 없이 같은 월 추가 청구서가 생긴다
+    out = client.post('/brands/real/billing/invoices', headers=h).json()['invoices']
+    jan = [x for x in out if x['period'] == '2026-01']
+    assert len(jan) == 2
+    orig = next(x for x in jan if x['id'] == first['id'])
+    assert (orig['amount'], orig['quantity'], orig['status'],
+            orig['seq']) == (5000, 1, 'paid', 0)          # 기존 청구서 불변
+    supp = next(x for x in jan if x['id'] != first['id'])
+    assert supp['supplement'] and supp['seq'] == 1
+    assert supp['quantity'] == 1 and supp['amount'] == 50 and supp['status'] == 'open'
+    assert sum(x['amount'] for x in jan) == 5050          # 기존+추가 정확, 중복 없음
+
+    # ⑤ 반복 호출 멱등: 청구서 수·금액 그대로
+    for _ in range(2):
+        out2 = client.post('/brands/real/billing/invoices',
+                           headers=h).json()['invoices']
+        jan2 = [x for x in out2 if x['period'] == '2026-01']
+        assert len(jan2) == 2
+        assert sorted(x['amount'] for x in jan2) == [50, 5000]
+    # 모든 사용량이 정확히 한 청구서에 연결됐다
+    with db() as c:
+        n = c.execute("SELECT count(*) n FROM signup_usage"
+                      " WHERE brand_id='real' AND invoice_id IS NULL"
+                      " AND verified_at < '2026-02-01'").fetchone()['n']
+    assert n == 0
+
+
+def test_processing_invoice_untouched_by_supplement(setup):
+    """processing(결제 진행 중) 청구서도 지연 확정 추가 청구에서 불변."""
+    client, db, h, _ = setup
+    uid = _hold(db, 'c2')
+    first = invoice(client, h)                    # c1만 본청구
+    with db() as c:
+        c.execute("UPDATE signup_invoices SET status='processing', tid='hold-tid'"
+                  " WHERE invoice_id=%s", (first['id'],))
+    assert client.post(f'/admin/usage-audit/{uid}/resolve',
+                       json={'unit_price': 5000,
+                             'evidence': '검증 시점 정책 단가 5,000원 확인'},
+                       headers=_admin_headers()).status_code == 200
+    out = client.post('/brands/real/billing/invoices', headers=h).json()['invoices']
+    jan = [x for x in out if x['period'] == '2026-01']
+    assert len(jan) == 2
+    orig = next(x for x in jan if x['id'] == first['id'])
+    assert orig['status'] == 'processing' and orig['amount'] == 5000
+    supp = next(x for x in jan if x['id'] != first['id'])
+    assert supp['seq'] == 1 and supp['amount'] == 5000
+    with db() as c:
+        row = c.execute("SELECT status, tid FROM signup_invoices"
+                        " WHERE invoice_id=%s", (first['id'],)).fetchone()
+    assert row == {'status': 'processing', 'tid': 'hold-tid'}
 
 
 def test_decimal_unit_prices_summed_exactly(setup):

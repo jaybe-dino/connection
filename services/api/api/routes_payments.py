@@ -31,6 +31,7 @@ def guard(brand, authorization, key):
 def invoice_out(row):
     return {'id': row['invoice_id'], 'period': row['period'].strftime('%Y-%m'),
             'quantity': row['quantity'], 'amount': row['amount'], 'status': row['status'],
+            'seq': row['seq'], 'supplement': row['seq'] > 0,
             'cardPayable': row['amount'] >= 1000}
 
 
@@ -46,14 +47,28 @@ def close_months(conn, brand):
         "count(*) AS quantity, sum(unit_price) AS amount FROM signup_usage WHERE brand_id=%s AND invoice_id IS NULL "
         "AND verified_at < %s " + audit_filter + "GROUP BY 1 ORDER BY 1", (brand, cutoff)).fetchall()
     for group in groups:
+        # 같은 월에 이미 발행분이 있으면(감사 보류 후 확정 등) 기존 청구서는
+        # 절대 수정하지 않고 '추가 청구'(seq>0)로 발행한다. brand 단위
+        # advisory lock 아래라 max(seq) 경쟁이 없고, 사용량 행에 invoice_id를
+        # 같은 트랜잭션에서 채우므로 반복 호출에도 중복 청구가 없다.
+        seq = conn.execute(
+            'SELECT COALESCE(MAX(seq),-1)+1 AS s FROM signup_invoices '
+            'WHERE brand_id=%s AND period=%s',
+            (brand, group['period'])).fetchone()['s']
         iid = 'PRLIST_' + uuid.uuid4().hex[:24]
-        conn.execute('INSERT INTO signup_invoices(invoice_id,brand_id,period,quantity,amount) '
-                     'VALUES(%s,%s,%s,%s,%s)',
-                     (iid, brand, group['period'], group['quantity'], group['amount']))
+        conn.execute('INSERT INTO signup_invoices(invoice_id,brand_id,period,quantity,amount,seq) '
+                     'VALUES(%s,%s,%s,%s,%s,%s)',
+                     (iid, brand, group['period'], group['quantity'], group['amount'], seq))
         conn.execute("UPDATE signup_usage SET invoice_id=%s WHERE brand_id=%s AND invoice_id IS NULL "
                      "AND date_trunc('month',verified_at AT TIME ZONE 'Asia/Seoul')::date=%s "
                      + audit_filter,
                      (iid, brand, group['period']))
+        if seq > 0:
+            ledger_append(conn, 'system', 'INVOICE_SUPPLEMENT_CREATED', iid,
+                          {'brand': brand,
+                           'period': group['period'].strftime('%Y-%m'),
+                           'quantity': group['quantity'],
+                           'amount': group['amount'], 'seq': seq})
 
 
 @router.post('/brands/{brand_id}/billing/invoices')
@@ -87,7 +102,9 @@ def checkout(brand_id: str, invoice_id: str, authorization: str = Header(default
     if row['status'] != 'open':
         raise HTTPException(409, '이미 처리 중이거나 결제된 청구서입니다')
     return {'clientId': nicepay.client_key(), 'method': 'card', 'orderId': invoice_id,
-            'amount': row['amount'], 'goodsName': 'theprlist ' + row['period'].strftime('%Y-%m') + ' 가입 이용료',
+            'amount': row['amount'],
+            'goodsName': ('theprlist ' + row['period'].strftime('%Y-%m') + ' 가입 이용료'
+                          + (' 추가분' if row['seq'] else '')),
             'returnUrl': RETURN_URL}
 
 

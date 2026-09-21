@@ -48,7 +48,7 @@
     if (!rows.length) return '<p>마감된 월의 청구서가 없습니다.</p>';
     var labels = {open:'결제 대기', processing:'결제 확인 중', paid:'결제 완료', review:'거래 확인 필요'};
     return '<h3>월별 청구서</h3>' + rows.map(function (i) {
-      return '<div style="padding:12px;border-bottom:1px solid #ddd">' + i.period + ' · ' + Number(i.quantity) + '명 · ₩' + Number(i.amount).toLocaleString() + ' (부가세 포함) · ' + (labels[i.status] || '확인 중') + (i.status === 'open' && !i.cardPayable ? ' · 카드 최소금액 1,000원 미만' : '') +
+      return '<div style="padding:12px;border-bottom:1px solid #ddd">' + i.period + (i.supplement ? ' <b style="font-size:11px;color:#8a6d3b">추가분</b>' : '') + ' · ' + Number(i.quantity) + '명 · ₩' + Number(i.amount).toLocaleString() + ' (부가세 포함) · ' + (labels[i.status] || '확인 중') + (i.status === 'open' && !i.cardPayable ? ' · 카드 최소금액 1,000원 미만' : '') +
         (i.status === 'open' && billingConfigured && i.cardPayable ? ' <button class="btn" onclick="paySignupInvoice(\'' + i.id + '\')">카드 결제</button>' : '') +
         (i.status === 'processing' || i.status === 'review' ? ' <button class="btn line" onclick="checkSignupInvoice(\'' + i.id + '\')">거래 확인</button>' : '') + '</div>';
     }).join('') + (billingConfigured ? '' : '<p>결제사 연결 설정 중입니다. 청구 내역은 보관됩니다.</p>');

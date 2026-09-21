@@ -310,3 +310,62 @@
 ## 다음
 
 - Codex 4차 검수 지적 반영, 정산(대금 지급) 정책·화면.
+
+---
+
+# 사이클 5 — Codex 4차 검수 반영: 지연 확정 사용량 추가 청구 (2026-09-21)
+
+## 지적 → 수정 내역
+
+**같은 월 선청구 후 감사 확정 시 UniqueViolation**
+(재현: 2026-01 사용량 2건 중 1건 감사 보류 → 월마감이 나머지 1건 청구 →
+보류건 50원 확정 → 재조회 시 close_months INSERT가
+signup_invoices_brand_id_period_key 위반으로 실패)
+
+- **029_invoice_supplements.sql**: signup_invoices에 `seq`(기본 0) 추가,
+  UNIQUE(brand_id,period) 제거 → **UNIQUE(brand_id,period,seq)**.
+  seq=0 본청구, 1부터 지연 확정분 '추가 청구'. 금액 검증은 012의
+  CHECK(amount>0) 유지(단가 혼재 허용). 운영 DB에는 배포 시 auto-apply.
+- **close_months**: 월 그룹마다 `COALESCE(MAX(seq),-1)+1`로 다음 seq를 정해
+  새 청구서만 INSERT — **발행·결제된 청구서는 어떤 상태(paid/processing/
+  review)든 절대 수정하지 않는다**. 기존 brand 단위 advisory lock이 seq
+  산정과 INSERT를 직렬화(동시성)하고, 사용량 행의 invoice_id 연결이 같은
+  트랜잭션에서 일어나므로 반복 호출에도 중복·누락 과금이 없다.
+  추가 청구 발행은 원장에 `INVOICE_SUPPLEMENT_CREATED`로 기록.
+- 응답에 `seq`/`supplement` 노출, 카드결제 goodsName에 '추가분' 표기,
+  콘솔 청구 목록에 '추가분' 배지. 추가 청구서도 기존 결제·대사 흐름
+  (1,000원 미만 카드 차단 포함)을 그대로 따른다.
+
+## 검증 (사이클 5)
+
+- 신규 회귀 2종 (tests_billing/test_payments.py, 검수 시나리오 그대로):
+  - `test_same_month_late_resolution_creates_supplement`: 같은 달 2건 중
+    1건 보류 → 선청구 5,000원 → **paid 처리(모사)** → 보류건 50원 증거 확정
+    → 재조회: 기존 청구서 (5000,1,paid,seq0) 불변 + 추가 청구서 (50,1,open,
+    seq1) 생성, 월 합계 5,050원 정확, 재조회 2회 반복에도 청구서 2장 그대로
+    (멱등), 대상 사용량 전부 정확히 한 청구서에 연결.
+  - `test_processing_invoice_untouched_by_supplement`: processing+tid
+    청구서도 status·tid 불변, 추가 청구서만 생성.
+- 전체: services/api **95 passed** / tests_billing **53 passed**,
+  프론트 재빌드 후 E2E 사이클3 15체크 + 사이클2 9체크 재통과.
+- 로컬 신선 DB에서 029 auto-apply 확인: seq 컬럼·새 UNIQUE 제약·
+  schema_migrations 등록 확인(health ok).
+- 실행 안 한 것(금지 준수): 실카드 결제(paid는 상태 모사), 외부 수신자 발송,
+  새 보안권한 동의, 운영 러너 기동, 비밀키 출력.
+
+## 오픈 전 미검증 항목 (5회 사이클 도달 ≠ 오픈 완료 — 별도 확인 필요)
+
+1. **실배포 반영**: Railway 배포 후 /health(029 적용)·기존 운영 청구서의
+   seq=0 기본값·콘솔 청구 화면 확인. (컨테이너 egress 제한으로 직접 확인 불가)
+2. **NICEpay 실거래**: 승인·취소·대사(reconcile/_reconcile_tick)는 운영
+   크리덴셜 + 소액 실거래 승인 전까지 미검증. 추가 청구서 결제도 동일.
+3. **브랜드별 Gmail 자동화**: 실계정 OAuth 동의 후 수신 동기화 폴링·발송
+   큐 재개·워밍업 한도의 운영 동작 미검증(로컬은 모사만).
+4. **과금 감사 운영 실측**: 운영 DB의 signup_usage_audit 대상 행 확인·증거
+   기반 확정은 어드민이 직접 수행해야 함(GET /admin/usage-audit).
+5. **모바일 실기기**: 크리에이터 표면(지원·오퍼·DM·커뮤니티)의 iOS/Android
+   실기기 브라우저 확인 미수행(뷰포트 축소 확인만).
+
+## 다음
+
+- Codex 5차 검수 지적 반영, 위 미검증 항목의 운영 확인 지원.

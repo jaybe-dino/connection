@@ -309,6 +309,106 @@ def test_processing_invoice_untouched_by_supplement(setup):
     assert row == {'status': 'processing', 'tid': 'hold-tid'}
 
 
+def test_concurrent_resolve_during_close_no_lost_billing(setup):
+    """검수 재현(5차, 2연결+Event barrier): close_months가 집계를 마친 순간
+    별도 연결에서 보류건을 50원 확정 → 재개. 잠금 순서 통일로 확정이 마감
+    커밋 뒤로 밀리고, 청구서에는 집계에 포함된 행만 정확히 연결돼
+    금액=연결합계가 항상 일치하며 50원은 다음 마감의 추가 청구로 잡힌다."""
+    import threading
+    import time as _time
+
+    from api import routes_payments as rp
+    client, db, h, _ = setup
+    uid = _hold(db, 'c1')
+
+    orig = rp._collect_billable
+    collected, proceed = threading.Event(), threading.Event()
+
+    def paused(conn, brand, cutoff):
+        rows = orig(conn, brand, cutoff)
+        collected.set()               # 집계 완료 — 이 시점에 경쟁 확정 시도
+        proceed.wait(timeout=10)
+        return rows
+
+    results = {}
+
+    def close_call():
+        results['close'] = client.post('/brands/real/billing/invoices',
+                                       headers=h).status_code
+
+    def resolve_call():
+        collected.wait(timeout=10)
+        results['resolve'] = client.post(
+            f'/admin/usage-audit/{uid}/resolve',
+            json={'unit_price': 50,
+                  'evidence': '경합 재현: 마감 집계 직후 별도 연결 확정'},
+            headers=_admin_headers()).status_code
+
+    rp._collect_billable = paused
+    try:
+        ta = threading.Thread(target=close_call)
+        tb = threading.Thread(target=resolve_call)
+        ta.start(); tb.start()
+        assert collected.wait(timeout=10)
+        _time.sleep(0.5)              # resolve가 billing 잠금에 블록될 시간
+        proceed.set()
+        ta.join(timeout=15); tb.join(timeout=15)
+    finally:
+        rp._collect_billable = orig
+    assert results['close'] == 200 and results['resolve'] == 200
+
+    with db() as c:
+        inv = c.execute("SELECT * FROM signup_invoices WHERE brand_id='real'"
+                        " ORDER BY seq").fetchall()
+        assert len(inv) == 1
+        assert (inv[0]['quantity'], inv[0]['amount'], inv[0]['seq']) == (1, 5000, 0)
+        linked = c.execute(
+            'SELECT count(*) n, COALESCE(sum(unit_price),0) s FROM signup_usage'
+            ' WHERE invoice_id=%s', (inv[0]['invoice_id'],)).fetchone()
+        assert linked == {'n': 1, 's': 5000}      # 금액 = 연결 합계 (불일치 없음)
+
+    # 확정된 50원은 누락되지 않고 재조회에서 추가 청구로 발행된다
+    out = client.post('/brands/real/billing/invoices', headers=h).json()['invoices']
+    jan = [x for x in out if x['period'] == '2026-01']
+    assert sorted(x['amount'] for x in jan) == [50, 5000]
+    with db() as c:
+        left = c.execute("SELECT count(*) n FROM signup_usage"
+                         " WHERE brand_id='real' AND invoice_id IS NULL"
+                         " AND verified_at < '2026-02-01'").fetchone()['n']
+        pair = c.execute(
+            "SELECT i.invoice_id, i.amount, count(u.usage_id) n,"
+            " COALESCE(sum(u.unit_price),0) s FROM signup_invoices i"
+            " LEFT JOIN signup_usage u ON u.invoice_id=i.invoice_id"
+            " WHERE i.brand_id='real' GROUP BY 1,2").fetchall()
+    assert left == 0
+    assert all(p['amount'] == p['s'] and p['n'] > 0 for p in pair)
+
+
+def test_concurrent_month_close_single_invoice(setup):
+    """일반 동시 월마감: 두 연결이 동시에 마감해도 청구서는 한 번만,
+    금액·연결 모두 정확하다 (advisory lock 직렬화)."""
+    import threading
+    client, db, h, _ = setup
+    codes = []
+    threads = [threading.Thread(
+        target=lambda: codes.append(client.post(
+            '/brands/real/billing/invoices', headers=h).status_code))
+        for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=15)
+    assert codes == [200, 200]
+    with db() as c:
+        inv = c.execute("SELECT * FROM signup_invoices WHERE brand_id='real'").fetchall()
+        assert len(inv) == 1
+        assert (inv[0]['quantity'], inv[0]['amount']) == (2, 10000)
+        linked = c.execute(
+            'SELECT count(*) n, COALESCE(sum(unit_price),0) s FROM signup_usage'
+            ' WHERE invoice_id=%s', (inv[0]['invoice_id'],)).fetchone()
+    assert linked == {'n': 2, 's': 10000}
+
+
 def test_decimal_unit_prices_summed_exactly(setup):
     # 기록된 단가 그대로 합산(소급 인상 없음) 확인용 보조 검증
     client,db,h,_=setup

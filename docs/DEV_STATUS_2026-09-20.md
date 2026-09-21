@@ -369,3 +369,57 @@ signup_invoices_brand_id_period_key 위반으로 실패)
 ## 다음
 
 - Codex 5차 검수 지적 반영, 위 미검증 항목의 운영 확인 지원.
+
+---
+
+# 사이클 6 — Codex 5차 검수 반영: 마감-확정 경합의 누락 과금 (2026-09-21)
+
+## 지적 → 수정 내역
+
+**재현된 결함**: close_months의 집계 SELECT와 광범위 조건 UPDATE 사이에
+별도 연결의 admin resolve(50원 확정)가 끼어들면, 확정된 행이 UPDATE 조건을
+새로 통과해 "금액 5,000/1건" 청구서에 사용량 2건(5,050원)이 연결되고,
+50원은 invoice_id가 채워져 영구 누락. 원인 = 스냅샷 불일치 +
+resolve의 billing advisory lock 미사용.
+
+수정(두 겹 방어, routes_payments.py):
+1. **정확 연결**: 집계를 `_collect_billable()`로 분리 — 청구 대상 행을
+   `FOR UPDATE`로 잠가 usage_id 목록으로 가져오고, 청구서 발행 후
+   `UPDATE … WHERE usage_id = ANY(집계에 포함된 그 id들)`로만 연결.
+   조건 재평가가 없으므로 청구서 금액 = 연결 사용량 합계가 항상 성립.
+2. **잠금 순서 통일**: `billing_lock(conn, brand)` 공통 함수 —
+   close_months와 usage_audit_resolve가 **같은 브랜드 advisory lock을
+   같은 순서(advisory → 행 잠금)**로 획득. 마감 진행 중의 확정은 마감
+   커밋 뒤로 직렬화되고(그 뒤 미청구 행이므로 정상 확정 → 다음 조회에서
+   추가 청구), 이미 마감에 잡힌 행의 확정은 FOR UPDATE 대기 후
+   invoice_id를 보고 409. 교착 없음(두 경로 모두 advisory 선획득).
+
+## 검증 (사이클 6)
+
+- **2연결+Event barrier 회귀** `test_concurrent_resolve_during_close_no_lost_billing`
+  (검수 시나리오 그대로): `_collect_billable`를 barrier로 감싸 집계 직후
+  일시정지 → 별도 스레드/연결에서 resolve 실행 → 재개. 결과: 본청구
+  (5,000/1건/seq0)의 연결 사용량 정확히 {1건, 5,000원}, resolve는 잠금
+  대기 후 200, 재조회에서 50원 추가 청구 발행, 미청구 잔여 0,
+  **모든 청구서에서 amount = 연결 사용량 합계** 검증.
+- **일반 동시 월마감 회귀** `test_concurrent_month_close_single_invoice`:
+  두 스레드 동시 마감 → 둘 다 200, 청구서 정확히 1장(2건/10,000원),
+  이중 발행·이중 연결 없음.
+- **구버전 음성 대조(확증)**: 구 로직(광범위 UPDATE + resolve 무잠금)을
+  같은 barrier로 돌려 검수와 동일한 손상(청구서 5,000/1건 ↔ 연결 2건/
+  5,050원) 재현 확인 — 임시 파일로 실행 후 삭제(커밋 안 함), 새 회귀가
+  이 결함 계열을 실제로 잡는다는 증거.
+- 전체: services/api **95 passed** / tests_billing **55 passed**
+  (발행 청구서 불변·멱등·추가청구 회귀 전부 재통과), 신선 DB 기동 후
+  E2E 사이클3 15체크 재통과. 프론트 변경 없음(콘솔 JS 동일).
+- 실행 안 한 것(금지 준수): 실카드 결제, 외부 수신자 발송, 새 보안권한
+  동의, 운영 러너 기동, 비밀키 출력.
+
+## 오픈 전 미검증 (변동 없음 — 5회 도달해도 오픈완료 아님)
+
+과금 실거래(NICEpay)·운영 E2E(실배포 확인)·브랜드별 Gmail 실계정 자동화·
+모바일 실기기 — 사이클 5 목록과 동일하게 외부 확인 필요.
+
+## 다음
+
+- Codex 추가 검수 지적 반영.

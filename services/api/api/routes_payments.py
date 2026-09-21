@@ -35,40 +35,58 @@ def invoice_out(row):
             'cardPayable': row['amount'] >= 1000}
 
 
+# 단가 감사 미해결 행은 산입 제외 — 사람이 확정하기 전엔 청구하지 않는다.
+AUDIT_FILTER = ("AND NOT EXISTS (SELECT 1 FROM signup_usage_audit a "
+                "WHERE a.usage_id=signup_usage.usage_id AND a.resolved_at IS NULL) ")
+
+
+def billing_lock(conn, brand):
+    """브랜드 과금 직렬화 잠금 — 월마감과 가격 확정(resolve)이 같은 잠금을
+    같은 순서(advisory → 행)로 잡아 스냅샷 불일치·교착을 막는다."""
+    conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
+                 ('billing:' + brand,))
+
+
+def _collect_billable(conn, brand, cutoff):
+    """청구 대상 행을 FOR UPDATE로 잠가서 가져온다. 이후의 청구서 발행·연결은
+    정확히 이 usage_id들에만 적용된다(집계-연결 사이 경합 유입 차단)."""
+    return conn.execute(
+        "SELECT usage_id, unit_price,"
+        " date_trunc('month', verified_at AT TIME ZONE 'Asia/Seoul')::date AS period"
+        " FROM signup_usage WHERE brand_id=%s AND invoice_id IS NULL"
+        " AND verified_at < %s " + AUDIT_FILTER +
+        "ORDER BY usage_id FOR UPDATE", (brand, cutoff)).fetchall()
+
+
 def close_months(conn, brand):
     """Lazy month close; only completed Asia/Seoul months. No charges here."""
-    conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ('billing:' + brand,))
+    billing_lock(conn, brand)
     cutoff = datetime.now(ZoneInfo('Asia/Seoul')).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    # 단가 감사 미해결 행은 산입 제외 — 사람이 확정하기 전엔 청구하지 않는다.
-    audit_filter = ("AND NOT EXISTS (SELECT 1 FROM signup_usage_audit a "
-                    "WHERE a.usage_id=signup_usage.usage_id AND a.resolved_at IS NULL) ")
-    groups = conn.execute(
-        "SELECT date_trunc('month', verified_at AT TIME ZONE 'Asia/Seoul')::date AS period, "
-        "count(*) AS quantity, sum(unit_price) AS amount FROM signup_usage WHERE brand_id=%s AND invoice_id IS NULL "
-        "AND verified_at < %s " + audit_filter + "GROUP BY 1 ORDER BY 1", (brand, cutoff)).fetchall()
-    for group in groups:
+    rows = _collect_billable(conn, brand, cutoff)
+    by_month: dict = {}
+    for r in rows:
+        by_month.setdefault(r['period'], []).append(r)
+    for period in sorted(by_month):
+        month_rows = by_month[period]
+        quantity, amount = len(month_rows), sum(r['unit_price'] for r in month_rows)
         # 같은 월에 이미 발행분이 있으면(감사 보류 후 확정 등) 기존 청구서는
-        # 절대 수정하지 않고 '추가 청구'(seq>0)로 발행한다. brand 단위
-        # advisory lock 아래라 max(seq) 경쟁이 없고, 사용량 행에 invoice_id를
-        # 같은 트랜잭션에서 채우므로 반복 호출에도 중복 청구가 없다.
+        # 절대 수정하지 않고 '추가 청구'(seq>0)로 발행한다. billing_lock
+        # 아래라 max(seq) 경쟁이 없다.
         seq = conn.execute(
             'SELECT COALESCE(MAX(seq),-1)+1 AS s FROM signup_invoices '
-            'WHERE brand_id=%s AND period=%s',
-            (brand, group['period'])).fetchone()['s']
+            'WHERE brand_id=%s AND period=%s', (brand, period)).fetchone()['s']
         iid = 'PRLIST_' + uuid.uuid4().hex[:24]
         conn.execute('INSERT INTO signup_invoices(invoice_id,brand_id,period,quantity,amount,seq) '
                      'VALUES(%s,%s,%s,%s,%s,%s)',
-                     (iid, brand, group['period'], group['quantity'], group['amount'], seq))
-        conn.execute("UPDATE signup_usage SET invoice_id=%s WHERE brand_id=%s AND invoice_id IS NULL "
-                     "AND date_trunc('month',verified_at AT TIME ZONE 'Asia/Seoul')::date=%s "
-                     + audit_filter,
-                     (iid, brand, group['period']))
+                     (iid, brand, period, quantity, amount, seq))
+        # 조건 재평가가 아니라 집계에 포함된 바로 그 행들만 연결한다 —
+        # 청구서 금액과 연결 사용량 합계가 항상 일치한다.
+        conn.execute('UPDATE signup_usage SET invoice_id=%s WHERE usage_id = ANY(%s)',
+                     (iid, [r['usage_id'] for r in month_rows]))
         if seq > 0:
             ledger_append(conn, 'system', 'INVOICE_SUPPLEMENT_CREATED', iid,
-                          {'brand': brand,
-                           'period': group['period'].strftime('%Y-%m'),
-                           'quantity': group['quantity'],
-                           'amount': group['amount'], 'seq': seq})
+                          {'brand': brand, 'period': period.strftime('%Y-%m'),
+                           'quantity': quantity, 'amount': amount, 'seq': seq})
 
 
 @router.post('/brands/{brand_id}/billing/invoices')
@@ -241,6 +259,14 @@ def usage_audit_resolve(usage_id: int, body: AuditResolve,
                         x_admin_key: str = Header(default='')):
     actor = _require_admin_like(authorization, x_admin_key)
     with connect() as conn:
+        target = conn.execute('SELECT brand_id FROM signup_usage WHERE usage_id=%s',
+                              (usage_id,)).fetchone()
+        if not target:
+            raise HTTPException(404, '미해결 감사 항목이 없습니다')
+        # 월마감과 같은 잠금 순서(브랜드 billing advisory → 행 잠금) —
+        # 마감의 집계-발행 사이에 확정이 끼어들어 금액-연결이 어긋나는 경합과
+        # 교착을 모두 막는다. 진행 중인 마감이 있으면 그 커밋 후에 확정된다.
+        billing_lock(conn, target['brand_id'])
         a = conn.execute(
             'SELECT * FROM signup_usage_audit WHERE usage_id=%s'
             ' AND resolved_at IS NULL FOR UPDATE', (usage_id,)).fetchone()

@@ -23,10 +23,9 @@ def text_body(payload):
     return text[:20000]
 
 
-def _import_account(conn, brand, account):
+def _import_account(conn, brand, account, token):
     """한 계정의 받은편지함 한 페이지를 가져온다 — 커서(sync_page_token)는
     계정별로 저장·재개된다. (added, next_page_token) 반환."""
-    token=gmail._refresh_if_needed(conn,account)
     with httpx.Client(timeout=12,headers={'Authorization':'Bearer '+token}) as client:
         params={'q':'in:inbox newer_than:30d','maxResults':10}
         if account['sync_page_token']:params['pageToken']=account['sync_page_token']
@@ -73,8 +72,15 @@ def sync(brand):
         total,has_more,per=0,False,[]
         for account in readable:
             try:
-                added,more=_import_account(conn,brand,account)
-                conn.execute("UPDATE gmail_accounts SET sync_page_token=%s,synced_at=now(),sync_error='' WHERE account_id=%s",(more,account['account_id']))
+                # 토큰 갱신은 savepoint 밖 — 갱신 실패의 state='error' 기록이
+                # savepoint 롤백에 휩쓸리지 않는다.
+                token=gmail._refresh_if_needed(conn,account)
+                # 계정별 SAVEPOINT — 이 계정 처리 중 DB 오류가 나면 이 계정의
+                # 부분 삽입만 롤백되고, 바깥 트랜잭션은 살아 있어 오류 기록과
+                # 다음 계정 진행이 가능하다(검수 재현: SELECT 1/0 주입).
+                with conn.transaction():
+                    added,more=_import_account(conn,brand,account,token)
+                    conn.execute("UPDATE gmail_accounts SET sync_page_token=%s,synced_at=now(),sync_error='' WHERE account_id=%s",(more,account['account_id']))
                 total+=added;has_more=has_more or bool(more)
                 per.append({'email':account['email'],'imported':added,'error':''})
             except Exception as e:
@@ -82,6 +88,8 @@ def sync(brand):
                 msg=e.detail if isinstance(e,HTTPException) else f'동기화 실패({type(e).__name__}) — 연결 상태를 확인하세요'
                 conn.execute("UPDATE gmail_accounts SET sync_error=%s WHERE account_id=%s",(msg,account['account_id']))
                 per.append({'email':account['email'],'imported':0,'error':msg})
-        if all(p['error'] for p in per):
-            raise HTTPException(502,'읽기 계정 동기화에 모두 실패했습니다: '+per[-1]['error'])
+    # 여기서부터는 connect 블록 밖 = 트랜잭션 커밋 완료 — 전 계정 실패라도
+    # 계정별 sync_error 기록은 영속화된 뒤에 실패를 응답한다(검수 반영).
+    if all(p['error'] for p in per):
+        raise HTTPException(502,'읽기 계정 동기화에 모두 실패했습니다: '+per[-1]['error'])
     return {'imported':total,'hasMore':has_more,'windowDays':30,'accounts':per}

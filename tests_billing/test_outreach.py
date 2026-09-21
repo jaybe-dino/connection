@@ -315,9 +315,60 @@ def test_sync_one_expired_account_does_not_block_others(setup,monkeypatch):
         bad=conn.execute("SELECT sync_error FROM gmail_accounts WHERE email='sender@example.com'").fetchone()
         good=conn.execute("SELECT sync_error,synced_at FROM gmail_accounts WHERE email='ok@example.com'").fetchone()
     assert '갱신 실패' in bad['sync_error'] and good['sync_error']=='' and good['synced_at']
-    # 전 계정 실패 → 502 (오류는 각 계정에 기록)
-    monkeypatch.setattr(gmail,'_refresh_if_needed',lambda conn,a:(_ for _ in ()).throw(HX(502,'구글 토큰 갱신 실패 — 재연결이 필요합니다')))
+    # 전 계정 실패 → 502, 그리고 계정별 sync_error가 '커밋된 뒤' 실패 응답
+    # (검수 재현: 예전엔 with 안에서 raise → rollback으로 기록이 사라졌다)
+    monkeypatch.setattr(gmail,'_refresh_if_needed',lambda conn,a:(_ for _ in ()).throw(HX(401,'구글 토큰 갱신 실패 — 재연결이 필요합니다')))
     assert c.post('/brands/real/gmail/sync',headers=h).status_code==502
+    with db() as conn:
+        rows=conn.execute("SELECT email,sync_error FROM gmail_accounts"
+                          " WHERE brand_id='real' ORDER BY email").fetchall()
+    assert rows and all('갱신 실패' in r['sync_error'] for r in rows)   # 영속화됨
+
+
+def test_sync_db_error_rolls_back_partial_and_continues(setup,monkeypatch):
+    """검수 재현: 한 계정 처리 중 DB 오류(SELECT 1/0)로 트랜잭션이 abort돼도
+    계정별 savepoint 덕에 그 계정의 부분 삽입만 롤백되고, 오류 기록은 보존되며
+    다음 계정은 정상 진행된다. 장애 해소 후 재시도해도 중복이 없다."""
+    import httpx
+    from api import gmail_sync as gs
+    c,db,h,calls=setup
+    with db() as conn:
+        # sender@ = 먼저 연결된 읽기 계정(장애 주입 대상), good@ = 이후 연결
+        conn.execute("UPDATE gmail_accounts SET scopes=%s,connected_at=now()-interval '10 days' WHERE email='sender@example.com'",(gmail.SCOPES,))
+        conn.execute("INSERT INTO gmail_accounts(brand_id,email,scopes) VALUES('real','good@example.com',%s)",(gmail.SCOPES,))
+    monkeypatch.setattr(gmail,'_refresh_if_needed',lambda conn,a:'tok-'+a['email'])
+    monkeypatch.setattr(httpx,'Client',_fake_client({
+        'tok-sender@example.com':{'messages':[_gmail_msg('m-bad1',sender='B <bad@ex.com>')]},
+        'tok-good@example.com':{'messages':[_gmail_msg('m-good1',sender='G <good@ex.com>')]}}))
+    orig=gs._import_account
+    def flaky(conn,brand,account,token):
+        added,more=orig(conn,brand,account,token)          # 실삽입 후
+        if account['email']=='sender@example.com':
+            conn.execute('SELECT 1/0')                     # DB 오류 주입 → tx abort
+        return added,more
+    monkeypatch.setattr(gs,'_import_account',flaky)
+    r=c.post('/brands/real/gmail/sync',headers=h)
+    assert r.status_code==200 and r.json()['imported']==1  # good@만 성공
+    accounts={a['email']:a for a in r.json()['accounts']}
+    assert accounts['good@example.com']['error']==''
+    assert 'DivisionByZero' in accounts['sender@example.com']['error']
+    with db() as conn:
+        bad=conn.execute("SELECT * FROM gmail_accounts WHERE email='sender@example.com'").fetchone()
+        good=conn.execute("SELECT * FROM gmail_accounts WHERE email='good@example.com'").fetchone()
+        msgs=conn.execute("SELECT gmail_message_id,gmail_account_id FROM mail_messages ORDER BY gmail_message_id").fetchall()
+    # 장애 계정: 부분 삽입 롤백(그 계정 메시지 0) + 오류 기록 보존 + 커서 불변
+    assert 'DivisionByZero' in bad['sync_error'] and bad['synced_at'] is None
+    assert [m['gmail_message_id'] for m in msgs]==['m-good1']
+    assert msgs[0]['gmail_account_id']==good['account_id']
+    # 장애 해소 후 재시도: 장애 계정 메시지가 들어오고, 성공분 중복 없음
+    monkeypatch.setattr(gs,'_import_account',orig)
+    r2=c.post('/brands/real/gmail/sync',headers=h).json()
+    assert r2['imported']==1                                # m-bad1 1건만 추가
+    with db() as conn:
+        rows=conn.execute("SELECT gmail_message_id FROM mail_messages ORDER BY gmail_message_id").fetchall()
+        bad2=conn.execute("SELECT sync_error,synced_at FROM gmail_accounts WHERE email='sender@example.com'").fetchone()
+    assert [x['gmail_message_id'] for x in rows]==['m-bad1','m-good1']  # 중복 0
+    assert bad2['sync_error']=='' and bad2['synced_at'] is not None     # 회복 기록
 
 
 def test_gmail_import_is_idempotent_and_tenant_private(setup,monkeypatch):

@@ -477,3 +477,41 @@ gmail.readonly 연결 계정이 함께 있으면, gmail_sync.sync가
 ## 다음
 
 - Codex 추가 검수 지적 반영.
+
+---
+
+# 사이클 8 — Codex 7차 검수 반영: 동기화 오류 영속화·savepoint 격리 (2026-09-21)
+
+## 지적 → 수정 내역 (gmail_sync.py)
+
+1. **전 계정 실패 시 오류 기록 롤백**: 502를 `with connect()` 안에서 raise
+   → db.connect가 rollback → 계정별 sync_error가 사라졌다.
+   수정: 루프 종료 후 connect 블록을 정상 탈출(=커밋)한 **뒤에** 502를
+   raise — 계정별 오류가 영속화된 다음 실패를 응답한다.
+2. **계정 처리 중 DB 오류의 트랜잭션 전파**: 한 계정의 _import_account에서
+   DB 오류가 나면 트랜잭션 abort → except의 sync_error UPDATE도
+   InFailedSqlTransaction, 다음 계정 진행 불가.
+   수정: 계정별 처리(가져오기+커서 갱신)를 `conn.transaction()`
+   **SAVEPOINT**로 감쌈 — 그 계정의 부분 삽입만 롤백되고 바깥 트랜잭션은
+   유지되어 오류 기록·다음 계정 진행이 정상 동작. 토큰 갱신은 savepoint
+   밖에서 수행해 갱신 실패의 state='error' 기록이 롤백에 휩쓸리지 않는다.
+
+## 검증 (사이클 8 — 실계정 호출 없음, 전부 모사)
+
+- `test_sync_one_expired_account_does_not_block_others` 확장(전실패):
+  모든 읽기 계정 refresh가 HTTPException(401) → 응답 502 + **두 계정 모두
+  sync_error가 DB에 남아 있음**(영속화) 확인.
+- 신규 `test_sync_db_error_rolls_back_partial_and_continues`(부분 DB 실패,
+  검수 절차 그대로): 읽기 계정 2개, 첫 계정 import 직후 `SELECT 1/0` 주입 →
+  200 + 정상 계정 1건 수입, 장애 계정은 부분 삽입 0건(롤백)·오류 기록 보존·
+  커서 불변, 정상 계정 기록 무손상. 장애 해소 후 재시도 → 장애 계정 1건만
+  추가(중복 0), sync_error 비워지고 synced_at 기록(회복).
+- 부분 HTTP 실패·혼재·복수 커서 회귀(사이클 7)도 전부 재통과.
+- 전체: services/api **95 passed** / tests_billing **59 passed**.
+  서버 로직만 변경(콘솔 JS 불변).
+- 금지 준수: 실계정 호출·실발송·실결제·새 권한·비밀키 노출 없음.
+
+## 다음
+
+- Codex 재검수 지적 반영. 운영 미검증 목록(실배포·NICEpay 실거래·Gmail
+  실계정·모바일)은 변동 없음.

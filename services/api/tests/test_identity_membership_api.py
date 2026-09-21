@@ -128,14 +128,26 @@ def test_join_verify_bill_chain(client):
 
 def test_campaign_apply_uses_jwt_creator(client):
     tok = _creator_token(client, "apply.creator@ex.com")
-    r = client.post("/campaigns/cmp-1/apply",
+    # 멤버십 없이는 지원 불가(403) — 합류 후 본인 계정으로 지원된다
+    assert client.post("/campaigns/cmp-2/apply", json={"creator_id": "c-mai"},
+                       headers=_bearer(tok)).status_code == 403
+    client.post("/me/join", json={"brand_id": "glowlab"}, headers=_bearer(tok))
+    r = client.post("/campaigns/cmp-2/apply",
                     json={"creator_id": "c-mai"}, headers=_bearer(tok)).json()
     assert r["creatorId"] != "c-mai"          # 데모 ID가 아닌 본인 계정으로
+    assert r["myStatus"] == "applied"
     with _db() as conn:
         row = conn.execute(
-            "SELECT 1 FROM campaign_applications WHERE campaign_id='cmp-1'"
+            "SELECT 1 FROM campaign_applications WHERE campaign_id='cmp-2'"
             " AND creator_id=%s", (r["creatorId"],)).fetchone()
     assert row
+    # 재지원은 멱등 + 실제 상태 반환
+    r2 = client.post("/campaigns/cmp-2/apply",
+                     json={"creator_id": "x"}, headers=_bearer(tok)).json()
+    assert r2["alreadyApplied"] and r2["myStatus"] == "applied"
+    # 마감일(2026-09-15)이 지난 cmp-1은 409
+    assert client.post("/campaigns/cmp-1/apply", json={"creator_id": "x"},
+                       headers=_bearer(tok)).status_code == 409
 
 
 def test_memberships_listing_shows_brand_identity(client):

@@ -30,9 +30,10 @@ def _creator(conn, authorization: str) -> str:
     return _ensure_creator_row(conn, u)
 
 
-def _campaign(conn, brand: str, campaign_id: str) -> dict:
+def _campaign(conn, brand: str, campaign_id: str, lock: bool = False) -> dict:
     c = conn.execute(
-        "SELECT * FROM campaigns WHERE campaign_id=%s AND brand_id=%s",
+        "SELECT * FROM campaigns WHERE campaign_id=%s AND brand_id=%s"
+        + (" FOR UPDATE" if lock else ""),
         (campaign_id, brand)).fetchone()
     if not c:
         raise HTTPException(404, "이 브랜드의 캠페인이 아닙니다")
@@ -133,15 +134,28 @@ class SelectIn(BaseModel):
 @router.post("/brands/{brand}/campaigns/{campaign_id}/select")
 def select_creator(brand: str, campaign_id: str, body: SelectIn,
                    authorization: str = Header(default="")) -> dict:
-    """지원자 선정 + 수수료 제안 — 크리에이터가 agree 해야 합의 확정."""
+    """지원자 선정 + 수수료 제안 — 크리에이터가 agree 해야 합의 확정.
+
+    정책: 취소·보관 상태가 아닌 캠페인(open/closed)에서만 선정할 수 있고,
+    capacity>0이면 유효 선정(거절 제외) 수가 정원을 넘을 수 없다.
+    캠페인 행 잠금(FOR UPDATE)으로 동시 선정 경쟁을 직렬화한다."""
     _brand_guard(brand, authorization)
     with connect() as conn:
-        _campaign(conn, brand, campaign_id)
+        camp = _campaign(conn, brand, campaign_id, lock=True)
+        if camp["status"] not in ("open", "closed"):
+            raise HTTPException(409, f"선정할 수 없는 캠페인 상태({camp['status']})입니다")
         applied = conn.execute(
             "SELECT 1 FROM campaign_applications WHERE campaign_id=%s"
             " AND creator_id=%s", (campaign_id, body.creator_id)).fetchone()
         if not applied:
             raise HTTPException(409, "지원하지 않은 크리에이터는 선정할 수 없습니다")
+        if camp["capacity"] and camp["capacity"] > 0:
+            n = conn.execute(
+                "SELECT count(*) c FROM campaign_terms"
+                " WHERE campaign_id=%s AND state<>'declined'",
+                (campaign_id,)).fetchone()["c"]
+            if n >= camp["capacity"]:
+                raise HTTPException(409, f"정원({camp['capacity']}명)이 가득 찼습니다")
         t = conn.execute(
             "INSERT INTO campaign_terms (campaign_id, creator_id,"
             " commission_pct) VALUES (%s,%s,%s)"

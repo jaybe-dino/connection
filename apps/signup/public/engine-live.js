@@ -1089,7 +1089,7 @@
     window.crApply=function(cid){
       req('POST','/campaigns/'+cid+'/apply',{creator_id:'me'}).then(function(){
         toast('지원 완료','브랜드가 검토 후 선정하면 여기서 수수료 합의를 진행해요.');loadCreatorData();
-      }).catch(function(){toast('지원 실패','잠시 후 다시.');});
+      }).catch(function(e){toast('지원 실패',(e&&e.message)||'잠시 후 다시.');});
     };
     window.crAgree=function(cid,accept){
       var h=((document.getElementById('ofHandle_'+cid)||{}).value||'').trim();

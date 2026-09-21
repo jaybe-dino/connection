@@ -25,6 +25,22 @@ ALL_LOCALES = ["ko", "th", "en", "vi"]
 MAX_TRANSLATION_ATTEMPTS = 5
 
 
+def translation_complete(tr: dict, source_locale: str) -> bool:
+    """번역 완료 판정 — 즉시 경로와 러너가 같은 기준을 쓴다(검수 반영).
+
+    모든 대상 언어가 비어 있지 않게 존재해야 하고, 키 미설정 폴백 태그
+    ("[xx·번역대기] …")는 완료로 치지 않는다. 부분·빈 결과는 pending."""
+    for t in ALL_LOCALES:
+        if t == source_locale:
+            continue
+        v = (tr or {}).get(t)
+        if not v or not str(v).strip():
+            return False
+        if str(v).startswith(f"[{t}·번역대기]"):
+            return False
+    return True
+
+
 def ensure_default_cell(conn, brand_id: str, brand_name: str) -> str:
     """브랜드 기본 커뮤니티 셀을 멱등 생성 — 승인 직후·백필(026) 공용."""
     cell_id = f"cell-{brand_id}-main"
@@ -174,22 +190,18 @@ def post_message(cell_id: str, body: PostIn,
                                 "msgId": m["msg_id"]})
     tr, state = {}, "pending"
     try:
-        tr = ai.translate(body.text, body.locale, ALL_LOCALES)
-        state = "done"
+        tr = ai.translate(body.text, body.locale, ALL_LOCALES) or {}
+        # 빈 결과·대상 언어 누락·번역대기 폴백은 완료가 아니다 — 러너가 재시도
+        if translation_complete(tr, body.locale):
+            state = "done"
     except Exception:
         log.exception("번역 실패 — 원문은 저장됨, 러너가 재시도 (msg %s)",
                       m["msg_id"])
     with connect() as conn:
-        if state == "done":
-            conn.execute(
-                "UPDATE cell_messages SET translations=%s,"
-                " translation_state='done', translation_attempts=1"
-                " WHERE msg_id=%s",
-                (json.dumps(tr, ensure_ascii=False), m["msg_id"]))
-        else:
-            conn.execute(
-                "UPDATE cell_messages SET translation_attempts=1"
-                " WHERE msg_id=%s", (m["msg_id"],))
+        conn.execute(
+            "UPDATE cell_messages SET translations = translations || %s::jsonb,"
+            " translation_state=%s, translation_attempts=1 WHERE msg_id=%s",
+            (json.dumps(tr, ensure_ascii=False), state, m["msg_id"]))
     return {"msgId": m["msg_id"], "at": m["at"].isoformat(),
             "translations": tr, "translationState": state,
             "original": body.text}
@@ -201,22 +213,34 @@ def retry_pending_translations(limit: int = 10) -> dict:
     done = failed = 0
     with connect() as conn:
         rows = conn.execute(
-            "SELECT msg_id, original, original_locale, translation_attempts"
+            "SELECT msg_id, original, original_locale, translations,"
+            " translation_attempts"
             " FROM cell_messages WHERE translation_state='pending'"
             " ORDER BY at LIMIT %s FOR UPDATE SKIP LOCKED", (limit,)).fetchall()
         for r in rows:
+            terminal = r["translation_attempts"] + 1 >= MAX_TRANSLATION_ATTEMPTS
             try:
                 tr = ai.translate(r["original"], r["original_locale"],
-                                  ALL_LOCALES)
+                                  ALL_LOCALES) or {}
+                # 부분 결과는 병합해 보존하되, 완료 판정은 즉시 경로와 동일 기준
+                merged = {**(r["translations"] or {}), **tr}
+                complete = translation_complete(merged, r["original_locale"])
+                state = ("done" if complete
+                         else "failed" if terminal else "pending")
                 conn.execute(
                     "UPDATE cell_messages SET translations=%s,"
-                    " translation_state='done',"
+                    " translation_state=%s,"
                     " translation_attempts=translation_attempts+1"
                     " WHERE msg_id=%s",
-                    (json.dumps(tr, ensure_ascii=False), r["msg_id"]))
-                done += 1
+                    (json.dumps(merged, ensure_ascii=False), state,
+                     r["msg_id"]))
+                if complete:
+                    done += 1
+                elif terminal:
+                    failed += 1
+                    log.warning("번역 %s회 미완 — failed 확정 (msg %s, 원문 보존)",
+                                MAX_TRANSLATION_ATTEMPTS, r["msg_id"])
             except Exception:
-                terminal = r["translation_attempts"] + 1 >= MAX_TRANSLATION_ATTEMPTS
                 conn.execute(
                     "UPDATE cell_messages SET translation_attempts="
                     " translation_attempts+1, translation_state=%s"

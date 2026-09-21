@@ -1,5 +1,22 @@
 """내부 커뮤니티(/community/*) — 멤버십 가드·원문 보존 번역·격리."""
 
+import os
+
+import psycopg
+
+
+def _full_translate(text, src, targets):
+    """완전한 번역 결과 모사 — 외부 호출 없음."""
+    return {t: f"tr-{t}: {text}" for t in targets if t != src}
+
+
+def _drain_pending():
+    """이전 테스트가 남긴 pending을 done으로 정리 — 재시도 테스트 격리용."""
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+        conn.execute("UPDATE cell_messages SET translation_state='done'"
+                     " WHERE translation_state='pending'")
+        conn.commit()
+
 
 def _bearer(t):
     return {"Authorization": f"Bearer {t}"}
@@ -108,6 +125,7 @@ def test_translate_failure_preserves_original(client, monkeypatch):
     ctok = _creator_token(client, "comm.timeout@ex.com")
     ch = _bearer(ctok)
     client.post("/me/join", json={"brand_id": "glowlab"}, headers=ch)
+    _drain_pending()
 
     def _boom(text, src, targets):
         raise TimeoutError("simulated translation outage")
@@ -123,9 +141,9 @@ def test_translate_failure_preserves_original(client, monkeypatch):
     assert mine and mine[0]["translationState"] == "pending"
     assert mine[0]["translations"] == {}          # 가짜 번역을 만들지 않는다
 
-    # 장애 해제 → 러너 틱이 재시도해 done으로 회복
-    monkeypatch.undo()
-    r = comm.retry_pending_translations()
+    # 장애 해제(완전한 번역 반환) → 러너 틱이 재시도해 done으로 회복
+    monkeypatch.setattr(ai_mod, "translate", _full_translate)
+    r = comm.retry_pending_translations(limit=50)
     assert r["done"] >= 1
     msgs = client.get("/community/cells/cell-glowlab-th/messages",
                       headers=ch).json()
@@ -142,6 +160,7 @@ def test_translation_retry_gives_up_after_max(client, monkeypatch):
     ctok = _creator_token(client, "comm.failed@ex.com")
     ch = _bearer(ctok)
     client.post("/me/join", json={"brand_id": "glowlab"}, headers=ch)
+    _drain_pending()
 
     calls = {"n": 0}
     def _always_boom(text, src, targets):
@@ -161,6 +180,54 @@ def test_translation_retry_gives_up_after_max(client, monkeypatch):
     before = calls["n"]
     comm.retry_pending_translations()
     assert calls["n"] == before
+
+
+def test_partial_or_empty_translation_stays_pending(client, monkeypatch):
+    """검수 반영: 빈 결과·대상 언어 누락·번역대기 폴백은 done이 아니다.
+    부분 결과는 병합 보존되고, 완전한 결과가 오면 done으로 회복된다."""
+    from api import ai as ai_mod
+    from api import routes_community as comm
+
+    ctok = _creator_token(client, "comm.partial@ex.com")
+    ch = _bearer(ctok)
+    client.post("/me/join", json={"brand_id": "glowlab"}, headers=ch)
+    _drain_pending()
+
+    # ① 빈 결과({}) → 즉시 경로에서도 pending
+    monkeypatch.setattr(ai_mod, "translate", lambda *a: {})
+    p = client.post("/community/cells/cell-glowlab-th/messages", json={
+        "text": "부분 번역 원문", "locale": "ko"}, headers=ch).json()
+    assert p["translationState"] == "pending" and p["translations"] == {}
+
+    def _mine():
+        msgs = client.get("/community/cells/cell-glowlab-th/messages",
+                          headers=ch).json()
+        return [m for m in msgs if m["original"] == "부분 번역 원문"][0]
+
+    # ② 부분 결과(en만) → 저장은 되지만 여전히 pending
+    monkeypatch.setattr(ai_mod, "translate",
+                        lambda text, src, tg: {"en": "partial-en"})
+    r = comm.retry_pending_translations(limit=50)
+    assert r["done"] == 0
+    m = _mine()
+    assert m["translationState"] == "pending"
+    assert m["translations"].get("en") == "partial-en"
+
+    # ③ 번역대기 폴백 태그도 완료로 치지 않는다
+    monkeypatch.setattr(ai_mod, "translate", lambda text, src, tg: {
+        t: f"[{t}·번역대기] {text}" for t in tg if t != src})
+    r = comm.retry_pending_translations(limit=50)
+    assert r["done"] == 0
+    assert _mine()["translationState"] == "pending"
+
+    # ④ 회복: 완전한 결과 → done, 부분 결과는 새 값으로 병합·갱신
+    monkeypatch.setattr(ai_mod, "translate", _full_translate)
+    r = comm.retry_pending_translations(limit=50)
+    assert r["done"] >= 1
+    m = _mine()
+    assert m["translationState"] == "done"
+    assert set(m["translations"]) >= {"th", "en", "vi"}
+    assert m["translations"]["en"].startswith("tr-en:")
 
 
 def test_dm_private_between_creator_and_brand(client, monkeypatch):

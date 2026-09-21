@@ -141,6 +141,97 @@ def test_two_new_brands_full_campaign_journey(client, monkeypatch):
         assert any(e["type"] == ev and e["subject"] == cid for e in ledger), ev
 
 
+def _db_exec(sql, args=()):
+    import os
+
+    import psycopg
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+        conn.execute(sql, args)
+        conn.commit()
+
+
+def test_apply_server_side_guards(client, monkeypatch):
+    """검수 반영: 지원 시 캠페인 존재/모집 상태/마감일/멤버십을 서버가 검사,
+    재지원은 멱등이며 실제 상태를 반환한다."""
+    t = _approved_brand(client, "guardone", "가드원", "own@guardone.kr")
+    p = client.post("/brands/guardone/products", json={
+        "name": "가드 세럼"}, headers=_bearer(t)).json()
+    mk = lambda nm: client.post(
+        f"/brands/guardone/products/{p['productId']}/campaigns",
+        json={"name": nm}, headers=_bearer(t)).json()["campaignId"]
+    c_open, c_closed, c_late = mk("모집중"), mk("모집종료"), mk("마감경과")
+    _db_exec("UPDATE campaigns SET status='closed' WHERE campaign_id=%s",
+             (c_closed,))
+    _db_exec("UPDATE campaigns SET deadline=CURRENT_DATE-1 WHERE campaign_id=%s",
+             (c_late,))
+
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    ctok = _creator_token(client, "guard.creator@ex.com")
+    ch = _bearer(ctok)
+
+    # 멤버십 없는 크리에이터 → 403 (모집 중 캠페인이어도)
+    assert client.post(f"/campaigns/{c_open}/apply", json={"creator_id": "x"},
+                       headers=ch).status_code == 403
+    # 존재하지 않는 캠페인 → 404
+    assert client.post("/campaigns/cmp-none/apply", json={"creator_id": "x"},
+                       headers=ch).status_code == 404
+
+    client.post("/me/join", json={"brand_id": "guardone"}, headers=ch)
+    # 모집 종료 → 409, 마감일 경과 → 409
+    assert client.post(f"/campaigns/{c_closed}/apply", json={"creator_id": "x"},
+                       headers=ch).status_code == 409
+    assert client.post(f"/campaigns/{c_late}/apply", json={"creator_id": "x"},
+                       headers=ch).status_code == 409
+    # 정상 지원 → applied, 재지원 → 멱등 + 실제 상태
+    r1 = client.post(f"/campaigns/{c_open}/apply", json={"creator_id": "x"},
+                     headers=ch).json()
+    assert r1["myStatus"] == "applied" and not r1["alreadyApplied"]
+    r2 = client.post(f"/campaigns/{c_open}/apply", json={"creator_id": "x"},
+                     headers=ch).json()
+    assert r2["alreadyApplied"] and r2["myStatus"] == "applied"
+    # 선정 후 재지원 응답은 실제 상태(selected)를 반영
+    apps = client.get(f"/brands/guardone/campaigns/{c_open}/applicants",
+                      headers=_bearer(t)).json()
+    client.post(f"/brands/guardone/campaigns/{c_open}/select", json={
+        "creator_id": apps[0]["creatorId"], "commission_pct": 10},
+        headers=_bearer(t))
+    r3 = client.post(f"/campaigns/{c_open}/apply", json={"creator_id": "x"},
+                     headers=ch).json()
+    assert r3["alreadyApplied"] and r3["myStatus"] == "selected"
+
+
+def test_select_capacity_and_status_policy(client, monkeypatch):
+    """정원(capacity) 초과 선정 차단 + 취소 상태 캠페인 선정 차단."""
+    t = _approved_brand(client, "capone", "캡원", "own@capone.kr")
+    p = client.post("/brands/capone/products", json={
+        "name": "캡 세럼"}, headers=_bearer(t)).json()
+    cid = client.post(f"/brands/capone/products/{p['productId']}/campaigns",
+                      json={"name": "정원1 모집", "capacity": 1},
+                      headers=_bearer(t)).json()["campaignId"]
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    creators = []
+    for i in (1, 2):
+        ct = _creator_token(client, f"cap{i}@ex.com")
+        client.post("/me/join", json={"brand_id": "capone"},
+                    headers=_bearer(ct))
+        r = client.post(f"/campaigns/{cid}/apply", json={"creator_id": "x"},
+                        headers=_bearer(ct)).json()
+        creators.append(r["creatorId"])
+    ok = client.post(f"/brands/capone/campaigns/{cid}/select", json={
+        "creator_id": creators[0], "commission_pct": 10}, headers=_bearer(t))
+    assert ok.status_code == 200
+    # 정원 1명 초과 → 409
+    full = client.post(f"/brands/capone/campaigns/{cid}/select", json={
+        "creator_id": creators[1], "commission_pct": 10}, headers=_bearer(t))
+    assert full.status_code == 409 and "정원" in full.json()["detail"]
+    # 모집 종료(closed) 후에도 선정은 가능 정책 — 취소 상태에선 불가
+    _db_exec("UPDATE campaigns SET status='cancelled' WHERE campaign_id=%s",
+             (cid,))
+    bad = client.post(f"/brands/capone/campaigns/{cid}/select", json={
+        "creator_id": creators[1], "commission_pct": 10}, headers=_bearer(t))
+    assert bad.status_code == 409
+
+
 def test_me_campaign_routes_require_creator_jwt(client, monkeypatch):
     """allowlist로 열린 /me/캠페인 경로도 무토큰·브랜드 토큰은 401."""
     monkeypatch.setenv("AUTH_REQUIRED", "1")

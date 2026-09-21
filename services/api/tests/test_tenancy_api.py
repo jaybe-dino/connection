@@ -111,8 +111,8 @@ def test_legacy_boundary_allowlist(client, two_brands, monkeypatch):
     assert client.post("/me/join", json={"brand_id": "glowlab"},
                        headers=ch).status_code == 200
     assert client.get("/me/memberships", headers=ch).status_code == 200
-    assert client.post("/campaigns/cmp-1/apply", json={"creator_id": "x"},
-                       headers=ch).status_code == 200
+    assert client.post("/campaigns/cmp-2/apply", json={"creator_id": "x"},
+                       headers=ch).status_code == 200   # 멤버십·모집·마감 검사 통과
 
     # 검사 없는 경로는 크리에이터·브랜드 토큰으로도 차단 (관리자 전용 복구)
     btok = two_brands["glowlab"]

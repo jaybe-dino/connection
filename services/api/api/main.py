@@ -410,21 +410,50 @@ class Apply(BaseModel):
 @app.post("/campaigns/{campaign_id}/apply")
 def apply_campaign(campaign_id: str, body: Apply,
                    authorization: str = Header(default="")) -> dict:
-    """캠페인 지원 — 크리에이터 JWT가 있으면 본인 계정으로 지원(데모 ID 무시)."""
+    """캠페인 지원 — 크리에이터 JWT가 있으면 본인 계정으로 지원(데모 ID 무시).
+
+    서버 측 검사(검수 반영): 캠페인 존재(404) → 모집 상태·마감일(409) →
+    해당 브랜드 멤버십(403). 재지원은 멱등이며 실제 상태를 반환한다."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
     from . import auth as _auth
     from .routes_identity import _ensure_creator_row
     claims = _auth.current_user(authorization)
+    if claims and claims.get("otp") == "pending":
+        raise HTTPException(401, "2단계 인증을 완료해 주세요")
     if _auth.auth_required() and (not claims or claims.get("kind") != "creator"):
         # 운영 모드에선 크리에이터 본인 JWT로만 지원 가능 — 타인 명의 지원 차단
         raise HTTPException(401, "크리에이터 로그인이 필요합니다")
     with connect() as conn:
+        camp = conn.execute("SELECT * FROM campaigns WHERE campaign_id=%s",
+                            (campaign_id,)).fetchone()
+        if not camp:
+            raise HTTPException(404, "캠페인을 찾을 수 없습니다")
+        if camp["status"] != "open":
+            raise HTTPException(409, "모집이 종료된 캠페인입니다")
+        today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+        if camp["deadline"] and camp["deadline"] < today:
+            raise HTTPException(409, "지원 마감일이 지났습니다")
         cid = body.creator_id
         if claims and claims.get("kind") == "creator":
             cid = _ensure_creator_row(conn, claims)
-        conn.execute(
+        member = conn.execute(
+            "SELECT 1 FROM memberships WHERE creator_id=%s AND brand_id=%s",
+            (cid, camp["brand_id"])).fetchone()
+        if not member:
+            raise HTTPException(
+                403, "이 브랜드 PR 리스트 멤버만 지원할 수 있습니다 — 먼저 합류하세요")
+        ins = conn.execute(
             "INSERT INTO campaign_applications (campaign_id, creator_id)"
-            " VALUES (%s,%s) ON CONFLICT DO NOTHING", (campaign_id, cid))
-    return {"ok": True, "myStatus": "applied", "creatorId": cid}
+            " VALUES (%s,%s) ON CONFLICT DO NOTHING RETURNING creator_id",
+            (campaign_id, cid)).fetchone()
+        st = conn.execute(
+            "SELECT status FROM campaign_applications"
+            " WHERE campaign_id=%s AND creator_id=%s",
+            (campaign_id, cid)).fetchone()["status"]
+    return {"ok": True, "myStatus": st, "creatorId": cid,
+            "alreadyApplied": not ins}
 
 
 # ── 내 패스 (본인 수정 → 실시간 반영 + 원장) ─────────────────────

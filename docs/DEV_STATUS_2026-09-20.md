@@ -255,3 +255,58 @@
 
 - 정산(크리에이터 대금 지급) 화면·정책, 후보 추천→아웃리치 초안에 campaign
   terms 컨텍스트 연결 심화, Codex 3차 검수 지적 반영.
+
+---
+
+# 사이클 4 — Codex 3차 검수 반영 (2026-09-21)
+
+## 지적 → 수정 내역
+
+1. **지원 API 서버측 검사 부재 (미가입 200 / closed 200)**:
+   `POST /campaigns/{id}/apply`(main.py)가 순서대로 검사 —
+   OTP pending 401 → (AUTH_REQUIRED) 크리에이터 JWT 401 → 캠페인 존재 404 →
+   status≠open 409 → 마감일 경과(Asia/Seoul 기준, 마감일 당일까지 허용) 409 →
+   해당 브랜드 **멤버십** 없음 403. 재지원은 멱등(ON CONFLICT)이며 응답이
+   DB의 **실제 상태**(applied/selected/…)와 alreadyApplied를 반환.
+   - 기존 테스트 정합: 시드 cmp-1은 마감일(2026-09-15)이 이미 지나 409가
+     정답이 됨 — allowlist·JWT 테스트를 cmp-2(마감 9/30)로 옮기고, 미가입
+     403→합류→지원→재지원(실상태)→cmp-1 마감 409를 명시 검증.
+2. **선정 정원/상태 정책·동시성**: select가 캠페인 행을 FOR UPDATE로 잠근 뒤
+   상태(open/closed만 허용 — 취소·보관 409)와 capacity>0일 때 유효 선정 수
+   (declined 제외) < capacity를 검사. 중복 선정은 기존 ON CONFLICT 409 유지.
+   검증: `test_select_capacity_and_status_policy`(정원 1명 초과 409·cancelled
+   409), `test_apply_server_side_guards`(404/403/409/멱등/selected 반영).
+3. **불완전 번역이 done으로 저장**: `translation_complete(tr, source)` 공통
+   판정 신설 — 모든 대상 언어가 비어있지 않게 존재해야 하고 "[xx·번역대기]"
+   폴백 태그는 완료가 아님. **즉시 경로(post_message)와 러너 재시도가 같은
+   함수**를 사용. 부분 결과는 `translations || new`로 병합 보존하되 상태는
+   pending 유지, 재시도 한도 초과 시 failed(원문 보존). 키 없는 데모 폴백도
+   이제 pending으로 정직하게 표시된다(E2E 기대값 갱신).
+   검증(외부 호출 없음): `test_partial_or_empty_translation_stays_pending`
+   — {}→pending, en만→병합+pending, 폴백 태그→pending, 완전 결과→done·병합
+   갱신. 기존 장애 테스트는 회복 단계를 완전 결과 모사로 교체, 재시도 격리를
+   위해 pending 사전 정리(_drain_pending).
+
+## 증거 (사이클 4)
+
+- services/api **95 passed** / tests_billing **51 passed** (신규 3종 포함,
+  기존 146개 전부 회귀 통과)
+- Playwright E2E: 사이클3 15체크 + 사이클2 9체크 재통과(신규 빌드 dist,
+  DM 번역 상태는 키 없는 환경에서 pending으로 정직 표기).
+- UI: 지원 실패 시 서버 사유(멤버십/마감/모집종료)를 토스트로 그대로 표시.
+- 실행 안 한 것(금지 준수): 실카드 결제, 외부 수신자 발송, 새 보안권한 동의,
+  운영 러너 기동, 비밀키 출력.
+
+## 운영 미검증 (외부 확인 필요)
+
+- 배포 후: 크리에이터 JWT 없이/멤버십 없이 `/campaigns/{id}/apply` 호출이
+  401/403인지, closed·마감 경과 캠페인이 409인지 운영에서 재확인.
+- 운영 DB의 기존 pending/과거 done 메시지 상태는 그대로 두었다(소급 변경
+  없음). 새 메시지부터 완료 판정이 엄격해지며, ANTHROPIC 키가 없는 환경은
+  번역이 pending→(5회 후) failed로 남는다 — 운영에 키가 설정돼 있는지 확인.
+- 데모 시드 cmp-1(마감 9/15)은 의도적으로 만료 상태 — 데모에서 지원 버튼은
+  cmp-2/cmp-3 기준으로 확인.
+
+## 다음
+
+- Codex 4차 검수 지적 반영, 정산(대금 지급) 정책·화면.

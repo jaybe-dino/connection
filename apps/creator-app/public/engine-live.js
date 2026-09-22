@@ -910,7 +910,7 @@
     req('GET','/brands/'+b+'/campaigns').then(function(r){if(BRAND()!==b)return;brandCampaigns=r;if(window.__SURFACE==='brand')render();}).catch(function(){});}
   window.collabShow=function(cid){
     var owner=BRAND(),token=jwtGet();
-    return req('GET','/brands/'+owner+'/campaigns/'+cid+'/applicants').then(function(r){if(BRAND()!==owner||jwtGet()!==token)return;collabOpen={campaignId:cid,rows:r};loadProducts();render();})
+    return Promise.all([req('GET','/brands/'+owner+'/campaigns/'+cid+'/applicants'),req('GET','/brands/'+owner+'/campaigns')]).then(function(result){if(BRAND()!==owner||jwtGet()!==token)return;collabOpen={campaignId:cid,rows:result[0]};brandCampaigns=result[1];render();})
       .catch(function(){toast('조회 실패','잠시 후 다시.');});
   };
   window.collabSelect=function(cid,creatorId){

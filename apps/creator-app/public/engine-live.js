@@ -891,11 +891,12 @@
   window.authMagic = function () {
     var em = (document.getElementById("axEmail") || {}).value || "";
     req("POST", "/auth/magic", { email: em.trim() }).then(function (r) {
+      if(!r.demoLink&&r.sent!==true)throw new Error(r.hint||"로그인 메일을 발송하지 못했습니다.");
       authPanel(null);
       toast("메일을 확인하세요", r.demoLink
         ? "데모 모드 — <a href='" + r.demoLink.replace("https://theprlist.net/", location.origin + "/") + "'>이 링크로 로그인</a> (15분 유효)"
         : "받은편지함의 로그인 링크를 눌러주세요 (15분 유효).");
-    }).catch(function () { toast("전송 실패", "이메일 주소를 확인해 주세요."); });
+    }).catch(function (e) { toast("전송 실패", mailEscape(e.message||"이메일 주소를 확인해 주세요.")); });
   };
 
   /* Public console only exposes workflows backed by durable server results. */
@@ -1217,13 +1218,21 @@
       h+='<div style="display:flex;gap:6px;margin-top:12px"><input id="commText" placeholder="내 언어('+lang+')로 쓰면 멤버 언어로 번역돼요 — 원문도 함께 보관" style="flex:1;padding:8px"><span class="cbt" onclick="commPost()">게시</span></div></div>';
       return h;
     }
+    var creatorMagicBusy=false;
     window.creatorMagic=function(){
-      var v=((document.getElementById('crEmail')||{}).value||'').trim();
-      if(v.indexOf('@')<0)return toast('이메일','주소를 확인해 주세요.');
-      req('POST','/auth/magic',{email:v}).then(function(r){
-        magicSent=true;render();
+      if(creatorMagicBusy)return;
+      var input=document.getElementById('crEmail'),v=((input||{}).value||'').trim();
+      var status=document.getElementById('crLoginStatus'),button=document.getElementById('crLoginButton');
+      function message(text){if(status)status.textContent=text;}
+      if(v.indexOf('@')<0){message('이메일 주소를 확인해 주세요.');return;}
+      creatorMagicBusy=true;magicSent=false;if(button)button.disabled=true;
+      message('로그인 링크를 요청하고 있습니다…');
+      return req('POST','/auth/magic',{email:v}).then(function(r){
+        if(!r.demoLink&&r.sent!==true)throw new Error(r.hint||'로그인 메일을 발송하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        magicSent=!r.demoLink;render();
         if(r.demoLink)toast('데모 모드','<a href="'+r.demoLink.replace('https://app.theprlist.net/',location.origin+'/').replace('https://theprlist.net/',location.origin+'/')+'">이 링크로 로그인</a> (15분 유효)');
-      }).catch(function(){toast('전송 실패','잠시 후 다시 시도해 주세요.');});
+      }).catch(function(e){message(e.message||'로그인 링크 요청에 실패했습니다. 연결 상태를 확인해 주세요.');})
+      .finally(function(){creatorMagicBusy=false;if(button)button.disabled=false;});
     };
     window.creatorJoin=function(b){
       req('POST','/me/join',{brand_id:b}).then(function(r){
@@ -1244,7 +1253,7 @@
       if(!window.__ME){
         body='<h2>크리에이터 로그인</h2><p>비밀번호 없이 이메일 링크로 로그인해요.</p>'+
           (magicSent?'<div class="cc"><p>메일함의 로그인 링크를 확인하세요 (15분 유효).</p></div>':'')+
-          '<div class="cc"><input id="crEmail" type="email" placeholder="you@email.com" style="width:100%;box-sizing:border-box;padding:12px;margin-bottom:10px"><button class="btn" onclick="creatorMagic()">로그인 링크 받기</button></div>';
+          '<div class="cc"><input id="crEmail" type="email" placeholder="you@email.com" style="width:100%;box-sizing:border-box;padding:12px;margin-bottom:10px"><button id="crLoginButton" class="btn" onclick="creatorMagic()">로그인 링크 받기</button><p id="crLoginStatus" role="status" aria-live="polite"></p></div>';
         if(joinBrandInfo&&!joinBrandInfo.missing)body='<p>'+mailEscape(joinBrandInfo.name||'브랜드')+'의 PR 리스트 초대를 받으셨나요? 먼저 로그인해 주세요.</p>'+body;
       }else{
         var joinedIds=(myMemberships||[]).map(function(m){return m.brandId;});

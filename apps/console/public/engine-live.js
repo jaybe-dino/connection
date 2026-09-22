@@ -609,7 +609,10 @@
   /* ── 브랜드 아이덴티티(로고) — 콘솔·PR 리스트 표시, 브랜드별 격리 ── */
   window.__BID = null;
   function loadIdentity() {
-    req("GET", "/brands/" + BRAND() + "/identity").then(function (b) {
+    if(!window.__ME||window.__ME.kind!=='brand'){window.__BID=null;return;}
+    var identityBrand=BRAND(),identityToken=jwtGet();
+    req("GET", "/brands/" + identityBrand + "/identity").then(function (b) {
+      if(BRAND()!==identityBrand||jwtGet()!==identityToken||!window.__ME||window.__ME.kind!=='brand')return;
       window.__BID = b;
       if (window.render) try { render(); } catch (e) {}
       var chip = document.getElementById("authChip");
@@ -906,7 +909,8 @@
   function loadProducts(){var b=BRAND();req('GET','/brands/'+b+'/products').then(function(r){if(BRAND()!==b)return;productsData=r;if(window.__SURFACE==='brand')render();}).catch(function(){});
     req('GET','/brands/'+b+'/campaigns').then(function(r){if(BRAND()!==b)return;brandCampaigns=r;if(window.__SURFACE==='brand')render();}).catch(function(){});}
   window.collabShow=function(cid){
-    req('GET','/brands/'+BRAND()+'/campaigns/'+cid+'/applicants').then(function(r){collabOpen={campaignId:cid,rows:r};render();})
+    var owner=BRAND(),token=jwtGet();
+    return req('GET','/brands/'+owner+'/campaigns/'+cid+'/applicants').then(function(r){if(BRAND()!==owner||jwtGet()!==token)return;collabOpen={campaignId:cid,rows:r};loadProducts();render();})
       .catch(function(){toast('조회 실패','잠시 후 다시.');});
   };
   window.collabSelect=function(cid,creatorId){
@@ -1062,12 +1066,12 @@
       Object.keys(preserved).forEach(function(id){var el=document.getElementById(id);if(el)el.value=preserved[id];});
     };
     var previousReload=reloadBrand;
-    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});gmailSyncNotice='';profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;previousReload();if(window.__ME){loadProfile();loadProducts();}};
+    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});gmailSyncNotice='';productsData=null;prodNotice='';prodCandidates=null;brandCampaigns=null;collabOpen=null;window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;previousReload();if(window.__ME){loadProfile();loadProducts();}};
     var style=document.createElement('style');style.textContent='body{background:#f5f4ef}.stage{display:block!important;overflow:auto!important;height:calc(100vh - 1px)!important}.live-head{padding:24px 5%;display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid #dadbd2;background:#fafbf5}.live-head>a{font-size:25px;font-weight:800;color:#163f35;text-decoration:none}.live-head span{font-size:12px;font-weight:400}.live-head nav{display:flex;gap:8px;flex-wrap:wrap}.live-main{max-width:1050px;margin:0 auto;padding:55px 24px 95px;font-size:15px;line-height:1.8}.live-main h1{font-size:40px;line-height:1.25;margin:0 0 25px}.live-main h2{font-size:21px;margin:18px 0 10px}.live-main p{margin:12px 0}.live-main .cc{background:#fff;border:1px solid #dadbd2;border-radius:12px;padding:24px;margin:15px 0;text-align:left}.live-main input,.live-main textarea{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid #aebcb1;border-radius:6px;margin:8px 0 14px;font:inherit}.live-main .btn,.live-main .cbt{font-size:14px;padding:10px 16px;cursor:pointer}.live-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.live-eyebrow{letter-spacing:.1em;color:#41684c}.live-footer{padding:20px 24px 75px;text-align:center}.live-main blockquote{padding:12px;border-left:3px solid #5e8c6a;color:#526157;overflow-wrap:anywhere}@media(max-width:700px){.live-head{display:block}.live-head nav{margin-top:15px}.live-main{padding-top:30px}.live-main h1{font-size:30px}.live-grid{grid-template-columns:1fr}}';document.head.appendChild(style);render();
   }
 
   if(window.__SURFACE==='bjoin'){
-    window.render=function(){document.querySelector('.svcbar').style.display='none';document.getElementById('stage').innerHTML='<main style="max-width:650px;margin:70px auto;padding:24px"><h1>theprlist</h1><h2>'+(window.__ME?'계정 생성 완료':'계정 초대 수락')+'</h2><p>'+(window.__ME?'브랜드 로그인으로 이동해 설정한 계정으로 로그인하세요.':'초대받은 계정은 아래 입력창에서 비밀번호를 설정해 주세요.')+'</p><a class="btn" href="https://theprlist.net">서비스 소개</a> <a class="btn line" href="https://console.theprlist.net">브랜드 로그인</a></main>';};render();
+    window.render=function(){document.querySelector('.svcbar').style.display='none';document.getElementById('stage').innerHTML='<main style="max-width:650px;margin:70px auto;padding:24px"><h1>theprlist</h1><h2>'+(window.__ME&&!new URLSearchParams(location.search).has('invite')?'계정 생성 완료':'계정 초대 수락')+'</h2><p>'+(window.__ME&&!new URLSearchParams(location.search).has('invite')?'브랜드 로그인으로 이동해 설정한 계정으로 로그인하세요.':'초대받은 계정은 아래 입력창에서 비밀번호를 설정해 주세요.')+'</p><a class="btn" href="https://theprlist.net">서비스 소개</a> <a class="btn line" href="https://console.theprlist.net">브랜드 로그인</a></main>';};render();
   }
 
   /* ── 크리에이터 표면: 매직링크 로그인 → 브랜드 PR 리스트 합류 → 내 멤버십.
@@ -1284,8 +1288,8 @@
       var pw = (document.getElementById("axPw") || {}).value || "";
       req("POST", "/auth/accept", { token: tk, password: pw }).then(function (r) {
         jwtSet(r.token); window.__ME = r.user; authPanel(null); authChip();
-        reloadBrand();
         history.replaceState(null, "", location.pathname);
+        reloadBrand();
         toast("계정 생성 완료 🎉", "<b>" + mailEscape(r.user.email) + "</b> — 콘솔(console.theprlist.net)에서 이 계정으로 로그인하세요.");
       }).catch(function () { toast("수락 실패", "링크가 만료됐을 수 있어요 — 초대를 다시 요청하세요. 비밀번호는 10자 이상."); });
     };

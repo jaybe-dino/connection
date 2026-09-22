@@ -182,6 +182,22 @@
     applyLang(l, false);
     fire("PUT", "/me/c-mai/locale", { locale: l });
   };
+  window.setConversationLang = function (l) {
+    if (!LANGS.some(function (x) { return x[0] === l; })) return;
+    var input = document.getElementById('commText');
+    var draft = input ? input.value : null;
+    applyLang(l, true);
+    var replacement = document.getElementById('commText');
+    if (replacement && draft !== null) replacement.value = draft;
+  };
+  function conversationLanguageHtml() {
+    var current = window.__USER_LANG || 'ko';
+    return '<label for="conversationLanguage">대화 언어 / Conversation language</label> ' +
+      '<select id="conversationLanguage" onchange="setConversationLang(this.value)">' +
+      LANGS.map(function (x) { return '<option value="' + x[0] + '"' +
+        (current === x[0] ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') +
+      '</select><p style="font-size:12px">커뮤니티·담당자 DM의 표시·작성 언어입니다. 이 브라우저에 저장됩니다. 번역이 없으면 원문을 표시합니다.</p>';
+  }
   window.langMenu = function () {
     var cur = window.__USER_LANG || "th";
     var btns = LANGS.map(function (x) {
@@ -1297,7 +1313,7 @@
         if(joinBrandInfo&&!joinBrandInfo.missing)body='<p>'+mailEscape(joinBrandInfo.name||'브랜드')+'의 PR 리스트 초대를 받으셨나요? 먼저 로그인해 주세요.</p>'+body;
       }else{
         var joinedIds=(myMemberships||[]).map(function(m){return m.brandId;});
-        body='<h2>'+mailEscape(window.__ME.email)+'</h2>'+
+        body='<h2>'+mailEscape(window.__ME.email)+'</h2>'+conversationLanguageHtml()+
           (joinTarget?brandCardHtml(joinBrandInfo,joinedIds.indexOf(joinTarget)>=0):'')+
           '<h2 style="margin-top:26px">내 브랜드 멤버십</h2>'+
           ((myMemberships&&myMemberships.length)?myMemberships.map(function(m){

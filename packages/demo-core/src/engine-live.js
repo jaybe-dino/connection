@@ -1152,10 +1152,29 @@
     var myCampaigns=null, myOffers=null;
 
     try{joinTarget=(new URLSearchParams(location.search).get('brand')||'').toLowerCase()||null;}catch(e){}
+    var membershipState='loading', membershipRequest=0;
+    window.creatorRetryMemberships=function(){
+      if(!window.__ME||window.__ME.kind!=='creator')return;
+      var request=++membershipRequest, token=jwtGet();
+      membershipState='loading';render();
+      return req('GET','/me/memberships').then(function(m){
+        if(request!==membershipRequest||token!==jwtGet())return;
+        if(!Array.isArray(m))throw new Error('Invalid membership response');
+        myMemberships=m;membershipState='ready';render();
+      }).catch(function(){
+        if(request!==membershipRequest||token!==jwtGet())return;
+        membershipState='error';render();
+      });
+    };
+    function membershipNoticeHtml(){
+      if(membershipState==='error')return '<div class="cc" role="status"><p>가입 목록을 불러오지 못했습니다. 기존 가입이 취소된 것은 아닙니다.</p><button class="btn" onclick="creatorRetryMemberships()">가입 목록 다시 불러오기</button></div>';
+      if(membershipState!=='ready')return '<p role="status">가입 목록을 불러오는 중입니다…</p>';
+      return '';
+    }
     function loadCreatorData(){
       if(joinTarget)req('GET','/brands/'+joinTarget+'/identity').then(function(b){joinBrandInfo=b;render();}).catch(function(){joinBrandInfo={missing:true};render();});
       if(window.__ME&&window.__ME.kind==='creator'){
-        req('GET','/me/memberships').then(function(m){myMemberships=m;render();}).catch(function(){});
+        window.creatorRetryMemberships();
         req('GET','/community/my-cells').then(function(c){commCells=c;render();}).catch(function(){});
         req('GET','/me/campaigns').then(function(c){myCampaigns=c;render();}).catch(function(){});
         req('GET','/me/campaign-offers').then(function(o){myOffers=o;render();}).catch(function(){});
@@ -1301,7 +1320,7 @@
       if(b.missing)return '<div class="cc"><p>브랜드를 찾을 수 없습니다.</p></div>';
       var logo=b.logoUrl?'<img src="'+b.logoUrl.replace(/"/g,'')+'" alt="" style="width:44px;height:44px;border-radius:10px;object-fit:cover;vertical-align:middle;margin-right:10px">':'';
       return '<div class="cc">'+logo+'<b style="font-size:17px">'+mailEscape(b.name||b.brandId)+'</b>'+(b.tagline?'<p>'+mailEscape(b.tagline)+'</p>':'')+
-        (joined?'<p>✓ 이미 이 브랜드의 PR 리스트 멤버입니다.</p>':'<button class="btn" onclick="creatorJoin(\''+b.brandId+'\')">이 브랜드 PR 리스트에 합류</button>')+'</div>';
+        (membershipState!=='ready'?'<p>가입 여부는 가입 목록 조회가 끝나면 표시됩니다.</p>':joined?'<p>✓ 이미 이 브랜드의 PR 리스트 멤버입니다.</p>':'<button class="btn" onclick="creatorJoin(\''+b.brandId+'\')">이 브랜드 PR 리스트에 합류</button>')+'</div>';
     }
     window.render=function(){
       document.querySelector('.svcbar').style.display='none';
@@ -1316,10 +1335,11 @@
         body='<h2>'+mailEscape(window.__ME.email)+'</h2>'+conversationLanguageHtml()+
           (joinTarget?brandCardHtml(joinBrandInfo,joinedIds.indexOf(joinTarget)>=0):'')+
           '<h2 style="margin-top:26px">내 브랜드 멤버십</h2>'+
+          membershipNoticeHtml()+
           ((myMemberships&&myMemberships.length)?myMemberships.map(function(m){
             var lg=m.logoUrl?'<img src="'+m.logoUrl.replace(/"/g,'')+'" alt="" style="width:26px;height:26px;border-radius:6px;object-fit:cover;vertical-align:-7px;margin-right:8px">':'';
             return '<div class="cc">'+lg+'<b>'+mailEscape(m.name||m.brandId)+'</b>'+(m.tagline?' · '+mailEscape(m.tagline):'')+' <span class="cbt line" onclick="crDm(\''+esc(m.brandId)+'\')">담당자 DM</span></div>';}).join('')
-           :'<div class="cc"><p>아직 가입한 브랜드가 없어요. 브랜드의 초대 링크로 합류할 수 있습니다.</p></div>')+
+           :membershipState==='ready'?'<div class="cc"><p>아직 가입한 브랜드가 없어요. 브랜드의 초대 링크로 합류할 수 있습니다.</p></div>':'')+
           campHtml()+offersHtml()+commHtml()+
           '<div class="cc"><p style="font-size:12px">지원→선정→수수료 합의→샘플→Spark 코드·콘텐츠 제출까지 여기서 진행돼요. 대금 지급(정산 송금) 화면은 공개 준비 중입니다.</p></div>';
       }

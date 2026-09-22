@@ -542,22 +542,30 @@
   window.__GMAIL = null;
   window.__INBOX = null;
   window.__INBOX_OPEN = null;   // 펼친 스레드 {id, data}
+  var gmailLoadState='loading', inboxLoadState='loading', gmailLoadVersion=0, inboxLoadVersion=0;
   function loadGmail() {
-    var current=jwtGet(),brand=BRAND();
-    req("GET", "/brands/" + BRAND() + "/gmail").then(function (g) {
-      if(jwtGet()!==current || BRAND()!==brand)return;
-      window.__GMAIL = g;
-      if (typeof ST !== "undefined" && ST.b === "src" && window.render) render();
-    }).catch(function () {});
+    var current=jwtGet(),brand=BRAND(),version=++gmailLoadVersion;
+    gmailLoadState='loading';window.__GMAIL=null;
+    return req("GET", "/brands/" + brand + "/gmail").then(function (g) {
+      if(jwtGet()!==current || BRAND()!==brand || version!==gmailLoadVersion)return;
+      if(!g || !Array.isArray(g.accounts))throw new Error('Invalid Gmail status');
+      window.__GMAIL=g;gmailLoadState='ready';
+    }).catch(function () {
+      if(jwtGet()===current && BRAND()===brand && version===gmailLoadVersion)gmailLoadState='error';
+    }).finally(function(){if(version===gmailLoadVersion && typeof ST!=="undefined" && ST.b==='src' && window.render)render();});
   }
   function loadInbox() {
-    var current=jwtGet(),brand=BRAND();
-    req("GET", "/brands/" + BRAND() + "/inbox").then(function (l) {
-      if(jwtGet()!==current || BRAND()!==brand)return;
-      window.__INBOX = l;
-      if (typeof ST !== "undefined" && ST.b === "src" && window.render) render();
-    }).catch(function () {});
+    var current=jwtGet(),brand=BRAND(),version=++inboxLoadVersion;
+    inboxLoadState='loading';window.__INBOX=null;
+    return req("GET", "/brands/" + brand + "/inbox").then(function (l) {
+      if(jwtGet()!==current || BRAND()!==brand || version!==inboxLoadVersion)return;
+      if(!Array.isArray(l))throw new Error('Invalid inbox response');
+      window.__INBOX=l;inboxLoadState='ready';
+    }).catch(function () {
+      if(jwtGet()===current && BRAND()===brand && version===inboxLoadVersion)inboxLoadState='error';
+    }).finally(function(){if(version===inboxLoadVersion && typeof ST!=="undefined" && ST.b==='src' && window.render)render();});
   }
+  window.inboxRefresh=loadInbox;
   window.gmailConnect = function () {
     var g = window.__GMAIL;
     if (g && !g.demo) {          // 실모드 — 구글 동의 화면으로
@@ -671,8 +679,10 @@
 
   function gmailCard() {
     var g = window.__GMAIL, inner;
-    if (g === null) {
-      inner = '<p style="font-size:10.6px;color:var(--n600)">서버에 연결되면 회사 지메일을 연동할 수 있어요.</p>';
+    if (gmailLoadState==='error') {
+      inner='<p role="alert">Gmail 연결 상태를 불러오지 못했습니다. 연결 해제를 의미하지 않습니다.</p><button class="cbt" onclick="gmailRefresh()">연결 상태 다시 확인</button>';
+    } else if (g === null) {
+      inner = '<p style="font-size:10.6px;color:var(--n600)">Gmail 연결 상태를 불러오는 중입니다.</p>';
     } else if (!g.accounts.length) {
       inner = "<p><b>회사 지메일로 직접 발송</b> — 구글 로그인 한 번이면 theprlist가 그 주소 명의로 보냅니다. " +
         "이 브랜드 전용 Google 계정을 선택하고 발송·받은 메일 읽기 권한을 허용하세요. 다른 브랜드에 연결된 이메일은 사용할 수 없습니다.</p>" +
@@ -699,7 +709,9 @@
   }
   function inboxCard() {
     var L = window.__INBOX;
-    if (L === null || !L.length) return '<div class="cc"><h2>대화 내역</h2><p>아직 기록된 대화가 없습니다. Google 수신 권한을 연결한 뒤 받은 메일 동기화를 눌러 주세요.</p></div>';
+    if(inboxLoadState==='error')return '<div class="cc"><h2>대화 내역</h2><p role="alert">대화 내역을 불러오지 못했습니다. 메일이 삭제된 것은 아닙니다.</p><button class="cbt" onclick="inboxRefresh()">대화 내역 다시 불러오기</button></div>';
+    if(L===null)return '<div class="cc"><h2>대화 내역</h2><p role="status">대화 내역을 불러오는 중입니다.</p></div>';
+    if (!L.length) return '<div class="cc"><h2>대화 내역</h2><p>아직 기록된 대화가 없습니다. Google 수신 권한을 연결한 뒤 받은 메일 동기화를 눌러 주세요.</p></div>';
     var open = window.__INBOX_OPEN;
     var items = L.slice(0, 6).map(function (t) {
       var lb = ARI_LABELS[t.ariLabel] || ARI_LABELS.other;

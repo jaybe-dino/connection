@@ -481,11 +481,14 @@
     var brief=document.getElementById('outBrief').value.trim();
     if(brief.length<5)return toast('내용 입력','협업 제안 내용을 5자 이상 입력하세요.');
     if(document.getElementById('outSubject').value||document.getElementById('outBody').value)return toast('기존 초안 확인','입력한 제목과 본문을 비운 뒤 AI 작성을 실행하세요.');
+    var productId=(document.getElementById('outProduct')||{}).value||'';
+    if(productId&&!(productsData||[]).some(function(p){return p.productId===productId;}))return toast('제품 확인','제품 목록을 다시 불러온 뒤 선택해 주세요.');
+    var payload={brief:brief};if(productId)payload.product_id=productId;
     var current=jwtGet(),brand=BRAND();composeBusy=true;toast('AI 작성 중','브랜드 정보를 참고해 제안 메일을 작성하고 있습니다.');
-    try{var r=await req('POST','/brands/'+brand+'/outreach/compose',{brief:brief});
+    try{var r=await req('POST','/brands/'+brand+'/outreach/compose',payload);
       if(jwtGet()!==current||BRAND()!==brand)return;
       var subject=document.getElementById('outSubject'),body=document.getElementById('outBody');
-      if(subject&&body&&!subject.value&&!body.value){subject.value=r.subject;body.value=r.body;toast('초안 작성 완료','아직 저장·발송되지 않았습니다. 내용을 확인해 주세요.');}
+      if(subject&&body&&!subject.value&&!body.value&&((document.getElementById('outProduct')||{}).value||'')===productId){subject.value=r.subject;body.value=r.body;toast('초안 작성 완료','아직 저장·발송되지 않았습니다. 내용을 확인해 주세요.');}
       else toast('다시 시도','화면이나 작성 내용이 바뀌어 AI 결과를 덮어쓰지 않았습니다.');
     }catch(e){toast('AI 작성 실패',mailEscape(e.message));}finally{composeBusy=false;}
   };
@@ -531,6 +534,7 @@
         (b.state==='draft'?'<button class="cbt no" onclick="outreachCancel(\''+b.id+'\')">초안 취소</button>':'')+'</details>';
     }).join('');
     return '<div class="cc"><div class="t">아웃리치 메일</div><p>수신자와 내용을 저장한 뒤 확인하고 발송합니다. 발송 한도를 넘긴 수신자는 대기하며, 수신 거부·90일 내 중복 발송은 제외합니다.</p>'+
+      '<label>초안에 사용할 제품<select id="outProduct"><option value="">브랜드 공통 제안</option>'+(productsData||[]).map(function(p){return '<option value="'+mailEscape(p.productId)+'">'+mailEscape(p.name)+'</option>';}).join('')+'</select></label><p>제품을 선택하면 저장된 제품 프로필도 AI 초안에 반영합니다.</p>'+
       '<label>협업 제안 내용<textarea id="outBrief" maxlength="2000" placeholder="제안할 제품, 협업 방식, 언어를 적어 주세요."></textarea></label><button class="cbt no" onclick="outreachCompose()">AI로 제안 메일 작성</button><p>AI는 저장한 브랜드 정보로 초안만 작성합니다. 내용을 확인하고 저장한 뒤 발송하세요.</p>'+
       '<label>수신자 이메일 · 최대 20명<textarea id="outRecipients" rows="3" style="width:100%;box-sizing:border-box" placeholder="이메일을 줄바꿈 또는 쉼표로 구분"></textarea></label>'+
       '<label>제목<input id="outSubject" maxlength="150" style="width:100%;box-sizing:border-box"></label>'+
@@ -1018,15 +1022,22 @@
       .then(function(c){prodNotice='어필리에이트 캠페인 개설: '+c.campaignId+' · 커미션 '+c.affiliatePct+'%';loadProducts();render();})
       .catch(function(){toast('개설 실패','잠시 후 다시.');});
   };
+  var candidateCountry='',candidateVersion=0;
   window.prodShowCandidates=function(pid){
-    req('GET','/brands/'+BRAND()+'/products/'+pid+'/candidates?country=TH')
-      .then(function(r){prodCandidates=r;render();})
-      .catch(function(){toast('후보 조회 실패','제품 프로필을 먼저 저장해 주세요.');});
+    var brand=BRAND(),token=jwtGet(),version=++candidateVersion;
+    var country=(document.getElementById('candidateCountry')||{}).value||'';
+    if(['','KR','TH','US','VN','JP'].indexOf(country)<0)return;
+    candidateCountry=country;prodCandidates=null;
+    return req('GET','/brands/'+brand+'/products/'+pid+'/candidates?country='+encodeURIComponent(country))
+      .then(function(r){if(version!==candidateVersion||BRAND()!==brand||jwtGet()!==token)return;r.searchCountry=country;prodCandidates=r;render();})
+      .catch(function(e){if(version===candidateVersion&&BRAND()===brand&&jwtGet()===token)toast('후보 조회 실패',mailEscape(e.message||'잠시 후 다시 시도해 주세요.'));});
   };
+  window.candidateCountryChanged=function(value){candidateCountry=value;candidateVersion++;prodCandidates=null;};
   function productsCard(){
     var h='<h1>제품 · 어필리에이트 캠페인</h1><p>제품별로 정보를 학습·저장하면, 후보 추천과 아웃리치 초안이 그 제품 근거를 사용합니다.</p>';
     if(prodNotice)h+='<p role="status">'+mailEscape(prodNotice)+'</p>';
     h+='<div class="cc"><h2>새 제품</h2><input id="pNew" placeholder="제품 이름 (예: 시카 진정 앰플)"><input id="pRef" placeholder="틱톡샵 상품 ID·URL (선택)"><input id="pPct" placeholder="커미션 % (기본 10, 소수 가능)"><button class="btn" onclick="prodCreate()">제품 등록</button></div>';
+    h+='<label>후보 타깃 국가<select id="candidateCountry" onchange="candidateCountryChanged(this.value)">'+[['','전체'],['KR','한국'],['TH','태국'],['US','미국'],['VN','베트남'],['JP','일본']].map(function(c){return '<option value="'+c[0]+'"'+(candidateCountry===c[0]?' selected':'')+'>'+c[1]+'</option>';}).join('')+'</select></label>';
     (productsData||[]).forEach(function(pd){
       h+='<div class="cc"><h2>'+mailEscape(pd.name)+' <span style="font-size:12px;font-weight:400">커미션 '+pd.commissionPct+'% · 프로필 v'+pd.profileVersion+'</span></h2>';
       var f=pd.fields||{};
@@ -1038,9 +1049,9 @@
       h+='<button class="btn" onclick="prodSaveProfile(\''+pd.productId+'\')">프로필 저장 (v'+(pd.profileVersion+1)+')</button> ';
       h+='<input id="pc_'+pd.productId+'" placeholder="모집 이름 (예: 9월 태국 어필리에이트)" style="display:inline-block;width:280px"> ';
       h+='<button class="btn line" onclick="prodCampaign(\''+pd.productId+'\')">캠페인 개설</button> ';
-      h+='<button class="btn line" onclick="prodShowCandidates(\''+pd.productId+'\')">후보 보기(TH)</button>';
+      h+='<button class="btn line" onclick="prodShowCandidates(\''+pd.productId+'\')">후보 보기</button>';
       if(prodCandidates&&prodCandidates.productId===pd.productId){
-        h+='<h2 style="margin-top:14px">추천 후보 — 근거 포함</h2><p style="font-size:12px">'+mailEscape(prodCandidates.note)+'</p>';
+        h+='<h2 style="margin-top:14px">추천 후보 — '+mailEscape(prodCandidates.searchCountry||'전체 국가')+' · 근거 포함</h2><p style="font-size:12px">'+mailEscape(prodCandidates.note)+'</p>';
         (prodCandidates.candidates||[]).slice(0,10).forEach(function(cd){
           h+='<div class="cc"><b>@'+mailEscape(cd.handle||'')+'</b>'+(cd.fitScore?' · 적합 '+cd.fitScore:'')+'<ul style="margin:6px 0 0;padding-left:18px">'+ (cd.evidence||[]).map(function(e){return '<li style="font-size:12px">'+mailEscape(e)+'</li>';}).join('')+'</ul></div>';
         });
@@ -1116,7 +1127,7 @@
       var stage=document.getElementById('stage');if(!stage)return;
       document.querySelector('.svcbar').style.display='none';
       var nav='<header class="live-head"><a href="https://theprlist.net">theprlist<span> / brand console</span></a><nav>'+[['home','홈'],['learn','브랜드 학습'],['products','제품·캠페인'],['community','커뮤니티·DM'],['mail','아웃리치·인박스'],['billing','월별 청구']].map(function(x){return '<button class="btn '+(livePage===x[0]?'':'line')+'" onclick="liveNav(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+'</nav></header>';
-      var preserved={};['outRecipients','outSubject','outBody','outBrief','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)preserved[id]=el.value;});
+      var preserved={};['outRecipients','outSubject','outBody','outBrief','outProduct','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)preserved[id]=el.value;});
       var body='';
       if(!window.__ME){body='<h1>브랜드와 크리에이터,<br>함께 시작할 준비.</h1><p>승인된 브랜드 계정으로 로그인해 주세요.</p><button class="btn" onclick="document.getElementById(\'authChip\').click()">로그인</button> <a class="btn line" href="https://theprlist.net/signup">가입 신청</a>';}
       else if(livePage==='learn')body=liveLearningCard();
@@ -1130,7 +1141,7 @@
       Object.keys(preserved).forEach(function(id){var el=document.getElementById(id);if(el)el.value=preserved[id];});
     };
     var previousReload=reloadBrand;
-    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';productsData=null;prodNotice='';prodCandidates=null;brandCampaigns=null;collabOpen=null;window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;previousReload();if(window.__ME){loadProfile();loadProducts();}};
+    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';productsData=null;prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;brandCampaigns=null;collabOpen=null;window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;previousReload();if(window.__ME){loadProfile();loadProducts();}};
     var style=document.createElement('style');style.textContent='body{background:#f5f4ef}.stage{display:block!important;overflow:auto!important;height:calc(100vh - 1px)!important}.live-head{padding:24px 5%;display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid #dadbd2;background:#fafbf5}.live-head>a{font-size:25px;font-weight:800;color:#163f35;text-decoration:none}.live-head span{font-size:12px;font-weight:400}.live-head nav{display:flex;gap:8px;flex-wrap:wrap}.live-main{max-width:1050px;margin:0 auto;padding:55px 24px 95px;font-size:15px;line-height:1.8}.live-main h1{font-size:40px;line-height:1.25;margin:0 0 25px}.live-main h2{font-size:21px;margin:18px 0 10px}.live-main p{margin:12px 0}.live-main .cc{background:#fff;border:1px solid #dadbd2;border-radius:12px;padding:24px;margin:15px 0;text-align:left}.live-main input,.live-main textarea{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid #aebcb1;border-radius:6px;margin:8px 0 14px;font:inherit}.live-main .btn,.live-main .cbt{font-size:14px;padding:10px 16px;cursor:pointer}.live-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.live-eyebrow{letter-spacing:.1em;color:#41684c}.live-footer{padding:20px 24px 75px;text-align:center}.live-main blockquote{padding:12px;border-left:3px solid #5e8c6a;color:#526157;overflow-wrap:anywhere}@media(max-width:700px){.live-head{display:block}.live-head nav{margin-top:15px}.live-main{padding-top:30px}.live-main h1{font-size:30px}.live-grid{grid-template-columns:1fr}}';document.head.appendChild(style);render();
   }
 

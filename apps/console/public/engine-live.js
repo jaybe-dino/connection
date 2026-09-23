@@ -163,7 +163,7 @@
   /* ── 언어 자동 매핑 + 개별 설정 (기획 §4.8) ─────────────────
      우선순위: 본인 저장 설정 > IP 국가(서버 감지) > 브라우저 언어 > en.
      변경은 즉시 저장(localStorage) + 서버 동기화(PUT /me/locale). */
-  var LANGS = [["th", "ไทย"], ["ko", "한국어"], ["en", "English"], ["vi", "Tiếng Việt"]];
+  var LANGS = [["th", "ไทย"], ["ko", "한국어"], ["en", "English"], ["vi", "Tiếng Việt"], ["ja", "日本語"]];
   function langLabel(l) {
     var f = LANGS.find(function (x) { return x[0] === l; });
     return f ? f[1] : l;
@@ -217,7 +217,7 @@
       applyLang(r.locale || "en", true);
     }).catch(function () {
       var nav = ((navigator.language || "en").slice(0, 2));
-      applyLang(["th", "ko", "en", "vi"].indexOf(nav) >= 0 ? nav : "en", true);
+      applyLang(["th", "ko", "en", "vi", "ja"].indexOf(nav) >= 0 ? nav : "en", true);
     });
   })();
 
@@ -1023,12 +1023,12 @@
       .catch(function(){toast('개설 실패','잠시 후 다시.');});
   };
   var candidateCountry='',candidateVersion=0;
-  window.prodShowCandidates=function(pid){
+  window.prodShowCandidates=function(pid,mode){
     var brand=BRAND(),token=jwtGet(),version=++candidateVersion;
     var country=(document.getElementById('candidateCountry')||{}).value||'';
     if(['','KR','TH','US','VN','JP'].indexOf(country)<0)return;
     candidateCountry=country;prodCandidates=null;
-    return req('GET','/brands/'+brand+'/products/'+pid+'/candidates?country='+encodeURIComponent(country))
+    return req('GET','/brands/'+brand+'/products/'+pid+'/candidates?'+(mode==='ai'?'mode=ai&':'')+'country='+encodeURIComponent(country))
       .then(function(r){if(version!==candidateVersion||BRAND()!==brand||jwtGet()!==token)return;r.searchCountry=country;prodCandidates=r;render();})
       .catch(function(e){if(version===candidateVersion&&BRAND()===brand&&jwtGet()===token)toast('후보 조회 실패',mailEscape(e.message||'잠시 후 다시 시도해 주세요.'));});
   };
@@ -1049,11 +1049,16 @@
       h+='<button class="btn" onclick="prodSaveProfile(\''+pd.productId+'\')">프로필 저장 (v'+(pd.profileVersion+1)+')</button> ';
       h+='<input id="pc_'+pd.productId+'" placeholder="모집 이름 (예: 9월 태국 어필리에이트)" style="display:inline-block;width:280px"> ';
       h+='<button class="btn line" onclick="prodCampaign(\''+pd.productId+'\')">캠페인 개설</button> ';
-      h+='<button class="btn line" onclick="prodShowCandidates(\''+pd.productId+'\')">후보 보기</button>';
+      h+='<button class="btn line" onclick="prodShowCandidates(\''+pd.productId+'\')">후보 보기</button> ';
+      h+='<button class="btn line" onclick="prodShowCandidates(\''+pd.productId+'\',\'ai\')">AI 추천(의미 평가)</button>';
       if(prodCandidates&&prodCandidates.productId===pd.productId){
-        h+='<h2 style="margin-top:14px">추천 후보 — '+mailEscape(prodCandidates.searchCountry||'전체 국가')+' · 근거 포함</h2><p style="font-size:12px">'+mailEscape(prodCandidates.note)+'</p>';
+        var aim=prodCandidates.ai||{mode:'keyword'};
+        var modeLabel=aim.mode==='ai'?('AI 의미 평가 · '+mailEscape(aim.model||'')+' · 신규 '+(aim.evaluated||0)+'건 · 캐시 '+(aim.cachedHits||0)+'건'+(aim.notice?' · '+mailEscape(aim.notice):'')):aim.mode==='fallback_keyword'?('키워드 폴백 — '+mailEscape(aim.reason||'')):'키워드 일치';
+        h+='<h2 style="margin-top:14px">추천 후보 — '+mailEscape(prodCandidates.searchCountry||'전체 국가')+' · '+modeLabel+'</h2><p style="font-size:12px">'+mailEscape(prodCandidates.note)+'</p>';
         (prodCandidates.candidates||[]).slice(0,10).forEach(function(cd){
-          h+='<div class="cc"><b>@'+mailEscape(cd.handle||'')+'</b>'+(cd.fitScore?' · 적합 '+cd.fitScore:'')+'<ul style="margin:6px 0 0;padding-left:18px">'+ (cd.evidence||[]).map(function(e){return '<li style="font-size:12px">'+mailEscape(e)+'</li>';}).join('')+'</ul></div>';
+          h+='<div class="cc"><b>@'+mailEscape(cd.handle||'')+'</b>'+(cd.aiFit!=null?' · <b>AI 적합 '+cd.aiFit+'</b>'+(cd.aiCached?' (캐시)':''):'')+(cd.fitScore?' · 키워드 '+cd.fitScore:'');
+          if(cd.aiReason)h+='<p style="font-size:12px;margin:4px 0 0">'+mailEscape(cd.aiReason)+((cd.aiSignals||[]).length?' — 근거 태그: '+mailEscape(cd.aiSignals.join(', ')):'')+'</p>';
+          h+='<ul style="margin:6px 0 0;padding-left:18px">'+ (cd.evidence||[]).map(function(e){return '<li style="font-size:12px">'+mailEscape(e)+'</li>';}).join('')+'</ul></div>';
         });
         if(!(prodCandidates.candidates||[]).length)h+='<p>조건에 맞는 후보가 아직 없습니다 (후보 DB 수집 대기).</p>';
       }
@@ -1266,7 +1271,11 @@
         }else if(o.state==='content_submitted'){
           h+='<p style="font-size:13px">제출 완료: '+esc(o.contentUrl)+'<br>브랜드 확인을 기다리고 있어요.</p>';
         }else if(o.state==='completed'){
-          h+='<p style="font-size:13px">✓ 완료 — 확정 수수료 '+(o.agreedCommissionPct!=null?o.agreedCommissionPct+'%':'-')+' 기준으로 정산됩니다.</p>';
+          h+='<p style="font-size:13px">✓ 완료 — 확정 수수료 '+(o.agreedCommissionPct!=null?o.agreedCommissionPct+'%':'-')+' 기준으로 정산됩니다.'+
+            (o.contentUrl?'<br>제출 콘텐츠: <a href="'+esc(o.contentUrl)+'" target="_blank" rel="noopener">'+esc(o.contentUrl)+'</a>':'')+
+            (o.affiliateLink?'<br>어필리에이트 링크(판매 추적): '+esc(o.affiliateLink):'')+
+            (o.sparkCode?'<br>Spark 코드 제출됨 ✓':'')+
+            '<br><span style="font-size:11px;color:#5a6560">대금 지급(정산 송금) 화면은 공개 준비 중 — 확정 조건은 위 기록 기준입니다.</span></p>';
         }else if(o.state==='declined'){
           h+='<p style="font-size:13px">거절한 제안입니다.</p>';
         }

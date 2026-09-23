@@ -102,6 +102,7 @@ export interface Submission {
 export const adminApi = {
   base: BASE,
   summary: () => req<Summary>("/admin/summary"),
+  gmailStatus: () => req<any>("/admin/gmail/status"),
   applications: (status = "pending") =>
     req<Application[]>(`/admin/applications?status=${status}`),
   approveApplication: (id: string) =>

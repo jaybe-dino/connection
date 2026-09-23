@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/community")
 
-ALL_LOCALES = ["ko", "th", "en", "vi"]
+ALL_LOCALES = ["ko", "th", "en", "vi", "ja"]
 MAX_TRANSLATION_ATTEMPTS = 5
 
 
@@ -175,7 +175,7 @@ def post_message(cell_id: str, body: PostIn,
                  authorization: str = Header(default="")) -> dict:
     claims = _actor(authorization)
     if body.locale not in ALL_LOCALES:
-        raise HTTPException(400, "지원 언어: ko/th/en/vi")
+        raise HTTPException(400, "지원 언어: ko/th/en/vi/ja")
     with connect() as conn:
         cell = _cell(conn, cell_id)
         who = _member_or_owner(conn, claims, cell)

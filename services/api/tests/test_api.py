@@ -109,7 +109,7 @@ def test_cell_message_translated_fallback(client):
         "original": "สวัสดีค่ะ", "original_locale": "th",
     }).json()
     # 키 미설정 환경에서는 번역대기 폴백, 키 있으면 실번역 — 대상 로케일은 항상 채워짐
-    assert set(r["translations"]) == {"ko", "en", "vi"}
+    assert set(r["translations"]) == {"ko", "en", "vi", "ja"}   # ja 지원 포함
 
 
 def test_notification_read(client):

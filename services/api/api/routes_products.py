@@ -213,20 +213,24 @@ def create_product_campaign(brand: str, product_id: UUID,
 
 @router.get("/brands/{brand}/products/{product_id}/candidates")
 def product_candidates(brand: str, product_id: UUID, country: str = "",
-                       limit: int = 20,
+                       limit: int = 20, mode: str = "keyword",
                        authorization: str = Header(default="")) -> dict:
     """제품·브랜드 적합도를 실제 순위에 반영한 후보 추천.
 
-    적합도 = 제품 이름·프로필 필드에서 뽑은 키워드와 후보의 category/product_tags
-    (수집엔진 실측 분류)의 교집합 수. 적합도 우선, 동률은 접촉·영향력 점수순.
-    모든 순위 근거를 후보별 evidence로 반환하며 지표를 생성하지 않는다.
+    mode=keyword(기본): 제품 텍스트 키워드와 후보 category/product_tags의
+    문자 일치 교집합으로 결정적 랭킹.
+    mode=ai: 키워드 상위 후보를 대상으로 Claude가 언어를 넘어 의미 적합도
+    (0-100)를 평가 — 제공된 수집 데이터만 근거로 쓰고, 인용 근거(signals)는
+    후보 실데이터에 존재하는 항목만 채택한다. 프로필 버전 단위 캐시와
+    호출당/일일 평가 상한으로 비용을 제한하며, AI 미연동·호출 실패 시
+    키워드 랭킹으로 폴백한다. 어떤 실측 지표도 생성하지 않는다.
     """
     _guard(brand, authorization)
     limit = max(1, min(limit, 50))
     country = country.strip().upper()[:2]
     with connect() as conn:
         p = _product(conn, brand, product_id)
-        _, fields = _latest_fields(conn, product_id)
+        profile_version, fields = _latest_fields(conn, product_id)
         keywords: set[str] = set()
         used_fields: list[str] = []
         # 제품 전체 텍스트(정규화)도 보존 — 태국어처럼 띄어쓰기 없는 언어의
@@ -276,19 +280,131 @@ def product_candidates(brand: str, product_id: UUID, country: str = "",
             evidence.append("이메일 검증 통과 · 수신거부 이력 없음")
             scored.append((fit, r["contact_score"] or 0,
                            r["influence_score"] or 0, r["followers"] or 0,
-                           {"handle": r["handle"],
+                           {"uid": r["platform_uid"], "handle": r["handle"],
                             "displayName": r["display_name"],
                             "country": r["country"],
                             "followers": r["followers"],
                             "fitScore": fit, "matchedTerms": matched,
                             "evidence": evidence}))
         scored.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3]))
+        ai_meta = {"mode": "keyword"}
+        if mode == "ai":
+            rows_by_uid = {r["platform_uid"]: r for r in rows}
+            pool = [x[4] for x in scored[:limit]]
+            ai_meta = _ai_annotate(conn, p, profile_version, fields,
+                                   pool, rows_by_uid)
+            if ai_meta["mode"] == "ai":
+                # AI 평가 우선, 미평가 후보는 키워드 순위 그대로 뒤에
+                scored.sort(key=lambda x: (
+                    -(x[4]["aiFit"] if x[4].get("aiFit") is not None else -1),
+                    -x[0], -x[1], -x[2], -x[3]))
         out = [x[4] for x in scored[:limit]]
+    note = ("적합도는 제품 프로필 텍스트와 후보의 수집된 분류"
+            "(category/product_tags)의 문자 일치 — 유니코드 정규화·"
+            "대소문자 무시 키워드/태그 구문 교집합 — 로만 계산합니다."
+            " 의미 추론 AI가 아니며, 후보 지표를 생성하지 않습니다."
+            " 아웃리치 발송은 초안 검토·승인 후에만 진행됩니다.")
+    if ai_meta["mode"] == "ai":
+        note = ("AI 적합도(aiFit)는 제공된 수집 데이터(분류·태그·국가·언어·"
+                "팔로워)에 대한 모델의 언어 간 의미 평가이며, 인용 근거"
+                "(aiSignals)는 후보 실데이터에 존재하는 항목만 표시합니다."
+                " 어떤 실측 지표도 생성하지 않고, 미평가 후보는 키워드 순위로"
+                " 정렬됩니다. 아웃리치 발송은 초안 검토·승인 후에만 진행됩니다.")
     return {"productId": str(product_id), "productName": p["name"],
             "productFieldsUsed": sorted(set(used_fields)),
-            "candidates": out,
-            "note": ("적합도는 제품 프로필 텍스트와 후보의 수집된 분류"
-                     "(category/product_tags)의 문자 일치 — 유니코드 정규화·"
-                     "대소문자 무시 키워드/태그 구문 교집합 — 로만 계산합니다."
-                     " 의미 추론 AI가 아니며, 후보 지표를 생성하지 않습니다."
-                     " 아웃리치 발송은 초안 검토·승인 후에만 진행됩니다.")}
+            "candidates": out, "ai": ai_meta, "note": note}
+
+
+AI_MATCH_MAX_PER_CALL = 8      # 호출당 신규 평가 상한 (env로 조정)
+AI_MATCH_DAILY_CAP = 200       # 브랜드당 일일 신규 평가 상한
+
+
+def _ai_annotate(conn, p, profile_version, fields, pool, rows_by_uid) -> dict:
+    """키워드 상위 후보(pool)에 AI 의미 평가를 주석으로 붙인다.
+
+    캐시(candidate_ai_scores, 프로필 버전 단위) 우선 → 남은 후보만 상한
+    내에서 신규 평가 → 근거(signals)는 그 후보의 실데이터(category/
+    product_tags)에 존재하는 문구만 채택(허구 근거 차단). 실패·미연동이면
+    폴백 사유를 담은 meta를 반환하고 후보는 키워드 순위 그대로 둔다."""
+    import os as _os
+
+    from . import ai as _ai
+    per_call = int(_os.environ.get("AI_MATCH_MAX_CANDIDATES",
+                                   AI_MATCH_MAX_PER_CALL))
+    daily_cap = int(_os.environ.get("AI_MATCH_DAILY_CAP", AI_MATCH_DAILY_CAP))
+    uids = [d["uid"] for d in pool]
+    if not uids:
+        return {"mode": "fallback_keyword", "reason": "평가할 후보가 없습니다"}
+    cached = conn.execute(
+        "SELECT platform_uid, fit, reason, signals FROM candidate_ai_scores"
+        " WHERE product_id=%s AND profile_version=%s AND platform_uid=ANY(%s)",
+        (p["product_id"], profile_version, uids)).fetchall()
+    by_uid = {d["uid"]: d for d in pool}
+    for c in cached:
+        d = by_uid[c["platform_uid"]]
+        d.update(aiFit=c["fit"], aiReason=c["reason"],
+                 aiSignals=c["signals"], aiCached=True)
+    uncached = [d for d in pool if "aiFit" not in d]
+    meta = {"mode": "ai", "model": _ai.MODEL, "cachedHits": len(cached),
+            "evaluated": 0, "capPerCall": per_call, "dailyCap": daily_cap}
+    if not uncached:
+        return meta
+    used_today = conn.execute(
+        "SELECT count(*) n FROM candidate_ai_scores s"
+        " JOIN brand_products bp USING (product_id)"
+        " WHERE bp.brand_id=%s AND s.created_at >= date_trunc('day', now())",
+        (p["brand_id"],)).fetchone()["n"]
+    if used_today >= daily_cap:
+        if cached:
+            meta["notice"] = "일일 AI 평가 상한 도달 — 캐시된 평가만 사용"
+            return meta
+        return {"mode": "fallback_keyword",
+                "reason": f"일일 AI 평가 상한({daily_cap}건) 도달 — 키워드 순위 사용"}
+    batch = uncached[:max(1, min(per_call, daily_cap - used_today))]
+    payload = []
+    for d in batch:
+        r = rows_by_uid[d["uid"]]
+        payload.append({"uid": r["platform_uid"], "handle": r["handle"],
+                        "country": r["country"], "lang": r["lang"],
+                        "category": list(r["category"] or []),
+                        "product_tags": list(r["product_tags"] or []),
+                        "followers": r["followers"],
+                        "engagement_rate": (float(r["engagement_rate"])
+                                            if r["engagement_rate"] is not None
+                                            else None)})
+    try:
+        results = _ai.match_candidates(p["name"], fields, payload)
+    except Exception as e:
+        if cached:
+            meta["notice"] = f"신규 평가 실패({type(e).__name__}) — 캐시만 사용"
+            return meta
+        return {"mode": "fallback_keyword",
+                "reason": f"AI 호출 실패({type(e).__name__}) — 키워드 순위 사용"}
+    if results is None:
+        if cached:
+            meta["notice"] = "AI 미연동 — 캐시된 평가만 사용"
+            return meta
+        return {"mode": "fallback_keyword",
+                "reason": "AI 미연동(ANTHROPIC_API_KEY 없음) — 키워드 순위 사용"}
+    allowed = {d["uid"] for d in batch}
+    for item in results:
+        uid = str(item.get("uid", ""))
+        fit = item.get("fit")
+        if uid not in allowed or not isinstance(fit, int) or not 0 <= fit <= 100:
+            continue                       # 허구 uid·범위 밖 점수 거부
+        r = rows_by_uid[uid]
+        data_terms = {_norm(str(t)) for t in
+                      list(r["category"] or []) + list(r["product_tags"] or [])}
+        signals = [str(s)[:120] for s in (item.get("signals") or [])
+                   if isinstance(s, str) and _norm(s) in data_terms][:8]
+        reason = str(item.get("reason", ""))[:300]
+        conn.execute(
+            "INSERT INTO candidate_ai_scores (product_id, profile_version,"
+            " platform_uid, fit, reason, signals, model)"
+            " VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+            (p["product_id"], profile_version, uid, fit, reason,
+             json.dumps(signals, ensure_ascii=False), _ai.MODEL))
+        by_uid[uid].update(aiFit=fit, aiReason=reason, aiSignals=signals,
+                           aiCached=False)
+        meta["evaluated"] += 1
+    return meta

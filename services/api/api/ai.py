@@ -14,7 +14,8 @@ log = logging.getLogger(__name__)
 
 MODEL = "claude-opus-5"
 
-LOCALE_NAME = {"ko": "Korean", "th": "Thai", "en": "English", "vi": "Vietnamese"}
+LOCALE_NAME = {"ko": "Korean", "th": "Thai", "en": "English", "vi": "Vietnamese",
+               "ja": "Japanese"}
 
 
 @lru_cache(maxsize=1)
@@ -102,3 +103,53 @@ def ari_reply(brand_name: str, context: str, history: list[dict], user_msg: str)
     if resp.stop_reason == "refusal":
         return "이 요청에는 답하기 어려워요. 다른 방식으로 물어봐 주세요."
     return "".join(b.text for b in resp.content if b.type == "text").strip()
+
+
+MATCH_SYSTEM = (
+    "You evaluate creator candidates for a K-beauty product campaign.\n"
+    "STRICT RULES:\n"
+    "- Use ONLY the candidate fields provided (category, product_tags, country,"
+    " lang, followers, engagement_rate). NEVER invent facts, metrics, follower"
+    " counts, sales numbers, or attributes that are not in the data.\n"
+    "- Product profile and candidate tags may be in different languages"
+    " (Korean, Thai, Japanese, Vietnamese, English). Compare by MEANING across"
+    " languages: e.g. 'ครีมกันแดด', '日焼け止め', 'kem chống nắng' and"
+    " 'sunscreen' all describe sun care.\n"
+    "- 'signals' must be strings copied VERBATIM from that candidate's provided"
+    " category/product_tags entries (the evidence for your judgement).\n"
+    "- Respond ONLY with a JSON array:"
+    " [{\"uid\": str, \"fit\": int 0-100, \"reason\": one Korean sentence"
+    " citing the provided fields, \"signals\": [str, ...]}] — one entry per"
+    " candidate, no extra text."
+)
+
+
+def match_candidates(product_name: str, fields: dict,
+                     candidates: list[dict]) -> list[dict] | None:
+    """제공된 후보 데이터만 근거로 제품-후보 의미 적합도(0-100)를 평가.
+
+    키가 없으면 None(호출측이 키워드 랭킹으로 폴백). 반환값 검증(uid 존재·
+    fit 범위·signals의 실데이터 존재 여부)은 호출측(routes_products)이 한다.
+    """
+    client = _client()
+    if client is None:
+        return None
+    profile = {k: (v.get("value") if isinstance(v, dict) else str(v))
+               for k, v in (fields or {}).items()}
+    payload = json.dumps({"product": {"name": product_name, "profile": profile},
+                          "candidates": candidates}, ensure_ascii=False)
+    resp = client.messages.create(
+        model=MODEL,
+        max_tokens=2048,
+        thinking={"type": "adaptive"},
+        output_config={"effort": "medium"},
+        system=MATCH_SYSTEM,
+        messages=[{"role": "user", "content": payload}],
+    )
+    text = "".join(b.text for b in resp.content if b.type == "text").strip()
+    if text.startswith("```"):
+        text = text.strip("`").lstrip("json").strip()
+    out = json.loads(text)
+    if not isinstance(out, list):
+        raise ValueError("AI 응답이 목록이 아님")
+    return out

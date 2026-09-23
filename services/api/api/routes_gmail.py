@@ -542,3 +542,39 @@ def sync_gmail(brand_id: str, authorization: str = Header(default='')):
     except HTTPException:raise
     except Exception:
         raise HTTPException(502,'Gmail 동기화에 실패했습니다. 권한과 연결 상태를 확인해 주세요.')
+
+
+@router.get('/admin/gmail/status')
+def admin_gmail_status(authorization: str = Header(default=''),
+                       x_admin_id: str = Header(default=''),
+                       x_admin_key: str = Header(default='')):
+    """관리자 Gmail 운영 읽기 화면 — 브랜드별 계정 상태·동기화 커서/오류·
+    발송 웜업/중지 상태 + 러너 잡 상태를 한 번에. 읽기 전용(변경 없음)."""
+    from .routes_ops import require_admin
+    require_admin(x_admin_id, x_admin_key, authorization)
+    from . import runner_daemon
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT g.*, b.name AS brand_name, b.is_demo FROM gmail_accounts g"
+            " JOIN brands b USING (brand_id)"
+            " ORDER BY g.brand_id, g.connected_at").fetchall()
+        pending_batches = conn.execute(
+            "SELECT b.brand_id, count(*) AS pending FROM outreach_batches b"
+            " JOIN outreach_recipients r USING (batch_id)"
+            " WHERE b.state='approved' AND r.state='pending'"
+            " GROUP BY b.brand_id").fetchall()
+    queue = {r['brand_id']: r['pending'] for r in pending_batches}
+    brands: dict = {}
+    for r in rows:
+        acct = _acct_out(r)
+        acct['syncCursorSet'] = bool(r.get('sync_page_token'))
+        b = brands.setdefault(r['brand_id'], {
+            'brandId': r['brand_id'], 'brandName': r['brand_name'],
+            'isDemo': r['is_demo'], 'accounts': [],
+            'pendingApprovedSends': queue.get(r['brand_id'], 0)})
+        b['accounts'].append(acct)
+    return {'demoMode': _demo_mode(),
+            'brands': sorted(brands.values(), key=lambda x: x['brandId']),
+            'runner': runner_daemon.status(),
+            'note': ('읽기 전용 상태 화면입니다. 발송은 승인된 배치만 러너가 '
+                     '재개하며, 여기서 발송·동의 변경을 실행하지 않습니다.')}

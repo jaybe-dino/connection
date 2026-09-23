@@ -115,7 +115,7 @@ app.include_router(_auth_router)
 app.include_router(_billing_router)
 app.include_router(_payments_router)
 
-ALL_LOCALES = ["ko", "th", "en", "vi"]
+ALL_LOCALES = ["ko", "th", "en", "vi", "ja"]
 
 
 @app.get("/health")
@@ -144,8 +144,8 @@ def runner_status() -> dict:
 
 # ── 언어 자동 매핑 (기획 §4.8: 크리에이터 언어 = IP 초기값, 수동 변경 가능) ──
 
-_COUNTRY_TO_LOCALE = {"TH": "th", "VN": "vi", "KR": "ko", "US": "en"}
-_SUPPORTED = ("ko", "th", "en", "vi")
+_COUNTRY_TO_LOCALE = {"TH": "th", "VN": "vi", "KR": "ko", "US": "en", "JP": "ja"}
+_SUPPORTED = ("ko", "th", "en", "vi", "ja")
 
 
 @app.get("/locale/detect")

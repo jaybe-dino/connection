@@ -247,6 +247,38 @@ def test_partial_or_empty_translation_stays_pending(client, monkeypatch):
     assert m["translations"]["en"].startswith("tr-en:")
 
 
+def test_japanese_locale_supported(client, monkeypatch):
+    """일본어(ja) 지원: ja 원문 게시가 허용되고 번역 대상에 ja가 포함되며,
+    완료 판정도 ja를 요구한다. 외부 호출 없음(완전 결과 모사)."""
+    from api import ai as ai_mod
+    from api import routes_community as comm
+
+    assert "ja" in comm.ALL_LOCALES
+    ctok = _creator_token(client, "comm.ja@ex.com")
+    ch = _bearer(ctok)
+    client.post("/me/join", json={"brand_id": "glowlab"}, headers=ch)
+    _drain_pending()
+
+    monkeypatch.setattr(ai_mod, "translate", _full_translate)
+    p = client.post("/community/cells/cell-glowlab-th/messages", json={
+        "text": "日焼け止めのサンプルはありますか？", "locale": "ja"}, headers=ch)
+    assert p.status_code == 200 and p.json()["translationState"] == "done"
+    msgs = client.get("/community/cells/cell-glowlab-th/messages",
+                      headers=ch).json()
+    mine = [m for m in msgs if m["originalLocale"] == "ja"][-1]
+    assert set(mine["translations"]) >= {"ko", "th", "en", "vi"}
+    # 한국어 원문 → ja 번역 대상 포함, ja 누락 결과는 done이 아니다
+    seen = {}
+    def partial_no_ja(text, src, targets):
+        seen["targets"] = list(targets)
+        return {t: f"tr-{t}" for t in targets if t not in (src, "ja")}
+    monkeypatch.setattr(ai_mod, "translate", partial_no_ja)
+    p2 = client.post("/community/cells/cell-glowlab-th/messages", json={
+        "text": "일본어 대상 포함 확인", "locale": "ko"}, headers=ch).json()
+    assert "ja" in seen["targets"]
+    assert p2["translationState"] == "pending"   # ja 누락 → 완료 아님
+
+
 def test_dm_private_between_creator_and_brand(client, monkeypatch):
     """담당자 1:1 DM — 같은 브랜드의 다른 멤버도 남의 DM은 못 본다."""
     atok = _creator_token(client, "dm.alice@ex.com")

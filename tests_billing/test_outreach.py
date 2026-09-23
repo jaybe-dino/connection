@@ -371,6 +371,25 @@ def test_sync_db_error_rolls_back_partial_and_continues(setup,monkeypatch):
     assert bad2['sync_error']=='' and bad2['synced_at'] is not None     # 회복 기록
 
 
+def test_admin_gmail_status_readonly(setup):
+    """관리자 Gmail 운영 상태 — 읽기 전용, 브랜드 토큰 불가, 발송 유발 없음."""
+    c,db,h,calls=setup
+    assert c.get('/admin/gmail/status',headers=h).status_code==401   # 브랜드 토큰
+    assert c.get('/admin/gmail/status').status_code==401             # 무토큰
+    r=c.get('/admin/gmail/status',headers={'X-Admin-Id':'jay'})
+    assert r.status_code==200
+    body=r.json()
+    real=next(b for b in body['brands'] if b['brandId']=='real')
+    a=real['accounts'][0]
+    assert a['email']=='sender@example.com'
+    for k in ('canRead','syncError','syncedAt','sentToday','todayCap',
+              'sendingPaused','warmupDay','syncCursorSet'):
+        assert k in a
+    assert 'pendingApprovedSends' in real
+    assert 'runner' in body and '읽기 전용' in body['note']
+    assert calls==[]                          # 상태 조회는 발송을 유발하지 않는다
+
+
 def test_gmail_import_is_idempotent_and_tenant_private(setup,monkeypatch):
     import base64,httpx
     from types import SimpleNamespace

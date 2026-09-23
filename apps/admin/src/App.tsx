@@ -6,6 +6,7 @@ import Applications from "./screens/Applications";
 import Reports from "./screens/Reports";
 import Disputes from "./screens/Disputes";
 import Submissions from "./screens/Submissions";
+import GmailOps from "./screens/GmailOps";
 
 const RAIL = [
   { to: "/dashboard", label: "대시보드", icon: "◐" },
@@ -13,6 +14,7 @@ const RAIL = [
   { to: "/reports", label: "신고 처리함", icon: "⚑", badge: "openReports" },
   { to: "/disputes", label: "분쟁 심판", icon: "⚖", badge: "openDisputes" },
   { to: "/submissions", label: "검수 현황", icon: "◑", badge: "inReviewSubmissions" },
+  { to: "/gmail", label: "Gmail 운영", icon: "✉" },
 ] as const;
 
 /** 실인증 게이트 — 최초 1회 부트스트랩 → 이후 이메일+비밀번호(+OTP) 로그인.
@@ -215,6 +217,7 @@ export default function App() {
           <Route path="/reports" element={<Reports onChange={refresh} />} />
           <Route path="/disputes" element={<Disputes onChange={refresh} />} />
           <Route path="/submissions" element={<Submissions onChange={refresh} />} />
+          <Route path="/gmail" element={<GmailOps />} />
         </Routes>
       </main>
     </div>

@@ -14,7 +14,7 @@ from .db import connect, ledger_append
 
 router = APIRouter()
 
-ALL_LOCALES = ["ko", "th", "en", "vi"]
+ALL_LOCALES = ["ko", "th", "en", "vi", "ja"]
 
 
 def _j(v: Any) -> str:

@@ -7,7 +7,7 @@
 import logging
 import os
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel
 
 from . import auth
@@ -50,7 +50,8 @@ def _user_out(u: dict) -> dict:
 
 def _issue(u: dict, **extra) -> dict:
     claims = {"sub": str(u["user_id"]), "kind": u["kind"],
-              "brand_id": u["brand_id"], "creator_id": u["creator_id"], **extra}
+              "brand_id": u["brand_id"], "creator_id": u["creator_id"],
+              "se": u.get("session_epoch", 0), **extra}
     return {"token": auth.issue_jwt(claims), "user": _user_out(u)}
 
 
@@ -182,7 +183,8 @@ def invite_brand(body: InviteIn, authorization: str = Header(default=""),
                  x_admin_key: str = Header(default="")) -> dict:
     """어드민이 브랜드 담당자를 초대 — 가입 승인 흐름에서 호출된다."""
     u = auth.current_user(authorization)
-    if not (u and u.get("kind") == "admin"):
+    # 검수 반영: 2FA 미완료(otp=pending) 어드민 토큰으로는 초대 발급 불가
+    if not (u and u.get("kind") == "admin" and u.get("otp") != "pending"):
         required = os.environ.get("ADMIN_KEY", "")
         legacy_ok = (not auth.auth_required()
                      and (not required or x_admin_key == required))
@@ -192,6 +194,14 @@ def invite_brand(body: InviteIn, authorization: str = Header(default=""),
     with connect() as conn:
         exists = conn.execute("SELECT * FROM users WHERE email=%s",
                               (email,)).fetchone()
+        # 검수 반영: 브랜드 초대는 브랜드 계정 목적 전용 — 관리자·크리에이터
+        # 계정으로의 초대(=비밀번호 우회 재설정 경로)를 차단하고, 기존 브랜드
+        # 계정은 소유 브랜드가 일치할 때만 재초대(비밀번호 재설정)한다.
+        if exists and exists["kind"] != "brand":
+            raise HTTPException(409, "브랜드 초대는 브랜드 계정에만 보낼 수 있습니다"
+                                     " — 비밀번호는 재설정 기능을 사용하세요")
+        if exists and exists["brand_id"] and exists["brand_id"] != body.brand_id:
+            raise HTTPException(409, "이미 다른 브랜드에 연결된 담당자 이메일입니다")
         target = exists or conn.execute(
             "INSERT INTO users (kind, email, brand_id) VALUES"
             " ('brand', %s, %s) RETURNING *", (email, body.brand_id)).fetchone()
@@ -227,6 +237,11 @@ def accept_invite(body: AcceptIn) -> dict:
         raise HTTPException(400, "비밀번호는 10자 이상")
     with connect() as conn:
         u = auth.consume_token(conn, body.token, "invite")
+        # 검수 반영: 초대 수락은 브랜드 계정 전용 — 관리자 계정에 발급된
+        # 초대 토큰으로 즉시 세션을 얻는 우회를 차단한다.
+        if u["kind"] != "brand":
+            raise HTTPException(400, "이 초대는 브랜드 계정 전용입니다"
+                                     " — 비밀번호는 재설정 기능을 사용하세요")
         u = conn.execute(
             "UPDATE users SET password_hash=%s WHERE user_id=%s RETURNING *",
             (auth.hash_password(body.password), u["user_id"])).fetchone()
@@ -297,3 +312,103 @@ def me(authorization: str = Header(default="")) -> dict:
     if not u:
         raise HTTPException(401, "계정을 찾을 수 없습니다")
     return _user_out(u)
+
+
+# ── 비밀번호 재설정 (브랜드·관리자) ──────────────────────────────
+# 원문 토큰은 메일 링크에만 담기고 DB에는 해시(auth_tokens, kind='reset'),
+# 로그·공개 응답 어디에도 남지 않는다. 익명 요청 응답은 계정 존재 여부와
+# 무관하게 항상 동일하다.
+
+RESET_TTL_MIN = 30                     # 재설정 링크 유효 30분 · 1회용
+RESET_EMAIL_LIMIT = 3                  # 같은 이메일: 15분 3회
+RESET_IP_LIMIT = 10                    # 같은 IP: 15분 10회 (429)
+RESET_WINDOW_MIN = 15
+
+
+def _client_ip(request) -> str:
+    fwd = (request.headers.get("x-forwarded-for", "") or "").split(",")[0].strip()
+    return (fwd or (request.client.host if request.client else ""))[:64]
+
+
+class ResetRequestIn(BaseModel):
+    email: str
+
+
+@router.post("/reset/request")
+def reset_request(body: ResetRequestIn, request: Request) -> dict:
+    """재설정 메일 요청 — 브랜드·관리자 계정 전용.
+
+    응답은 항상 동일(존재 비노출). 발송 실패를 성공으로 꾸미지 않는다:
+    실패는 원장·서버 로그(토큰 없이)에만 남고, 링크를 응답으로 돌려주는
+    데모 경로는 없다."""
+    email = body.email.strip().lower()
+    if "@" not in email or len(email) > 200:
+        raise HTTPException(400, "이메일 형식이 올바르지 않습니다")
+    generic = {"ok": True,
+               "message": ("등록된 브랜드·관리자 계정이면 재설정 메일을 보냈어요."
+                           " 잠시 후 메일함(스팸함 포함)을 확인하세요."
+                           " 링크는 30분 동안 1회만 유효합니다.")}
+    ip = _client_ip(request)
+    with connect() as conn:
+        n_ip = conn.execute(
+            "SELECT count(*) n FROM password_reset_requests"
+            " WHERE ip=%s AND requested_at > now() - make_interval(mins=>%s)",
+            (ip, RESET_WINDOW_MIN)).fetchone()["n"]
+        if n_ip >= RESET_IP_LIMIT:
+            raise HTTPException(429, "요청이 너무 잦습니다 — 잠시 후 다시 시도하세요")
+        conn.execute("INSERT INTO password_reset_requests (email, ip)"
+                     " VALUES (%s,%s)", (email, ip))
+        n_email = conn.execute(
+            "SELECT count(*) n FROM password_reset_requests"
+            " WHERE email=%s AND requested_at > now() - make_interval(mins=>%s)",
+            (email, RESET_WINDOW_MIN)).fetchone()["n"]
+        u = conn.execute("SELECT * FROM users WHERE email=%s AND state='active'",
+                         (email,)).fetchone()
+        # 크리에이터는 매직링크 로그인 대상(비밀번호 없음) — 발송하지 않되
+        # 응답은 동일하게 유지해 계정 유형도 노출하지 않는다.
+        eligible = bool(u) and u["kind"] in ("brand", "admin")
+        if not eligible or n_email > RESET_EMAIL_LIMIT:
+            return generic
+        raw = auth.one_time_token(conn, u["user_id"], "reset", RESET_TTL_MIN)
+        ledger_append(conn, "system", "PASSWORD_RESET_REQUESTED",
+                      str(u["user_id"]), {"email": email})
+    link = f"{SITE}/?reset={raw}"
+    sent = _send_system_mail(
+        email, "theprlist — 비밀번호 재설정",
+        "안녕하세요, theprlist입니다.\n\n아래 링크에서 새 비밀번호를 설정하세요"
+        f" (30분 유효 · 1회용).\n\n{link}\n\n본인이 요청하지 않았다면 이 메일은"
+        " 무시하세요 — 비밀번호는 바뀌지 않습니다.\n— theprlist 드림")
+    if not sent:
+        with connect() as conn:
+            ledger_append(conn, "system", "PASSWORD_RESET_MAIL_FAILED",
+                          str(u["user_id"]),
+                          {"email": email,
+                           "reason": "시스템 발신 미구성 또는 발송 실패"})
+        log.error("재설정 메일 발송 실패: %s (토큰은 기록하지 않음)", email)
+    return generic
+
+
+class ResetConfirmIn(BaseModel):
+    token: str
+    password: str
+
+
+@router.post("/reset/confirm")
+def reset_confirm(body: ResetConfirmIn) -> dict:
+    """재설정 링크로 새 비밀번호 설정 — 세션을 발급하지 않는다.
+
+    완료 시 session_epoch를 올려 기존 세션을 전부 폐기하고, 사용자는 정상
+    로그인(관리자 2FA 포함)을 다시 거친다. kind/brand_id/OTP 설정은 불변."""
+    if len(body.password) < 10:
+        raise HTTPException(400, "비밀번호는 10자 이상")
+    with connect() as conn:
+        u = auth.consume_token(conn, body.token, "reset")
+        if u["kind"] not in ("brand", "admin"):
+            raise HTTPException(400, "이 계정 유형은 비밀번호 로그인을 사용하지 않습니다")
+        conn.execute("UPDATE users SET password_hash=%s WHERE user_id=%s",
+                     (auth.hash_password(body.password), u["user_id"]))
+        auth.bump_session_epoch(conn, u["user_id"])
+        ledger_append(conn, "system", "PASSWORD_RESET_COMPLETED",
+                      str(u["user_id"]), {"email": u["email"]})
+    return {"ok": True, "kind": u["kind"],
+            "message": "비밀번호가 변경되었습니다 — 새 비밀번호로 다시 로그인하세요."}

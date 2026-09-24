@@ -149,13 +149,55 @@ def consume_token(conn, raw: str, kind: str) -> dict:
     return u
 
 
+# ── 세션 무효화(epoch) — 비밀번호 재설정 시 기존 JWT 전부 폐기 ────
+# JWT는 무상태지만, 발급 시 넣은 se(session_epoch)를 users.session_epoch와
+# 비교한다. 재설정이 epoch를 올리면 이전 토큰(se 불일치·se 없음=0)이 모두
+# 무효가 된다. 짧은 캐시로 요청당 조회를 줄인다(폐기 반영 지연 최대 10초,
+# 같은 프로세스에서 bump 시 즉시 반영).
+
+_EPOCH_CACHE_TTL = 10.0
+_epoch_cache: dict[str, tuple[int, float]] = {}
+
+
+def _session_epoch(user_id: str) -> int | None:
+    now = time.time()
+    hit = _epoch_cache.get(str(user_id))
+    if hit and now - hit[1] < _EPOCH_CACHE_TTL:
+        return hit[0]
+    try:
+        with connect() as conn:
+            row = conn.execute(
+                "SELECT session_epoch FROM users WHERE user_id=%s::uuid",
+                (str(user_id),)).fetchone()
+    except Exception:
+        # DB 장애·미마이그레이션 환경 — 가용성 우선으로 검증 생략(로그만)
+        log.warning("session_epoch 조회 실패 — 세션 폐기 검증 생략")
+        return None
+    epoch = row["session_epoch"] if row else 0
+    _epoch_cache[str(user_id)] = (epoch, now)
+    return epoch
+
+
+def bump_session_epoch(conn, user_id) -> None:
+    """이 사용자의 기존 세션 전부 무효화(비밀번호 재설정 등)."""
+    conn.execute("UPDATE users SET session_epoch=session_epoch+1"
+                 " WHERE user_id=%s", (user_id,))
+    _epoch_cache.pop(str(user_id), None)
+
+
 # ── FastAPI 의존성 ───────────────────────────────────────────────
 
 def current_user(authorization: str = Header(default="")) -> dict | None:
     """Bearer JWT → 클레임. 토큰이 없으면 None (강제는 라우트별 가드에서)."""
     if not authorization.startswith("Bearer "):
         return None
-    return decode_jwt(authorization.removeprefix("Bearer ").strip())
+    claims = decode_jwt(authorization.removeprefix("Bearer ").strip())
+    if claims.get("sub") and claims.get("kind") in ("admin", "brand",
+                                                    "creator"):
+        epoch = _session_epoch(claims["sub"])
+        if epoch is not None and int(claims.get("se", 0)) != epoch:
+            raise HTTPException(401, "세션이 무효화되었습니다 — 다시 로그인하세요")
+    return claims
 
 
 def require_brand(brand_id: str,

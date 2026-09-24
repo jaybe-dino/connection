@@ -20,15 +20,18 @@ const RAIL = [
 /** 실인증 게이트 — 최초 1회 부트스트랩 → 이후 이메일+비밀번호(+OTP) 로그인.
  *  AUTH_REQUIRED 전이면 "키 모드로 계속" 우회가 남는다 (전환기 호환). */
 function AuthGate({ onDone }: { onDone: () => void }) {
-  const [mode, setMode] = useState<"loading" | "login" | "bootstrap" | "otp">("loading");
+  const [mode, setMode] = useState<"loading" | "login" | "bootstrap" | "otp" | "forgot" | "reset">("loading");
+  const resetToken = new URLSearchParams(location.search).get("reset") || "";
   const [allowSkip, setAllowSkip] = useState(false);
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [code, setCode] = useState("");
   const [pending, setPending] = useState("");
   const [err, setErr] = useState("");
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
+    if (resetToken) { setMode("reset"); return; }
     authApi.status()
       .then((s) => {
         setAllowSkip(!s.authRequired);
@@ -44,6 +47,16 @@ function AuthGate({ onDone }: { onDone: () => void }) {
         const r = await authApi.bootstrap(email.trim(), pw);
         setJwt(r.token); onDone(); return;
       }
+      if (mode === "forgot") {
+        const r = await authApi.resetRequest(email.trim());
+        setErr(""); setNotice(r.message); return;   // 계정 존재 여부 비노출 응답
+      }
+      if (mode === "reset") {
+        const r = await authApi.resetConfirm(resetToken, pw);
+        setNotice(r.message + " 아래에서 다시 로그인하세요.");
+        history.replaceState(null, "", location.pathname + location.hash);
+        setPw(""); setMode("login"); return;        // 자동 세션 발급 없음
+      }
       if (mode === "otp") {
         const r = await authApi.otpVerify(pending, code.trim());
         setJwt(r.token); onDone(); return;
@@ -54,6 +67,8 @@ function AuthGate({ onDone }: { onDone: () => void }) {
     } catch (e) {
       setErr(mode === "otp" ? "OTP 코드가 일치하지 않습니다"
         : mode === "bootstrap" ? "생성 실패 — 비밀번호 10자 이상, 어드민 키 확인"
+        : mode === "reset" ? "재설정 실패 — 링크가 만료됐거나 이미 사용됐어요. 재설정을 다시 요청하세요 (비밀번호 10자 이상)."
+        : mode === "forgot" ? "요청 실패 — 잠시 후 다시 시도하세요"
         : "이메일 또는 비밀번호가 올바르지 않습니다");
     }
   };
@@ -68,27 +83,48 @@ function AuthGate({ onDone }: { onDone: () => void }) {
         <div style={{ fontSize: 11.5, color: "var(--n600)", marginBottom: 16 }}>
           {mode === "bootstrap" ? "최초 어드민 계정을 만듭니다 (1회)"
             : mode === "otp" ? "OTP 앱의 6자리 코드를 입력하세요"
+            : mode === "forgot" ? "가입한 이메일로 재설정 링크를 보내드려요 (30분 유효·1회용)"
+            : mode === "reset" ? "재설정 링크 확인됨 — 새 비밀번호(10자 이상)를 정하세요"
             : "이메일과 비밀번호로 로그인하세요"}
         </div>
-        {mode !== "otp" && (<>
+        {(mode === "login" || mode === "bootstrap" || mode === "forgot") && (
           <input style={S} placeholder="이메일" value={email} autoComplete="username"
-            onChange={(e) => setEmail(e.target.value)} />
-          <input style={S} placeholder={mode === "bootstrap" ? "비밀번호 (10자 이상)" : "비밀번호"}
-            type="password" value={pw} autoComplete="current-password"
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && mode === "forgot" && submit()} />
+        )}
+        {(mode === "login" || mode === "bootstrap" || mode === "reset") && (
+          <input style={S} placeholder={mode === "login" ? "비밀번호" : "비밀번호 (10자 이상)"}
+            type="password" value={pw} autoComplete={mode === "login" ? "current-password" : "new-password"}
             onChange={(e) => setPw(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()} />
-        </>)}
+        )}
         {mode === "otp" && (
           <input style={S} placeholder="123456" value={code} inputMode="numeric"
             onChange={(e) => setCode(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()} />
         )}
         {err && <div style={{ color: "var(--c500,#b00)", fontSize: 11.5, marginBottom: 8 }}>{err}</div>}
+        {notice && <div style={{ color: "var(--n700)", fontSize: 11.5, marginBottom: 8 }}>{notice}</div>}
         <button onClick={submit} style={{ width: "100%", padding: "10px 0", borderRadius: 9,
           border: "none", background: "var(--d800)", color: "#fff", fontWeight: 800,
           fontSize: 13, cursor: "pointer" }}>
-          {mode === "bootstrap" ? "어드민 만들기" : mode === "otp" ? "확인" : "로그인"}
+          {mode === "bootstrap" ? "어드민 만들기" : mode === "otp" ? "확인"
+            : mode === "forgot" ? "재설정 메일 보내기" : mode === "reset" ? "비밀번호 변경" : "로그인"}
         </button>
+        {mode === "login" && (
+          <div onClick={() => { setErr(""); setNotice(""); setMode("forgot"); }}
+            style={{ marginTop: 10, fontSize: 11, color: "var(--n600)", textAlign: "center",
+              cursor: "pointer", textDecoration: "underline" }}>
+            비밀번호를 잊으셨나요?
+          </div>
+        )}
+        {mode === "forgot" && (
+          <div onClick={() => { setErr(""); setNotice(""); setMode("login"); }}
+            style={{ marginTop: 10, fontSize: 11, color: "var(--n600)", textAlign: "center",
+              cursor: "pointer", textDecoration: "underline" }}>
+            로그인으로 돌아가기
+          </div>
+        )}
         {allowSkip && (
           <div onClick={onDone} style={{ marginTop: 12, fontSize: 11, color: "var(--n600)",
             textAlign: "center", cursor: "pointer", textDecoration: "underline" }}>

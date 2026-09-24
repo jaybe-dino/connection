@@ -687,3 +687,72 @@ gmail.readonly 연결 계정이 함께 있으면, gmail_sync.sync가
 AUTH_REQUIRED=1 가드 유지(신규 경로는 핸들러 자체 검사+allowlist), 기존
 과금 소급 변경 없음, 실결제·외부 수신자 메일·새 OAuth 권한·비밀키 노출·
 자동 루틴 재개 없음, 허구 지표 없음(AI 응답도 근거 검증 후 채택).
+
+---
+
+# 비밀번호 재설정 기능 (2026-09-24) — 브랜드·관리자 "비밀번호를 잊으셨나요?"
+
+기준: origin 28d0a27(Codex — AI 예산 집계·동시성 잠금·캐시 무효화, 운영
+배포·031 적용 확인) fast-forward 통합 후 개발.
+
+## 구현 (커밋 이 절 하단)
+
+- **API**: `POST /auth/reset/request`(이메일) → 브랜드/관리자 active 계정에만
+  30분·1회용 reset 전용 토큰(auth_tokens kind='reset', **DB에는 해시만**,
+  원문은 메일 링크에만 — 로그·원장·응답 미기록) 발급 후 시스템 메일 발송.
+  응답은 계정 존재·유형·발송 성공 여부와 무관하게 **항상 동일 문구**
+  (크리에이터=매직링크 대상·비활성·미존재 모두 무발송+동일 응답).
+  레이트리밋: 이메일당 15분 3회(초과 시 무발송·응답 동일), IP당 15분 10회
+  (초과 429 — X-Forwarded-For 첫 값 기준). 발송 실패는 성공으로 표시하지
+  않음: 응답은 동일하되 원장 PASSWORD_RESET_MAIL_FAILED + 서버 로그(토큰
+  없이) 기록. demoLink 반환 경로 없음.
+- `POST /auth/reset/confirm`(토큰+새 비밀번호 10자+) → consume_token이
+  만료·재사용·동시 소비(원자 UPDATE)·다른 목적(invite/magic) 토큰을 모두
+  400으로 거부, 비활성 계정 401. password_hash만 변경 —
+  **kind/brand_id/creator_id/OTP 설정 불변**. 완료 시 **세션 발급 없음**
+  (OTP 우회 불가 — 정상 로그인, 관리자 2FA 그대로) + `session_epoch` 증가로
+  **기존 세션 전부 폐기**(JWT se 클레임 ↔ users.session_epoch 대조,
+  032 마이그레이션; 다중 워커에서 폐기 전파 지연 최대 10초).
+- **UI**: 콘솔 로그인 패널과 admin.theprlist.net 게이트 양쪽에
+  "비밀번호를 잊으셨나요?"(이메일 입력→요청) + `?reset=<토큰>` 링크 랜딩
+  (새 비밀번호 입력→변경→재로그인 안내; admin은 admin 도메인 안내).
+- **검수 반영(초대 우회 폐쇄)**: `/auth/invite`는 otp=pending 어드민 토큰
+  거부, 기존 계정이 브랜드가 아니면 409(관리자·크리에이터 이메일 초대
+  불가), 기존 브랜드 계정은 소유 브랜드 일치 시에만 재초대 허용.
+  `/auth/accept`는 kind='brand' 토큰만 수락 — 관리자에 발급된 invite
+  토큰으로 즉시 세션을 얻는 우회 차단.
+
+## 검증 (격리 DB — 메일은 전부 모사, 실발송·운영 접근 없음)
+
+- pytest 신규 7종(test_password_reset.py): 비노출 동일 응답(미존재/크리에이터/
+  비활성, 발송 0회)·정상 흐름(kind/brand_id 보존, 원문 토큰 DB 미저장,
+  기존 JWT 401 폐기, 옛/새 비밀번호 로그인, 재사용 400)·관리자 OTP 관문
+  유지(needOtp→otp/verify)·목적 혼용/만료/스레드 동시 소비(정확히 1회)·
+  레이트리밋(이메일 3회 발송 중단·IP 11회째 429)·발송 실패 정직 처리·
+  초대 강화 회귀(관리자 409/타 브랜드 409/동일 브랜드 재초대 유지/
+  otp pending 401/관리자 invite 토큰 accept 400).
+- 전체 회귀: services/api **115 passed**(기존 초대·매직링크 포함) ·
+  tests_billing **60 passed** · tests_ui **19/19**.
+- 실브라우저 E2E 14체크(e2e_reset): 콘솔 요청 폼(존재/미존재 동일 문구)·
+  ?reset= 랜딩→변경(자동 로그인 없음 확인)→옛 비번 401→새 비번 로그인,
+  어드민 게이트 forgot/reset 모드·재사용 400, JS 에러 0 + cycle3 15체크
+  회귀(재초대·매직링크·합류 흐름).
+- 빌드: console/creator-app/admin dist 재생성.
+
+## 운영 조치 (시스템 메일 경로)
+
+재설정 메일은 `_send_system_mail` = SYSTEM_MAIL_BRAND(운영 확인값: glowlab)
+에 연결된 발신 Gmail로 나간다. 운영 읽기 확인 결과 발신 계정
+(jaybe@dinostudio.kr)이 connected·발송 미중지·refresh 토큰 보유 상태이므로
+**추가 구성 없이 동작해야 하며**, 웜업 일일 한도(WARMUP_PLAN)를 시스템
+메일도 공유한다는 점만 유의. 만약 발송이 실패하면(토큰 만료·한도 소진 등)
+원장의 PASSWORD_RESET_MAIL_FAILED로 확인하고 ① 해당 Gmail 재연결 또는
+② 한도 회복 후 사용자에게 재요청 안내. 메일이 전혀 구성되지 않은 환경에선
+링크가 어디에도 노출되지 않으므로(의도된 동작) 관리자용 대안은 기존
+가이드의 Railway 1회용 토큰 절차뿐이다.
+
+## 배포 후 확인(Codex)
+
+/health에 032 적용, admin.theprlist.net 로그인 화면의 "비밀번호를
+잊으셨나요?" → jaybe@dinostudio.kr 요청 → 수신 메일 링크(?reset=)로 새
+비밀번호 설정 → 로그인(해당 계정 OTP false 확인됨) 순으로 검증.

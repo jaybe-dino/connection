@@ -46,6 +46,12 @@ export const authApi = {
   login: (email: string, password: string) =>
     req<{ token: string; user: AuthUser; needOtp?: boolean }>("/auth/login",
       { method: "POST", body: JSON.stringify({ email, password }) }),
+  resetRequest: (email: string) =>
+    req<{ ok: boolean; message: string }>("/auth/reset/request",
+      { method: "POST", body: JSON.stringify({ email }) }),
+  resetConfirm: (token: string, password: string) =>
+    req<{ ok: boolean; kind: string; message: string }>("/auth/reset/confirm",
+      { method: "POST", body: JSON.stringify({ token, password }) }),
   otpVerify: (pending: string, code: string) =>
     fetch(`${BASE}/auth/otp/verify`, {
       method: "POST",

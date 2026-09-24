@@ -905,7 +905,8 @@
         authPanel("<b>브랜드 로그인</b><div style='margin-top:8px'>" +
           "<input id='axEmail' placeholder='이메일' style='width:100%;padding:6px;margin-bottom:5px;box-sizing:border-box'>" +
           "<input id='axPw' type='password' placeholder='비밀번호' style='width:100%;padding:6px;box-sizing:border-box'>" +
-          "<div style='margin-top:8px'><span class='cbt' onclick='authLogin()'>로그인</span></div></div>");
+          "<div style='margin-top:8px'><span class='cbt' onclick='authLogin()'>로그인</span> " +
+          "<span class='cbt no' onclick='authForgot()'>비밀번호를 잊으셨나요?</span></div></div>");
       }
     };
     document.body.appendChild(d);
@@ -923,6 +924,32 @@
     }).catch(function () { toast("로그인 실패", "이메일 또는 비밀번호를 확인하세요."); });
   };
   window.authOtp = function(){req('POST','/auth/otp/verify',{code:document.getElementById('axOtp').value}).then(function(r){jwtSet(r.token);window.__ME=r.user;authPanel(null);authChip();reloadBrand();}).catch(function(){toast('인증 실패','인증 코드를 확인하세요.');});};
+  /* 비밀번호 재설정 — 브랜드·관리자 공용. 요청 응답은 계정 존재와 무관하게
+     동일 문구(서버가 비노출 처리)이고, 링크는 메일로만 온다. */
+  window.authForgot = function () {
+    var pre = (document.getElementById("axEmail") || {}).value || "";
+    authPanel("<b>비밀번호 재설정</b><div style='margin-top:6px;color:#5a6560'>가입한 이메일로 재설정 링크를 보내드려요 (30분 유효·1회용).</div>" +
+      "<input id='axEmail' placeholder='이메일' value='" + mailEscape(pre).replace(/'/g, "&#39;") + "' style='width:100%;padding:6px;margin-top:8px;box-sizing:border-box'>" +
+      "<div style='margin-top:8px'><span class='cbt' onclick='authForgotSend()'>재설정 메일 보내기</span> <span class='cbt no' onclick='authChip()'>돌아가기</span></div>");
+  };
+  window.authForgotSend = function () {
+    var em = ((document.getElementById("axEmail") || {}).value || "").trim();
+    if (em.indexOf("@") < 0) return toast("이메일", "주소를 확인해 주세요.");
+    req("POST", "/auth/reset/request", { email: em }).then(function (r) {
+      authPanel(null);
+      toast("확인해 주세요", mailEscape(r.message || "등록된 계정이면 재설정 메일을 보냈어요."));
+    }).catch(function (e) { toast("요청 실패", mailEscape(e.message || "잠시 후 다시 시도해 주세요.")); });
+  };
+  window.authResetConfirm = function (tk) {
+    var pw = (document.getElementById("axPw") || {}).value || "";
+    req("POST", "/auth/reset/confirm", { token: tk, password: pw }).then(function (r) {
+      authPanel(null);
+      history.replaceState(null, "", location.pathname);
+      toast("비밀번호 변경 완료 ✅", mailEscape(r.message || "") +
+        (r.kind === "admin" ? "<br><b>admin.theprlist.net</b>에서 다시 로그인하세요." : "<br>아래 로그인 버튼으로 다시 로그인하세요."));
+      authChip();
+    }).catch(function (e) { toast("재설정 실패", mailEscape(e.message || "링크가 만료됐거나 이미 사용됐어요 — 재설정을 다시 요청하세요.")); });
+  };
   window.authMagic = function () {
     var em = (document.getElementById("axEmail") || {}).value || "";
     req("POST", "/auth/magic", { email: em.trim() }).then(function (r) {
@@ -1381,7 +1408,13 @@
   }
   try {
     var sp = new URLSearchParams(location.search);
-    var inviteTok = sp.get("invite"), magicTok = sp.get("magic");
+    var inviteTok = sp.get("invite"), magicTok = sp.get("magic"), resetTok = sp.get("reset");
+    if (resetTok) {
+      authPanel("<b>새 비밀번호 설정</b><div style='margin-top:6px;color:#5a6560'>재설정 링크 확인됨 — 새 비밀번호(10자 이상)를 정하세요. 완료 후 다시 로그인합니다.</div>" +
+        "<input id='axPw' type='password' placeholder='새 비밀번호' style='width:100%;padding:6px;margin-top:8px;box-sizing:border-box'>" +
+        "<div style='margin-top:8px'><span class='cbt' onclick='authResetApply()'>비밀번호 변경</span></div>");
+      window.authResetApply = function () { window.authResetConfirm(resetTok); };
+    }
     if (inviteTok) {
       authPanel("<b>브랜드 계정 만들기</b><div style='margin-top:6px;color:#5a6560'>초대를 수락하고 비밀번호를 정하세요 (10자 이상).</div>" +
         "<input id='axPw' type='password' placeholder='새 비밀번호' style='width:100%;padding:6px;margin-top:8px;box-sizing:border-box'>" +

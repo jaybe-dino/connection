@@ -371,12 +371,17 @@ def test_sync_db_error_rolls_back_partial_and_continues(setup,monkeypatch):
     assert bad2['sync_error']=='' and bad2['synced_at'] is not None     # 회복 기록
 
 
-def test_admin_gmail_status_readonly(setup):
+def test_admin_gmail_status_readonly(setup, monkeypatch):
     """관리자 Gmail 운영 상태 — 읽기 전용, 브랜드 토큰 불가, 발송 유발 없음."""
     c,db,h,calls=setup
+    monkeypatch.setenv('AUTH_REQUIRED', '1')
     assert c.get('/admin/gmail/status',headers=h).status_code==401   # 브랜드 토큰
     assert c.get('/admin/gmail/status').status_code==401             # 무토큰
-    r=c.get('/admin/gmail/status',headers={'X-Admin-Id':'jay'})
+    assert c.get('/admin/gmail/status',headers={'X-Admin-Id':'jay'}).status_code==401
+    pending={'Authorization':'Bearer '+issue_jwt({'kind':'admin','sub':'qa-admin','otp':'pending'})}
+    assert c.get('/admin/gmail/status',headers=pending).status_code==401
+    admin={'Authorization':'Bearer '+issue_jwt({'kind':'admin','sub':'qa-admin'})}
+    r=c.get('/admin/gmail/status',headers=admin)
     assert r.status_code==200
     body=r.json()
     real=next(b for b in body['brands'] if b['brandId']=='real')

@@ -104,6 +104,42 @@ def test_ai_mode_scores_validates_signals_and_caches(client, monkeypatch):
         _cleanup()
 
 
+def test_concurrent_requests_share_brand_budget(client, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from api import ai as ai_mod
+    t = _brand_token(client, 'aim-concurrent@ex.com', 'glowlab')
+    _seed_pool()
+    entered, release = Event(), Event()
+    try:
+        pid = _product(client, t, 'Concurrent QA serum')
+        with psycopg.connect(os.environ['DATABASE_URL']) as conn:
+            conn.execute("DELETE FROM candidate_ai_usage WHERE brand_id='glowlab'")
+        monkeypatch.setenv('AI_MATCH_MAX_CANDIDATES', '1')
+        monkeypatch.setenv('AI_MATCH_DAILY_CAP', '1')
+        calls = []
+        def provider(*args):
+            calls.append(1)
+            entered.set()
+            assert release.wait(5)
+            raise TimeoutError('count failed attempts too')
+        monkeypatch.setattr(ai_mod, 'match_candidates', provider)
+        url = f'/brands/glowlab/products/{pid}/candidates?mode=ai&country=TH'
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(client.get, url, headers=_bearer(t))
+            assert entered.wait(5)
+            second = executor.submit(client.get, url, headers=_bearer(t))
+            release.set()
+            responses = [first.result(timeout=10), second.result(timeout=10)]
+        assert all(r.status_code == 200 for r in responses)
+        assert len(calls) == 1
+        with psycopg.connect(os.environ['DATABASE_URL']) as conn:
+            assert conn.execute("SELECT sum(quantity) FROM candidate_ai_usage WHERE brand_id='glowlab'").fetchone()[0] == 1
+    finally:
+        release.set()
+        _cleanup()
+
+
 def test_ai_mode_fallbacks_are_honest(client, monkeypatch):
     """미연동(None)·호출 실패·일일 상한 각각에서 키워드 랭킹으로 폴백하고
     사유를 명시한다. 점수·지표를 만들어내지 않는다."""
@@ -167,5 +203,46 @@ def test_ai_mode_per_call_cap(client, monkeypatch):
                         headers=_bearer(t)).json()
         assert batches == [1, 1]
         assert r2["ai"]["cachedHits"] >= 1 and r2["ai"]["evaluated"] == 1
+    finally:
+        _cleanup()
+
+
+def test_failed_attempts_consume_budget_and_changed_input_invalidates_cache(client, monkeypatch):
+    from api import ai as ai_mod
+    t = _brand_token(client, 'aim-budget@ex.com', 'glowlab')
+    _seed_pool()
+    try:
+        pid = _product(client, t, 'Budget QA serum')
+        with psycopg.connect(os.environ['DATABASE_URL']) as conn:
+            conn.execute("DELETE FROM candidate_ai_usage WHERE brand_id='glowlab'")
+        monkeypatch.setenv('AI_MATCH_MAX_CANDIDATES', '1')
+        monkeypatch.setenv('AI_MATCH_DAILY_CAP', '1')
+        calls = []
+        def fail(*args):
+            calls.append(1)
+            raise TimeoutError('provider failed')
+        monkeypatch.setattr(ai_mod, 'match_candidates', fail)
+        url = f'/brands/glowlab/products/{pid}/candidates?mode=ai&country=TH'
+        assert client.get(url, headers=_bearer(t)).json()['ai']['mode'] == 'fallback_keyword'
+        assert client.get(url, headers=_bearer(t)).json()['ai']['mode'] == 'fallback_keyword'
+        assert len(calls) == 1
+        monkeypatch.setenv('AI_MATCH_DAILY_CAP', '100')
+        def good(name, fields, candidates):
+            calls.append(1)
+            return [{'uid':c['uid'], 'fit':75, 'reason':'data match', 'signals':[]} for c in candidates]
+        monkeypatch.setattr(ai_mod, 'match_candidates', good)
+        first = client.get(url, headers=_bearer(t)).json()
+        assert first['ai']['evaluated'] == 1
+        assert client.get(url, headers=_bearer(t)).json()['ai']['cachedHits'] == 1
+        with psycopg.connect(os.environ['DATABASE_URL']) as conn:
+            conn.execute("UPDATE creator_pool SET category=ARRAY['updated category'] WHERE platform_uid='ai-th'")
+        changed = client.get(url, headers=_bearer(t)).json()
+        assert changed['ai']['cachedHits'] == 0 and changed['ai']['evaluated'] == 1
+        monkeypatch.setenv('AI_MATCH_MAX_CANDIDATES', '0')
+        with psycopg.connect(os.environ['DATABASE_URL']) as conn:
+            conn.execute("UPDATE creator_pool SET category=ARRAY['changed again'] WHERE platform_uid='ai-th'")
+        count = len(calls)
+        assert client.get(url, headers=_bearer(t)).json()['ai']['mode'] == 'fallback_keyword'
+        assert len(calls) == count
     finally:
         _cleanup()

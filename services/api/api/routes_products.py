@@ -10,6 +10,7 @@ API로 채운 것)에서 결정적(비생성) 기준으로 뽑고, 각 후보에
 """
 
 import json
+import hashlib
 import re
 import unicodedata
 from uuid import UUID
@@ -329,16 +330,30 @@ def _ai_annotate(conn, p, profile_version, fields, pool, rows_by_uid) -> dict:
     import os as _os
 
     from . import ai as _ai
-    per_call = int(_os.environ.get("AI_MATCH_MAX_CANDIDATES",
-                                   AI_MATCH_MAX_PER_CALL))
-    daily_cap = int(_os.environ.get("AI_MATCH_DAILY_CAP", AI_MATCH_DAILY_CAP))
+    try:
+        per_call = int(_os.environ.get("AI_MATCH_MAX_CANDIDATES",
+                                       AI_MATCH_MAX_PER_CALL))
+        daily_cap = int(_os.environ.get("AI_MATCH_DAILY_CAP", AI_MATCH_DAILY_CAP))
+    except ValueError:
+        return {"mode": "fallback_keyword", "reason": "AI 평가 상한 설정 오류 — 키워드 순위 사용"}
+    per_call = max(0, min(per_call, 50))
+    daily_cap = max(0, daily_cap)
+    # Serialize cache lookup + reservation per brand, including concurrent products.
+    conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                 ("candidate-ai:" + p["brand_id"],))
+    fingerprints = {d["uid"]: hashlib.sha256(json.dumps(
+        {"product": p["name"], "fields": fields, "model": _ai.MODEL,
+         "candidate": dict(rows_by_uid[d["uid"]])},
+        ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
+        for d in pool}
     uids = [d["uid"] for d in pool]
     if not uids:
         return {"mode": "fallback_keyword", "reason": "평가할 후보가 없습니다"}
     cached = conn.execute(
-        "SELECT platform_uid, fit, reason, signals FROM candidate_ai_scores"
+        "SELECT platform_uid, fit, reason, signals, input_hash FROM candidate_ai_scores"
         " WHERE product_id=%s AND profile_version=%s AND platform_uid=ANY(%s)",
         (p["product_id"], profile_version, uids)).fetchall()
+    cached = [c for c in cached if c["input_hash"] == fingerprints[c["platform_uid"]]]
     by_uid = {d["uid"]: d for d in pool}
     for c in cached:
         d = by_uid[c["platform_uid"]]
@@ -350,17 +365,16 @@ def _ai_annotate(conn, p, profile_version, fields, pool, rows_by_uid) -> dict:
     if not uncached:
         return meta
     used_today = conn.execute(
-        "SELECT count(*) n FROM candidate_ai_scores s"
-        " JOIN brand_products bp USING (product_id)"
-        " WHERE bp.brand_id=%s AND s.created_at >= date_trunc('day', now())",
+        "SELECT COALESCE(sum(quantity),0) n FROM candidate_ai_usage"
+        " WHERE brand_id=%s AND created_at >= date_trunc('day', now())",
         (p["brand_id"],)).fetchone()["n"]
-    if used_today >= daily_cap:
+    if used_today >= daily_cap or per_call == 0:
         if cached:
             meta["notice"] = "일일 AI 평가 상한 도달 — 캐시된 평가만 사용"
             return meta
         return {"mode": "fallback_keyword",
                 "reason": f"일일 AI 평가 상한({daily_cap}건) 도달 — 키워드 순위 사용"}
-    batch = uncached[:max(1, min(per_call, daily_cap - used_today))]
+    batch = uncached[:min(per_call, daily_cap - used_today)]
     payload = []
     for d in batch:
         r = rows_by_uid[d["uid"]]
@@ -372,6 +386,8 @@ def _ai_annotate(conn, p, profile_version, fields, pool, rows_by_uid) -> dict:
                         "engagement_rate": (float(r["engagement_rate"])
                                             if r["engagement_rate"] is not None
                                             else None)})
+    conn.execute("INSERT INTO candidate_ai_usage(brand_id,quantity) VALUES(%s,%s)",
+                 (p["brand_id"],len(batch)))
     try:
         results = _ai.match_candidates(p["name"], fields, payload)
     except Exception as e:
@@ -386,25 +402,41 @@ def _ai_annotate(conn, p, profile_version, fields, pool, rows_by_uid) -> dict:
             return meta
         return {"mode": "fallback_keyword",
                 "reason": "AI 미연동(ANTHROPIC_API_KEY 없음) — 키워드 순위 사용"}
+    if not isinstance(results, list):
+        if cached:
+            meta["notice"] = "AI 응답 형식 오류 — 캐시된 평가만 사용"
+            return meta
+        return {"mode": "fallback_keyword", "reason": "AI 응답 형식 오류 — 키워드 순위 사용"}
     allowed = {d["uid"] for d in batch}
     for item in results:
+        if not isinstance(item, dict):
+            continue
         uid = str(item.get("uid", ""))
         fit = item.get("fit")
-        if uid not in allowed or not isinstance(fit, int) or not 0 <= fit <= 100:
+        if uid not in allowed or type(fit) is not int or not 0 <= fit <= 100:
             continue                       # 허구 uid·범위 밖 점수 거부
         r = rows_by_uid[uid]
         data_terms = {_norm(str(t)) for t in
                       list(r["category"] or []) + list(r["product_tags"] or [])}
-        signals = [str(s)[:120] for s in (item.get("signals") or [])
+        raw_signals = item.get("signals")
+        if not isinstance(raw_signals, list):
+            raw_signals = []
+        signals = [str(s)[:120] for s in raw_signals
                    if isinstance(s, str) and _norm(s) in data_terms][:8]
         reason = str(item.get("reason", ""))[:300]
         conn.execute(
             "INSERT INTO candidate_ai_scores (product_id, profile_version,"
-            " platform_uid, fit, reason, signals, model)"
-            " VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+            " platform_uid, fit, reason, signals, model, input_hash)"
+            " VALUES (%s,%s,%s,%s,%s,%s,%s,%s)"
+            " ON CONFLICT(product_id,profile_version,platform_uid) DO UPDATE SET"
+            " fit=EXCLUDED.fit,reason=EXCLUDED.reason,signals=EXCLUDED.signals,"
+            " model=EXCLUDED.model,input_hash=EXCLUDED.input_hash,created_at=now()",
             (p["product_id"], profile_version, uid, fit, reason,
-             json.dumps(signals, ensure_ascii=False), _ai.MODEL))
+             json.dumps(signals, ensure_ascii=False), _ai.MODEL, fingerprints[uid]))
         by_uid[uid].update(aiFit=fit, aiReason=reason, aiSignals=signals,
                            aiCached=False)
         meta["evaluated"] += 1
+        allowed.remove(uid)
+    if not meta["evaluated"] and not cached:
+        return {"mode": "fallback_keyword", "reason": "유효한 AI 평가 없음 — 키워드 순위 사용"}
     return meta

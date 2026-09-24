@@ -1,6 +1,6 @@
 import {normalizeSlug,slugProblem,availabilityMessage} from './slug-validation.js';
 const params=new URLSearchParams(location.search);
-if(params.has('invite')||params.has('magic')) location.replace('/account.html'+location.search);
+if(params.has('invite')||params.has('magic')||params.has('reset')) location.replace('/account.html'+location.search);
 const isSignup=location.pathname.replace(/\/$/,'')==='/signup';
 document.querySelector('#landing').hidden=isSignup;document.querySelector('#signup').hidden=!isSignup;
 const api=/^(localhost|127\.0\.0\.1)$/.test(location.hostname)?(params.get('api')||'http://127.0.0.1:8912'):'https://api.theprlist.net';

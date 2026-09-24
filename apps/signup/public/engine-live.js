@@ -937,7 +937,7 @@
     if (em.indexOf("@") < 0) return toast("이메일", "주소를 확인해 주세요.");
     req("POST", "/auth/reset/request", { email: em }).then(function (r) {
       authPanel(null);
-      toast("확인해 주세요", mailEscape(r.message || "등록된 계정이면 재설정 메일을 보냈어요."));
+      toast("확인해 주세요", mailEscape(r.message || "요청을 접수했습니다. 메일이 도착하지 않으면 운영팀에 문의하세요."));
     }).catch(function (e) { toast("요청 실패", mailEscape(e.message || "잠시 후 다시 시도해 주세요.")); });
   };
   window.authResetConfirm = function (tk) {
@@ -1178,7 +1178,8 @@
   }
 
   if(window.__SURFACE==='bjoin'){
-    window.render=function(){document.querySelector('.svcbar').style.display='none';document.getElementById('stage').innerHTML='<main style="max-width:650px;margin:70px auto;padding:24px"><h1>theprlist</h1><h2>'+(window.__ME&&!new URLSearchParams(location.search).has('invite')?'계정 생성 완료':'계정 초대 수락')+'</h2><p>'+(window.__ME&&!new URLSearchParams(location.search).has('invite')?'브랜드 로그인으로 이동해 설정한 계정으로 로그인하세요.':'초대받은 계정은 아래 입력창에서 비밀번호를 설정해 주세요.')+'</p><a class="btn" href="https://theprlist.net">서비스 소개</a> <a class="btn line" href="https://console.theprlist.net">브랜드 로그인</a></main>';};render();
+    var passwordRecoveryPage = new URLSearchParams(location.search).has('reset');
+    window.render=function(){document.querySelector('.svcbar').style.display='none';document.getElementById('stage').innerHTML='<main style="max-width:650px;margin:70px auto;padding:24px"><h1>theprlist</h1><h2>'+(passwordRecoveryPage?'비밀번호 재설정':window.__ME&&!new URLSearchParams(location.search).has('invite')?'계정 생성 완료':'계정 초대 수락')+'</h2><p>'+(passwordRecoveryPage?'아래에서 새 비밀번호를 설정한 뒤 해당 계정으로 다시 로그인하세요.':window.__ME&&!new URLSearchParams(location.search).has('invite')?'브랜드 로그인으로 이동해 설정한 계정으로 로그인하세요.':'초대받은 계정은 아래 입력창에서 비밀번호를 설정해 주세요.')+'</p><a class="btn" href="https://theprlist.net">서비스 소개</a> <a class="btn line" href="https://console.theprlist.net">브랜드 로그인</a></main>';};render();
   }
 
   /* ── 크리에이터 표면: 매직링크 로그인 → 브랜드 PR 리스트 합류 → 내 멤버십.
@@ -1410,7 +1411,7 @@
     var sp = new URLSearchParams(location.search);
     var inviteTok = sp.get("invite"), magicTok = sp.get("magic"), resetTok = sp.get("reset");
     if (resetTok) {
-      authPanel("<b>새 비밀번호 설정</b><div style='margin-top:6px;color:#5a6560'>재설정 링크 확인됨 — 새 비밀번호(10자 이상)를 정하세요. 완료 후 다시 로그인합니다.</div>" +
+      authPanel("<b>새 비밀번호 설정</b><div style='margin-top:6px;color:#5a6560'>새 비밀번호(10자 이상)를 정하세요. 링크 유효성은 변경 시 확인합니다. 완료 후 다시 로그인합니다.</div>" +
         "<input id='axPw' type='password' placeholder='새 비밀번호' style='width:100%;padding:6px;margin-top:8px;box-sizing:border-box'>" +
         "<div style='margin-top:8px'><span class='cbt' onclick='authResetApply()'>비밀번호 변경</span></div>");
       window.authResetApply = function () { window.authResetConfirm(resetTok); };

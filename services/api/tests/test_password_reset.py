@@ -58,8 +58,9 @@ def _make_admin(email, password="admin-pass-1234", totp=False):
 
 
 def _req(client, email, ip):
-    return client.post("/auth/reset/request", json={"email": email},
-                       headers={"X-Forwarded-For": ip})
+    from fastapi.testclient import TestClient
+    return TestClient(client.app, client=(ip, 50000)).post(
+        "/auth/reset/request", json={"email": email})
 
 
 def test_request_does_not_reveal_accounts(client, monkeypatch):
@@ -97,6 +98,7 @@ def test_reset_flow_preserves_account_and_revokes_sessions(client, monkeypatch):
 
     r = _req(client, "reset.brand@ex.com", "10.9.0.2")
     assert r.status_code == 200 and len(sent) == 1
+    assert '/account.html?reset=' in sent[0]['body']
     assert "reset=" not in json.dumps(r.json())     # 응답에 토큰 없음
     token = _token_from(sent[0])
     with _db() as conn:                              # DB에는 원문 미저장(해시만)
@@ -145,6 +147,9 @@ def test_admin_reset_keeps_otp_gate(client, monkeypatch):
     login = client.post("/auth/login", json={
         "email": "reset.admin@ex.com", "password": "new-admin-pass-77"}).json()
     assert login.get("needOtp") is True              # OTP 관문 유지
+    assert client.post('/auth/otp/setup', headers=_bearer(login['token'])).status_code == 401
+    assert client.post('/auth/otp/enable', json={'code':auth_mod.totp_code(secret)},
+                       headers=_bearer(login['token'])).status_code == 401
     otp = client.post("/auth/otp/verify",
                       json={"code": auth_mod.totp_code(secret)},
                       headers=_bearer(login["token"]))
@@ -224,6 +229,7 @@ def test_mail_failure_not_reported_as_success(client, monkeypatch):
     _brand_user(client, "reset.fail@ex.com", "glowlab")
     r = _req(client, "reset.fail@ex.com", "10.9.0.7")
     assert r.status_code == 200
+    assert '보냈' not in r.json()['message']
     assert "demoLink" not in r.json() and "reset=" not in json.dumps(r.json())
     with _db() as conn:
         n = conn.execute(
@@ -266,3 +272,40 @@ def test_invite_hardening_regression(client, monkeypatch):
         conn.commit()
     assert client.post("/auth/accept", json={
         "token": raw, "password": "x" * 12}).status_code == 400
+
+
+def test_session_validation_fails_closed_in_production(monkeypatch):
+    import uuid
+    import pytest
+    from fastapi import HTTPException
+    monkeypatch.setenv('AUTH_REQUIRED', '1')
+    def unavailable():
+        raise RuntimeError('database unavailable')
+    monkeypatch.setattr(auth_mod, 'connect', unavailable)
+    jwt = auth_mod.issue_jwt({'sub':str(uuid.uuid4()), 'kind':'admin'})
+    with pytest.raises(HTTPException) as error:
+        auth_mod.current_user('Bearer '+jwt)
+    assert error.value.status_code == 503
+
+
+def test_forged_forwarding_header_cannot_evade_reset_limit(client, monkeypatch):
+    from fastapi.testclient import TestClient
+    _capture_mail(monkeypatch)
+    peer = TestClient(client.app, client=('10.9.88.1', 50000))
+    for i in range(10):
+        assert peer.post('/auth/reset/request', json={'email':f'unknown-{i}@ex.com'},
+                         headers={'X-Forwarded-For':f'1.2.3.{i}'}).status_code == 200
+    assert peer.post('/auth/reset/request', json={'email':'unknown-more@ex.com'},
+                     headers={'X-Forwarded-For':'2.2.2.2'}).status_code == 429
+
+
+def test_concurrent_requests_respect_email_limit(client, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from api import routes_auth
+    sent = _capture_mail(monkeypatch)
+    _brand_user(client, 'reset.concurrent@ex.com', 'glowlab')
+    monkeypatch.setattr(routes_auth, 'RESET_EMAIL_LIMIT', 1)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda i:_req(client,'reset.concurrent@ex.com',f'10.9.89.{i}'),range(4)))
+    assert all(r.status_code == 200 for r in results)
+    assert len(sent) == 1

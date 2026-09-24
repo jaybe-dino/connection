@@ -167,12 +167,14 @@ def _session_epoch(user_id: str) -> int | None:
     try:
         with connect() as conn:
             row = conn.execute(
-                "SELECT session_epoch FROM users WHERE user_id=%s::uuid",
+                "SELECT session_epoch, state FROM users WHERE user_id=%s::uuid",
                 (str(user_id),)).fetchone()
     except Exception:
-        # DB 장애·미마이그레이션 환경 — 가용성 우선으로 검증 생략(로그만)
-        log.warning("session_epoch 조회 실패 — 세션 폐기 검증 생략")
+        if auth_required():
+            raise HTTPException(503, "세션 확인이 지연되고 있습니다 — 잠시 후 다시 시도하세요")
         return None
+    if auth_required() and (not row or row['state'] != 'active'):
+        raise HTTPException(401, "계정을 사용할 수 없습니다")
     epoch = row["session_epoch"] if row else 0
     _epoch_cache[str(user_id)] = (epoch, now)
     return epoch

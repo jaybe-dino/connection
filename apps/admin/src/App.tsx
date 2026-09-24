@@ -84,7 +84,7 @@ function AuthGate({ onDone }: { onDone: () => void }) {
           {mode === "bootstrap" ? "최초 어드민 계정을 만듭니다 (1회)"
             : mode === "otp" ? "OTP 앱의 6자리 코드를 입력하세요"
             : mode === "forgot" ? "가입한 이메일로 재설정 링크를 보내드려요 (30분 유효·1회용)"
-            : mode === "reset" ? "재설정 링크 확인됨 — 새 비밀번호(10자 이상)를 정하세요"
+            : mode === "reset" ? "새 비밀번호(10자 이상)를 정하세요. 링크는 변경 시 확인합니다"
             : "이메일과 비밀번호로 로그인하세요"}
         </div>
         {(mode === "login" || mode === "bootstrap" || mode === "forgot") && (

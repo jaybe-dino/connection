@@ -36,6 +36,10 @@ def dbname():
 
 @pytest.fixture
 def setup(dbname, monkeypatch):
+    # This isolated billing schema has no auth users table. Session revocation
+    # is covered by API integration tests; keep role/tenant checks real here.
+    from api import auth
+    monkeypatch.setattr(auth, '_session_epoch', lambda user_id: 0)
     @contextmanager
     def db():
         with psycopg.connect(dbname=dbname,row_factory=dict_row) as conn:

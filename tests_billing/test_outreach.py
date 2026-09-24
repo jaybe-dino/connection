@@ -374,6 +374,9 @@ def test_sync_db_error_rolls_back_partial_and_continues(setup,monkeypatch):
 def test_admin_gmail_status_readonly(setup, monkeypatch):
     """관리자 Gmail 운영 상태 — 읽기 전용, 브랜드 토큰 불가, 발송 유발 없음."""
     c,db,h,calls=setup
+    from api import auth
+    # Auth session storage is independent from this Gmail unit-test fixture.
+    monkeypatch.setattr(auth, '_session_epoch', lambda user_id: 0)
     monkeypatch.setenv('AUTH_REQUIRED', '1')
     assert c.get('/admin/gmail/status',headers=h).status_code==401   # 브랜드 토큰
     assert c.get('/admin/gmail/status').status_code==401             # 무토큰

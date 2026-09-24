@@ -142,7 +142,7 @@ def otp_verify(body: OtpIn, authorization: str = Header(default="")) -> dict:
 def otp_setup(authorization: str = Header(default="")) -> dict:
     """OTP 앱 등록용 비밀키 발급 — 아직 미활성(enable에서 코드 확인 후 강제)."""
     claims = auth.current_user(authorization)
-    if not claims or claims.get("kind") != "admin":
+    if not claims or claims.get("kind") != "admin" or claims.get("otp") == "pending":
         raise HTTPException(401, "어드민 로그인이 필요합니다")
     secret = auth.totp_new_secret()
     with connect() as conn:
@@ -156,7 +156,7 @@ def otp_setup(authorization: str = Header(default="")) -> dict:
 @router.post("/otp/enable")
 def otp_enable(body: OtpIn, authorization: str = Header(default="")) -> dict:
     claims = auth.current_user(authorization)
-    if not claims or claims.get("kind") != "admin":
+    if not claims or claims.get("kind") != "admin" or claims.get("otp") == "pending":
         raise HTTPException(401, "어드민 로그인이 필요합니다")
     with connect() as conn:
         u = conn.execute("SELECT * FROM users WHERE user_id=%s",
@@ -326,8 +326,9 @@ RESET_WINDOW_MIN = 15
 
 
 def _client_ip(request) -> str:
-    fwd = (request.headers.get("x-forwarded-for", "") or "").split(",")[0].strip()
-    return (fwd or (request.client.host if request.client else ""))[:64]
+    # Use the peer resolved by the server's trusted-proxy configuration, not an
+    # arbitrary client-supplied forwarding header.
+    return (request.client.host if request.client else "unknown")[:64]
 
 
 class ResetRequestIn(BaseModel):
@@ -345,11 +346,15 @@ def reset_request(body: ResetRequestIn, request: Request) -> dict:
     if "@" not in email or len(email) > 200:
         raise HTTPException(400, "이메일 형식이 올바르지 않습니다")
     generic = {"ok": True,
-               "message": ("등록된 브랜드·관리자 계정이면 재설정 메일을 보냈어요."
-                           " 잠시 후 메일함(스팸함 포함)을 확인하세요."
-                           " 링크는 30분 동안 1회만 유효합니다.")}
+               "message": ("재설정 요청을 접수했습니다. 등록된 브랜드·관리자 계정이고"
+                           " 메일 발송이 가능한 경우 안내가 도착합니다."
+                           " 스팸함도 확인하고, 도착하지 않으면 잠시 후 다시 요청하거나"
+                           " 운영팀에 문의하세요. 링크는 30분 동안 1회만 유효합니다.")}
     ip = _client_ip(request)
     with connect() as conn:
+        # The limit check and reservation must be atomic for both dimensions.
+        for key in sorted(("reset-email:" + email, "reset-ip:" + ip)):
+            conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (key,))
         n_ip = conn.execute(
             "SELECT count(*) n FROM password_reset_requests"
             " WHERE ip=%s AND requested_at > now() - make_interval(mins=>%s)",
@@ -372,7 +377,7 @@ def reset_request(body: ResetRequestIn, request: Request) -> dict:
         raw = auth.one_time_token(conn, u["user_id"], "reset", RESET_TTL_MIN)
         ledger_append(conn, "system", "PASSWORD_RESET_REQUESTED",
                       str(u["user_id"]), {"email": email})
-    link = f"{SITE}/?reset={raw}"
+    link = f"{SITE}/account.html?reset={raw}"
     sent = _send_system_mail(
         email, "theprlist — 비밀번호 재설정",
         "안녕하세요, theprlist입니다.\n\n아래 링크에서 새 비밀번호를 설정하세요"

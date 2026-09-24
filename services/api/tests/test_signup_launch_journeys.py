@@ -13,7 +13,11 @@ def test_signup_to_recruitment(client, monkeypatch, round_no, country):
     from api.auth import issue_jwt
     monkeypatch.setenv('AUTH_REQUIRED', '1')
     monkeypatch.setenv('JWT_SECRET', 'local-test-only-signup-journey-secret-123456789')
-    admin = {'Authorization': 'Bearer '+issue_jwt({'kind':'admin','sub':'jay'})}
+    import os, psycopg
+    with psycopg.connect(os.environ['DATABASE_URL']) as conn:
+        uid = conn.execute("INSERT INTO users(kind,email) VALUES('admin','launch-admin@example.com')"
+                           " ON CONFLICT(email) DO UPDATE SET email=EXCLUDED.email RETURNING user_id").fetchone()[0]
+    admin = {'Authorization': 'Bearer '+issue_jwt({'kind':'admin','sub':str(uid)})}
     slug = f'launch-qa-{round_no}'
     email = f'brand{round_no}@example.com'
     assert ok(client.get('/brand-slugs/'+slug))['available']

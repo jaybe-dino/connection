@@ -138,8 +138,8 @@ def settle(tid, invoice_id, data):
                 # Move to review for human confirmation; we never call any
                 # refund API, and repeated notices record the ledger once.
                 moved = conn.execute(
-                    "UPDATE signup_invoices SET status='review'"
-                    " WHERE invoice_id=%s AND status<>'review'"
+                    "UPDATE signup_invoices SET status='review',cancel_reported_at=now()"
+                    " WHERE invoice_id=%s AND cancel_reported_at IS NULL"
                     " RETURNING invoice_id", (invoice_id,)).fetchone()
                 if moved:
                     ledger_append(conn, 'nicepay', 'INVOICE_CANCEL_REPORTED',
@@ -150,6 +150,10 @@ def settle(tid, invoice_id, data):
                 return False
             # Unverified mismatch never demotes a paid invoice.
             conn.execute("UPDATE signup_invoices SET status='review' WHERE invoice_id=%s AND status<>'paid'", (invoice_id,))
+            return False
+        # A delayed approval/status response cannot undo a signed cancellation.
+        # Keep the invoice in review, including when cancellation arrived first.
+        if row['cancel_reported_at'] is not None:
             return False
         if row['status'] != 'paid':
             conn.execute("UPDATE signup_invoices SET status='paid',paid_at=now() WHERE invoice_id=%s", (invoice_id,))

@@ -255,19 +255,18 @@ def retry_failed_translation(cell_id: str, msg_id: int,
         ledger_append(conn, f"{claims.get('kind')}:{claims.get('email', '')}",
                       "TRANSLATION_RETRY_REQUESTED", cell_id,
                       {"msgId": msg_id})
-    # 재큐를 먼저 커밋(중복 방지 확정) 후 즉시 1회 시도 — 실패해도 pending
-    # 이라 러너가 이어받고, 원문·기존 부분 번역은 그대로 보존된다.
-    merged, state = dict(claimed["translations"] or {}), "pending"
-    try:
-        tr = ai.translate(claimed["original"], claimed["original_locale"],
-                          ALL_LOCALES) or {}
-        merged.update(tr)
-        if translation_complete(merged, claimed["original_locale"]):
-            state = "done"
-    except Exception:
-        log.exception("수동 재시도 즉시 번역 실패 — 러너 재시도로 이어짐"
-                      " (msg %s)", msg_id)
-    with connect() as conn:
+        # Hold the row lock through the immediate attempt so the runner skips it.
+        # On process failure the transaction rolls back to failed, safe to retry.
+        merged, state = dict(claimed["translations"] or {}), "pending"
+        try:
+            tr = ai.translate(claimed["original"], claimed["original_locale"],
+                              ALL_LOCALES) or {}
+            merged.update(tr)
+            if translation_complete(merged, claimed["original_locale"]):
+                state = "done"
+        except Exception:
+            log.exception("수동 재시도 즉시 번역 실패 — 러너 재시도로 이어짐"
+                          " (msg %s)", msg_id)
         conn.execute(
             "UPDATE cell_messages SET translations=%s, translation_state=%s,"
             " translation_attempts=1"

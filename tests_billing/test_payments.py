@@ -31,6 +31,7 @@ def dbname():
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/022_restore_pre_5000_prices.sql')],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/024_signup_usage_audit.sql')],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/029_invoice_supplements.sql')],check=True,stdout=subprocess.DEVNULL)
+    subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/033_invoice_cancel_marker.sql')],check=True,stdout=subprocess.DEVNULL)
     yield name
     subprocess.run(['dropdb',name],check=True)
 

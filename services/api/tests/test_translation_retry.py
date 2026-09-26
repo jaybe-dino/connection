@@ -180,3 +180,20 @@ def test_admin_can_retry_and_missing_message_404(client, monkeypatch):
     ghost = 999999999
     assert client.post(f"/community/cells/cell-glowlab-th/messages/{ghost}"
                        "/translation-retry", headers=ah).status_code == 404
+
+
+def test_runner_cannot_pick_message_during_manual_retry(client, monkeypatch):
+    tok = _brand_token(client, "retry.race@glowlab.co", "glowlab")
+    mid = _seed_failed()
+    calls = []
+    def translate(text, src, targets):
+        calls.append(text)
+        assert len(calls) == 1, "runner must not translate the in-flight message"
+        rc.retry_pending_translations(limit=100)
+        return {t: f"race-{t}: {text}" for t in targets if t != src}
+    monkeypatch.setattr(rc.ai, "translate", translate)
+    r = client.post(f"/community/cells/cell-glowlab-th/messages/{mid}/translation-retry", headers=_bearer(tok))
+    assert r.status_code == 200
+    assert r.json()["translationState"] == "done"
+    assert len(calls) == 1
+    assert _state(mid)["translation_attempts"] == 1

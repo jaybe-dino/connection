@@ -6,7 +6,7 @@ const slice=s.slice(s.indexOf('  var billingCardInfo = null'),
 
 function el(v){return {value:v,checked:false};}
 function ctx(){
-  const c={window:{},reqs:[],toasts:[],rendered:0,livePage:'billing',billingVersion:1,
+  const c={window:{__ME:{kind:"brand"}},reqs:[],toasts:[],rendered:0,livePage:'billing',billingVersion:1,
     BRAND:()=>'glowlab',
     mailEscape:(v)=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'),
     render(){c.rendered++;},
@@ -59,4 +59,24 @@ test('실패 attempt는 수동 결제 안내로 표시',()=>{
   assert.match(h,/자동청구 실패 — 카드 상태 확인 후/);
   assert.match(h,/한도초과/);
   assert.match(h,/카드 해지/);
+});
+
+
+test('등록 비활성이어도 기존 카드 해지는 가능',()=>{
+ const c=ctx();
+ vm.runInContext('billingCardInfo={configured:false,card:{state:"active"},attempts:[]}',c);
+ assert.match(vm.runInContext('window.billingCardHtml()',c),/카드 해지/);
+});
+test('관리자는 카드 정보를 입력하거나 임의 해지할 수 없다',()=>{
+ const c=ctx();c.window.__ME.kind='admin';
+ vm.runInContext('billingCardInfo={configured:true,attempts:[]}',c);
+ assert.doesNotMatch(vm.runInContext('window.billingCardHtml()',c),/id="bcNo"/);
+ vm.runInContext('billingCardInfo.card={state:"active"}',c);
+ assert.doesNotMatch(vm.runInContext('window.billingCardHtml()',c),/onclick="billingCardExpire/);
+});
+test('자동청구 중지시 활성이라는 오표시 없음',()=>{
+ const c=ctx();
+ vm.runInContext('billingCardInfo={configured:true,card:{state:"active"},autochargeFlag:false,attempts:[]}',c);
+ const h=vm.runInContext('window.billingCardHtml()',c);
+ assert.match(h,/자동청구 대기/);assert.doesNotMatch(h,/자동청구 활성/);
 });

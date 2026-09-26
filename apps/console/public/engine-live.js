@@ -101,7 +101,7 @@
     window.__billing = null;
     billingInvoices = [];
     billingConfigured = false;
-    billingCardInfo = null; billingCardMsg = "";   // 브랜드 전환 혼입 방지
+    billingCardInfo = null; billingCardMsg = ""; billingCardBusy = false;   // 브랜드 전환 혼입 방지
     req("GET", "/brands/" + BRAND() + "/billing").then(function (summary) {
       if (version !== billingVersion) return;
       window.__billing = summary;
@@ -131,7 +131,7 @@
       if (version !== billingVersion || owner !== BRAND()) return;
       billingCardInfo = c;
       if (livePage === 'billing' && window.render) render();
-    }).catch(function () { if (version === billingVersion) billingCardInfo = null; });
+    }).catch(function () { if (version === billingVersion) { billingCardInfo = null; billingCardMsg = "카드 상태 조회에 실패했습니다. 새로고침해 주세요."; if(livePage === "billing" && window.render) render(); } });
   }
   window.billingCardRegister = function () {
     if (billingCardBusy || !billingCardInfo) return;
@@ -168,23 +168,26 @@
       .finally(function () { if (version === billingVersion) { billingCardBusy = false; render(); } });
   };
   window.billingCardHtml = function () {
-    if (!billingCardInfo) return '<div class="cc"><div class="t">카드 자동청구</div><p>상태를 불러오는 중입니다…</p></div>';
+    if (!billingCardInfo) return '<div class="cc"><div class="t">카드 자동청구</div><p>'+mailEscape(billingCardMsg || '상태를 불러오는 중입니다…')+'</p></div>';
     var c = billingCardInfo, h = '<div class="cc"><div class="t">카드 자동청구 (선택)</div>';
     if (billingCardMsg) h += '<p role="status"><b>' + mailEscape(billingCardMsg) + '</b></p>';
-    if (!c.configured) {
+    var owner = window.__ME && window.__ME.kind === "brand";
+    if (!c.configured && (!c.card || c.card.state === "expired")) {
       // 운영 플래그 off — 입력창을 렌더하지 않는다(카드 입력 자체가 불가)
       h += '<p>자동청구 준비 중입니다. 지금은 각 청구서의 <b>카드 결제</b> 버튼으로 수동 결제해 주세요.</p></div>';
       return h;
     }
     var attempts = (c.attempts || []).filter(function (a) { return a.outcome === 'failed' || a.outcome === 'review'; });
     if (c.card && c.card.state !== 'expired') {
-      var states = { active: '자동청구 활성', expire_pending: '해지 처리 대기 — 자동청구는 중단됨' };
+      var states = { active: (c.autochargeFlag ? '자동청구 활성' : '카드 등록됨 · 자동청구 대기'), expire_pending: '해지 처리 대기 — 자동청구는 중단됨' };
       h += '<p>등록 카드: <b>' + mailEscape(c.card.cardLabel || '등록 카드') + '</b> · ' + (states[c.card.state] || mailEscape(c.card.state)) +
         '<br><small>동의 ' + mailEscape(c.card.consentVersion) + ' · ' + mailEscape((c.card.consentAt || '').slice(0, 10)) + (c.autochargeFlag ? '' : ' · 자동청구 실행은 운영 준비 중(수동 결제 가능)') + '</small></p>' +
-        '<button class="btn line" onclick="billingCardExpire()" ' + (billingCardBusy ? 'disabled' : '') + '>' + (c.card.state === 'expire_pending' ? '해지 다시 시도' : '카드 해지') + '</button>';
+        (owner ? '<button class="btn line" onclick="billingCardExpire()" ' + (billingCardBusy ? 'disabled' : '') + '>' + (c.card.state === 'expire_pending' ? '해지 다시 시도' : '카드 해지') + '</button>' : '<p>카드 변경·해지는 브랜드 계정으로 로그인해 주세요.</p>');
+    } else if (!owner) {
+      h += '<p>카드 등록은 브랜드 계정으로 로그인해 주세요.</p>';
     } else {
       h += '<p>카드를 등록하면 매월 마감된 청구서 금액(검증 가입 5,000원/명 · VAT 포함 · 고정료 0원)이 자동 결제됩니다. <b>등록 시 결제는 발생하지 않습니다.</b></p>' +
-        '<label>카드번호<input id="bcNo" inputmode="numeric" autocomplete="off" placeholder="숫자만" style="width:100%;box-sizing:border-box"></label>' +
+        '<label>카드번호<input id="bcNo" type="password" inputmode="numeric" autocomplete="off" placeholder="숫자만" style="width:100%;box-sizing:border-box"></label>' +
         '<div style="display:flex;gap:8px"><label style="flex:1">유효기간(YY)<input id="bcYY" maxlength="2" autocomplete="off" placeholder="YY" style="width:100%;box-sizing:border-box"></label>' +
         '<label style="flex:1">유효기간(MM)<input id="bcMM" maxlength="2" autocomplete="off" placeholder="MM" style="width:100%;box-sizing:border-box"></label>' +
         '<label style="flex:1">카드 비밀번호 앞 2자리<input id="bcPw" type="password" maxlength="2" autocomplete="off" style="width:100%;box-sizing:border-box"></label></div>' +

@@ -327,7 +327,7 @@ def test_autocharge_timeout_goes_review_and_never_reapproves(setup, monkeypatch)
                          ).fetchone()['outcome'] == 'paid'
 
 
-def test_autocharge_decline_reopens_without_retry(setup, monkeypatch):
+def test_autocharge_decline_requires_reconciliation_without_retry(setup, monkeypatch):
     client, db, h, _, _, events = setup
     register(client, h, monkeypatch)
     i = invoice(client, h)
@@ -335,19 +335,19 @@ def test_autocharge_decline_reopens_without_retry(setup, monkeypatch):
     monkeypatch.setattr(nicepay_billing, 'charge',
                         lambda *a: calls.append(a) or
                         {'resultCode': '3011', 'resultMsg': '한도초과'})
-    assert routes.autocharge_tick()['failed'] == 1
+    assert routes.autocharge_tick()['review'] == 1
     routes.autocharge_tick()
     assert len(calls) == 1                                 # 무한 재시도 금지
     with db() as c:
         inv = c.execute('SELECT status FROM signup_invoices WHERE invoice_id=%s',
                         (i['id'],)).fetchone()
         att = c.execute('SELECT * FROM invoice_charge_attempts').fetchone()
-    assert inv['status'] == 'open'                         # 수동 결제 가능 유지
-    assert att['outcome'] == 'failed' and att['fail_code'] == '3011'
-    assert 'INVOICE_AUTOCHARGE_FAILED' in events
+    assert inv['status'] == 'review'                       # 확인 전 재결제 금지
+    assert att['outcome'] == 'review' and att['fail_code'] == '3011'
+    assert 'INVOICE_AUTOCHARGE_REVIEW' in events
     # 사용자 안내: 카드 상태 응답에 실패 attempt가 노출된다
     got = client.get('/brands/real/billing/card', headers=h).json()
-    assert any(a['outcome'] == 'failed' for a in got['attempts'])
+    assert any(a['outcome'] == 'review' for a in got['attempts'])
 
 
 def test_autocharge_rejects_invalid_signature_response(setup, monkeypatch):

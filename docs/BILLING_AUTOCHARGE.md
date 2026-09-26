@@ -50,7 +50,7 @@ nicepayments/nicepay-manual `api/payment-subscribe.md`,
 | 승인 | /payments/return → 사전 GET 검증 → POST 승인 | 빌키 `POST /v1/subscribe/{bid}/payments` |
 | orderId | invoice_id | invoice_id (동일 — 결제된 orderId는 PG가 재호출 거부 → PG측 이중승인도 차단) |
 | paid 확정 | `settle` (서명·금액·orderId·tid·취소표식) | **같은 `settle`** |
-| 실패 | review/재시도 안내 | 확정거절→open 복귀+안내(재시도 없음), 모호→review+find 대사 |
+| 실패 | review/재시도 안내 | 실패·모호 응답 모두 review 유지 + find 대사; 확인 전 재결제 금지 |
 
 ## 안전 규칙 요약
 
@@ -76,3 +76,13 @@ nicepayments/nicepay-manual `api/payment-subscribe.md`,
   수행하지 않았다(상시 금지). 운영 활성화는 소유자가 NICEpay 계약에
   빌키(정기) 결제가 포함되어 있는지 확인 후 flags를 켜고, 소액 1건으로
   Codex 검수를 거친다.
+
+
+## 독립 검수 보강 (2026-09-27)
+
+- 카드 등록·해지·청구는 브랜드별 PostgreSQL 잠금으로 직렬화. 선행 승인 요청은 완료될 수 있으나, 해지 완료 후 이전에 조회한 카드로 새 청구하지 않는다.
+- 등록 요청의 블로킹 DB/PG 호출은 서버 이벤트 루프 밖에서 실행한다. 동시 등록은 빌키 1개만 발급한다.
+- 거래번호는 서명·주문번호·금액을 검증한 뒤 저장한다. 잘못된 find 응답이 이후 정상 대사를 막지 않는다.
+- 승인 실패/불완전한 응답도 review로 보관한다. 미승인 확인 전에 자동/수동 재결제를 열지 않는다. PG 기록을 대사한 운영팀 조치가 필요하다.
+- PG 오류 메시지 원문을 응답이나 시도 기록에 저장하지 않는다.
+- 등록 플래그가 꺼져도 기존 카드 해지는 노출한다. 관리자 UI에는 등록/해지 버튼을 숨긴다.

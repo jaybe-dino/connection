@@ -2,11 +2,13 @@
 import os
 import re
 import uuid
+from contextlib import contextmanager
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from starlette.concurrency import run_in_threadpool
 
 from pydantic import BaseModel, Field
 
@@ -126,6 +128,29 @@ def checkout(brand_id: str, invoice_id: str, authorization: str = Header(default
             'returnUrl': RETURN_URL}
 
 
+def _bind_verified_tid(invoice_id, data):
+    """Bind only a verified response; malformed find results must remain recoverable."""
+    tid = data.get('tid')
+    if not isinstance(tid, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', tid):
+        return None
+    with connect() as conn:
+        row = conn.execute('SELECT * FROM signup_invoices WHERE invoice_id=%s FOR UPDATE',
+                           (invoice_id,)).fetchone()
+        if not row or (row['tid'] and row['tid'] != tid):
+            return None
+        valid = nicepay.payment_valid(data, invoice_id, row['amount'], tid)
+        cancelled = (type(data.get('amount')) is int and data['amount'] == row['amount']
+                     and nicepay.cancellation_reported(data, invoice_id, tid))
+        if not (valid or cancelled):
+            return None
+        if not row['tid']:
+            if row['status'] not in ('processing', 'review'):
+                return None
+            conn.execute('UPDATE signup_invoices SET tid=%s WHERE invoice_id=%s',
+                         (tid, invoice_id))
+    return tid
+
+
 def settle(tid, invoice_id, data):
     with connect() as conn:
         row = conn.execute('SELECT * FROM signup_invoices WHERE invoice_id=%s FOR UPDATE',
@@ -243,13 +268,9 @@ def reconcile(brand_id: str, invoice_id: str, authorization: str = Header(defaul
                                         attempt['order_date'])
     except nicepay.PaymentUnavailable:
         raise HTTPException(503, 'PG 거래 조회를 완료하지 못했습니다')
-    tid = row['tid'] or data.get('tid') or ''
+    tid = row['tid'] or _bind_verified_tid(invoice_id, data)
     if not tid:
-        return {'paid': False, 'hint': 'PG에 승인 기록이 없습니다 — 미결제로 보입니다'}
-    if not row['tid']:
-        with connect() as conn:
-            conn.execute("UPDATE signup_invoices SET tid=%s WHERE invoice_id=%s"
-                         " AND tid IS NULL", (tid, invoice_id))
+        return {'paid': False, 'hint': '승인 여부를 확인하지 못했습니다. 거래 확인이 필요합니다.'}
     paid = settle(tid, invoice_id, data)
     if attempt and paid:
         with connect() as conn:
@@ -272,6 +293,20 @@ CONSENT_VERSION = 'autocharge-v1'
 CONSENT_TEXT = ('월별 청구서 금액(검증 가입 건당 5,000원 · VAT 포함 · 고정료 0원)을 '
                 '등록한 카드로 자동 결제하는 데 동의합니다. 카드 등록 시에는 결제가 '
                 '발생하지 않으며, 언제든 해지할 수 있습니다.')
+
+
+@contextmanager
+def _card_operation(brand_id):
+    """Serialize card registration/revocation/charge across processes.
+
+    Separate from invoice locks: the lock connection holds no invoice rows.
+    An already submitted charge may finish before revocation, never after a
+    completed revocation. PostgreSQL releases this lock if the worker dies.
+    """
+    with connect() as lock:
+        lock.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                     ('billing-card:' + brand_id,))
+        yield
 
 
 def _brand_owner(brand_id: str, authorization: str) -> dict:
@@ -337,6 +372,15 @@ async def billing_card_register(brand_id: str, request: Request,
             raise ValueError()
     except Exception:
         raise HTTPException(400, '요청 형식을 확인해 주세요')
+    return await run_in_threadpool(_register_card, brand_id, body, u)
+
+
+def _register_card(brand_id, body, u):
+    with _card_operation(brand_id):
+        return _register_card_locked(brand_id, body, u)
+
+
+def _register_card_locked(brand_id, body, u):
     if body.get('consent') is not True \
             or body.get('consentVersion') != CONSENT_VERSION:
         raise HTTPException(400, '자동청구 동의(체크박스) 확인이 필요합니다')
@@ -369,11 +413,10 @@ async def billing_card_register(brand_id: str, request: Request,
                                  ' 주세요. 등록 시 결제는 발생하지 않습니다.')
     bid = str(r.get('bid') or r.get('BID') or '')
     if r.get('resultCode') != '0000' or not bid:
-        code = str(r.get('resultCode', ''))
-        raise HTTPException(402, ('카드 등록에 실패했습니다'
-                                  + (f' [{code}]' if code else '') + ' '
-                                  + str(r.get('resultMsg', ''))[:120]).strip())
+        raise HTTPException(402, '카드 등록에 실패했습니다. 카드 정보와 이용 가능 여부를 확인해 주세요.')
     label = str(r.get('cardName') or r.get('CardName') or '등록 카드')[:40]
+    if not re.fullmatch(r'[가-힣A-Za-z \[\]()-]{1,40}', label):
+        label = '등록 카드'
     with connect() as conn:
         conn.execute(
             "INSERT INTO brand_billing_keys (brand_id, bid_enc, card_label,"
@@ -401,6 +444,11 @@ def billing_card_expire(brand_id: str,
     삭제한다. PG 삭제가 실패해도 청구는 이미 멈춰 있고, 같은 요청으로 안전하게
     재시도한다. 미결제 청구서는 그대로 유지된다."""
     u = _brand_owner(brand_id, authorization)
+    with _card_operation(brand_id):
+        return _expire_card_locked(brand_id, u)
+
+
+def _expire_card_locked(brand_id, u):
     with connect() as conn:
         row = conn.execute('SELECT * FROM brand_billing_keys WHERE brand_id=%s'
                            ' FOR UPDATE', (brand_id,)).fetchone()
@@ -433,10 +481,7 @@ def billing_card_expire(brand_id: str,
                           brand_id, {'by': str(u.get('sub', ''))})
         return {'ok': True, 'state': 'expired'}
     return {'ok': False, 'state': 'expire_pending',
-            'hint': ('자동청구는 즉시 중단되었습니다. 빌키 삭제 미완료'
-                     f" [{r.get('resultCode', '')}]"
-                     f" {str(r.get('resultMsg', ''))[:100]} — 해지를 다시 눌러"
-                     ' 주세요.')}
+            'hint': '자동청구는 중단되었습니다. 결제사 빌키 삭제는 미완료입니다. 해지를 다시 눌러 주세요.'}
 
 
 def _finish_attempt(invoice_id: str, outcome: str, code: str, msg: str) -> None:
@@ -465,8 +510,7 @@ def autocharge_tick(limit: int = 10) -> dict:
     - orderId=invoice_id: 결제된 orderId는 PG가 재호출을 거부하므로 PG측
       이중 승인도 불가.
     - 모호 응답(타임아웃)은 review + 자동 재승인 금지, find(orderId,
-      원주문일)로 사람이 대사한다. 확정 실패는 open 복귀 + 사용자 안내,
-      재시도 없음(수동 결제는 가능).
+      원주문일)로 사람이 대사한다. 실패 응답도 review 유지: 미승인이 확인되기 전 수동 재결제 금지.
     - paid 확정은 기존 settle(서명·금액·orderId·tid·취소표식 검증) 그대로.
     """
     out = {'scanned': 0, 'paid': 0, 'failed': 0, 'review': 0}
@@ -489,77 +533,74 @@ def autocharge_tick(limit: int = 10) -> dict:
             "                  WHERE a.invoice_id=i.invoice_id)"
             " ORDER BY i.period LIMIT %s", (limit,)).fetchall()
     for r in rows:
-        out['scanned'] += 1
-        with connect() as conn:
-            inv = conn.execute(
-                'SELECT status, cancel_reported_at FROM signup_invoices'
-                ' WHERE invoice_id=%s FOR UPDATE',
-                (r['invoice_id'],)).fetchone()
-            if (not inv or inv['status'] != 'open'
-                    or inv['cancel_reported_at'] is not None):
-                continue                        # 수동 결제/취소와 경쟁 — 양보
-            claimed = conn.execute(
-                "INSERT INTO invoice_charge_attempts"
-                " (invoice_id, brand_id, order_id, order_date)"
-                " VALUES (%s,%s,%s,%s) ON CONFLICT (invoice_id) DO NOTHING"
-                " RETURNING invoice_id",
-                (r['invoice_id'], r['brand_id'], r['invoice_id'],
-                 datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y%m%d'))
-            ).fetchone()
-            if not claimed:
-                continue                        # 다른 워커가 이미 선점
-            conn.execute("UPDATE signup_invoices SET status='processing'"
-                         " WHERE invoice_id=%s", (r['invoice_id'],))
-        try:
-            bid = nicepay_billing.dec_bid(r['bid_enc'])
-        except nicepay_billing.BillingCryptoUnavailable:
-            _finish_attempt(r['invoice_id'], 'review', 'CRYPTO',
-                            '보안 키 문제 — 청구 미실행, 대사 필요')
-            _autocharge_review(r['invoice_id'], r['brand_id'], '보안 키 문제')
-            out['review'] += 1
-            continue
-        goods = ('theprlist ' + r['period'].strftime('%Y-%m') + ' 가입 이용료'
-                 + (' 추가분' if r['seq'] else ''))
-        try:
-            data = nicepay_billing.charge(bid, r['invoice_id'], r['amount'],
-                                          goods)
-        except nicepay.PaymentUnavailable:
-            # 승인 여부 미확인 — 자동 재승인 금지. 영구 attempt의 원주문일로
-            # reconcile(find)에서 사람이 복구한다.
-            _finish_attempt(r['invoice_id'], 'review', 'TIMEOUT',
-                            'PG 응답 미확인 — 청구 여부 대사 필요')
-            _autocharge_review(r['invoice_id'], r['brand_id'], 'PG 응답 미확인')
-            out['review'] += 1
-            continue
-        tid = str(data.get('tid') or '')
-        if data.get('resultCode') == '0000' and tid:
+        with _card_operation(r['brand_id']):
+            out['scanned'] += 1
             with connect() as conn:
-                conn.execute("UPDATE signup_invoices SET tid=%s"
-                             " WHERE invoice_id=%s AND status='processing'"
-                             " AND tid IS NULL", (tid, r['invoice_id']))
-            if settle(tid, r['invoice_id'], data):
-                _finish_attempt(r['invoice_id'], 'paid', '', '')
-                out['paid'] += 1
-            else:
-                _finish_attempt(r['invoice_id'], 'review',
-                                str(data.get('resultCode', '')),
-                                '승인 응답 검증 실패 — 대사 필요')
-                _autocharge_review(r['invoice_id'], r['brand_id'],
-                                   '승인 응답 검증 실패')
+                card = conn.execute('SELECT state, bid_enc FROM brand_billing_keys WHERE brand_id=%s',
+                                    (r['brand_id'],)).fetchone()
+            if not card or card['state'] != 'active' or not nicepay_billing.autocharge_enabled():
+                continue
+            r['bid_enc'] = card['bid_enc']
+            with connect() as conn:
+                inv = conn.execute(
+                    'SELECT status, cancel_reported_at FROM signup_invoices'
+                    ' WHERE invoice_id=%s FOR UPDATE',
+                    (r['invoice_id'],)).fetchone()
+                if (not inv or inv['status'] != 'open'
+                        or inv['cancel_reported_at'] is not None):
+                    continue                        # 수동 결제/취소와 경쟁 — 양보
+                claimed = conn.execute(
+                    "INSERT INTO invoice_charge_attempts"
+                    " (invoice_id, brand_id, order_id, order_date)"
+                    " VALUES (%s,%s,%s,%s) ON CONFLICT (invoice_id) DO NOTHING"
+                    " RETURNING invoice_id",
+                    (r['invoice_id'], r['brand_id'], r['invoice_id'],
+                     datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y%m%d'))
+                ).fetchone()
+                if not claimed:
+                    continue                        # 다른 워커가 이미 선점
+                conn.execute("UPDATE signup_invoices SET status='processing'"
+                             " WHERE invoice_id=%s", (r['invoice_id'],))
+            try:
+                bid = nicepay_billing.dec_bid(r['bid_enc'])
+            except nicepay_billing.BillingCryptoUnavailable:
+                _finish_attempt(r['invoice_id'], 'review', 'CRYPTO',
+                                '보안 키 문제 — 청구 미실행, 대사 필요')
+                _autocharge_review(r['invoice_id'], r['brand_id'], '보안 키 문제')
                 out['review'] += 1
-        else:
-            _finish_attempt(r['invoice_id'], 'failed',
-                            str(data.get('resultCode', '')),
-                            str(data.get('resultMsg', ''))[:200])
-            with connect() as conn:
-                conn.execute("UPDATE signup_invoices SET status='open'"
-                             " WHERE invoice_id=%s AND status='processing'",
-                             (r['invoice_id'],))
-                ledger_append(conn, 'nicepay', 'INVOICE_AUTOCHARGE_FAILED',
-                              r['invoice_id'],
-                              {'brand': r['brand_id'],
-                               'code': str(data.get('resultCode', ''))})
-            out['failed'] += 1
+                continue
+            goods = ('theprlist ' + r['period'].strftime('%Y-%m') + ' 가입 이용료'
+                     + (' 추가분' if r['seq'] else ''))
+            try:
+                data = nicepay_billing.charge(bid, r['invoice_id'], r['amount'],
+                                              goods)
+            except nicepay.PaymentUnavailable:
+                # 승인 여부 미확인 — 자동 재승인 금지. 영구 attempt의 원주문일로
+                # reconcile(find)에서 사람이 복구한다.
+                _finish_attempt(r['invoice_id'], 'review', 'TIMEOUT',
+                                'PG 응답 미확인 — 청구 여부 대사 필요')
+                _autocharge_review(r['invoice_id'], r['brand_id'], 'PG 응답 미확인')
+                out['review'] += 1
+                continue
+            tid = _bind_verified_tid(r['invoice_id'], data)
+            if tid:
+                if settle(tid, r['invoice_id'], data):
+                    _finish_attempt(r['invoice_id'], 'paid', '', '')
+                    out['paid'] += 1
+                else:
+                    _finish_attempt(r['invoice_id'], 'review',
+                                    str(data.get('resultCode', '')),
+                                    '승인 응답 검증 실패 — 대사 필요')
+                    _autocharge_review(r['invoice_id'], r['brand_id'],
+                                       '승인 응답 검증 실패')
+                    out['review'] += 1
+            else:
+                code = str(data.get('resultCode', ''))
+                safe_code = code if re.fullmatch(r'[A-Za-z0-9]{1,12}', code) else 'UNKNOWN'
+                _finish_attempt(r['invoice_id'], 'review', safe_code,
+                                'PG 승인 여부 미확인 — 거래 확인 필요')
+                _autocharge_review(r['invoice_id'], r['brand_id'], 'PG 승인 여부 미확인')
+                out['review'] += 1
     return out
 
 

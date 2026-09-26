@@ -127,12 +127,16 @@ def health() -> dict:
         db = "ok"
     except Exception as e:
         db = f"연결 실패: {type(e).__name__}"
+    # Railway가 주입하는 커밋 SHA — 어떤 코드가 배포돼 있는지 밖에서 확인용
+    commit = (os.environ.get("RAILWAY_GIT_COMMIT_SHA")
+              or os.environ.get("GIT_SHA") or "")
     return {
         "ok": db == "ok",
         "db": db,
         "db_url_set": bool(os.environ.get("DATABASE_URL")),
         "startup_error": _startup_error,
         "ai": ai.ai_available(),
+        "commit": commit[:12],
     }
 
 

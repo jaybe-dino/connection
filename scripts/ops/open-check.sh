@@ -27,7 +27,7 @@ echo "$health" | grep -q '"ok":true' && ok "API /health ok" || bad "API /health 
 echo "$health" | grep -q '"db":"ok"' && ok "DB 연결" || bad "DB 연결" "$health"
 commit=$(echo "$health" | sed -n 's/.*"commit":"\([^"]*\)".*/\1/p')
 if [ -n "$EXPECT_COMMIT" ]; then
-  [ "$commit" = "${EXPECT_COMMIT:0:12}" ] && ok "배포 커밋 일치 ($commit)" \
+  [[ -n "$commit" && "$commit" == "${EXPECT_COMMIT:0:12}"* ]] && ok "배포 커밋 일치 ($commit)" \
     || bad "배포 커밋 일치" "기대 ${EXPECT_COMMIT:0:12} / 실제 ${commit:-（없음 — 구버전 배포）}"
 else
   echo "INFO 배포 커밋: ${commit:-미노출(구버전 /health — 재배포 필요)}"
@@ -55,8 +55,11 @@ echo "$sjs" | grep -q "magic-forward" && ok "site.js 매직 전달 반영" || ba
 mf=$(get "$SITE/magic-forward.js")
 echo "$mf" | grep -q "app.theprlist.net" && ok "magic-forward.js 서빙" || bad "magic-forward.js 서빙"
 
-# ── 4. 러너 잡 상태(공개 읽기): 동기화 켜짐 + 자동 발송 차단 ─────
+# ── 4. 러너 잡 상태: 운영에서는 관리자 인증 필요 ─────
 rs=$(get "$API/runner/status")
+if echo "$rs" | grep -q '관리자 로그인이 필요합니다'; then
+  echo "MANUAL 러너 상태는 관리자 인증 필요 — admin.theprlist.net/gmail에서 동기화 활성·자동 발송 비활성·기준 시각을 확인하세요."
+else
 job_reason() { echo "$rs" | sed -n "s/.*\"$1\":{\"enabled\":[a-z]*,\"reason\":\"\([^\"]*\)\".*/\1/p"; }
 echo "$rs" | grep -q '"sync":{"enabled":true' && ok "러너 수신 동기화 활성" \
   || bad "러너 수신 동기화 활성" "사유: $(job_reason sync) (GMAIL_OPS_ENABLED/RUNNER_ENABLED/Google 키 확인)"
@@ -64,8 +67,10 @@ echo "$rs" | grep -q '"sendResume":{"enabled":false' && ok "승인 자동 발송
   || bad "승인 자동 발송 차단" "사유: $(job_reason sendResume) — GMAIL_SEND_RESUME_ENABLED=0 설정 확인"
 echo "$rs" | grep -q '"countersSince"' && ok "카운터 기준 시각 노출" || bad "카운터 기준 시각 노출"
 
+fi
+
 echo
-if [ "$fail" = 0 ]; then echo "== 자동 확인 전부 통과 =="; else echo "== 실패 항목 있음 — 위 FAIL 참조 =="; fi
+if [ "$fail" = 0 ]; then echo "== 공개 자동 확인 통과 — 아래 수동 항목은 별도 검수 필요 =="; else echo "== 실패 항목 있음 — 위 FAIL 참조 =="; fi
 cat <<'MANUAL'
 
 수동 확인(자동화 불가 — 사람이 브라우저/메일함으로):

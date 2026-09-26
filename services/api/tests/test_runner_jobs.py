@@ -205,3 +205,14 @@ def test_status_reports_job_split_and_counters_origin(client, monkeypatch):
     off = rd.status()["jobs"]
     assert all(not j["enabled"] for j in off.values())
     assert off["sync"]["reason"] == "러너 꺼짐"
+
+
+def test_status_attributes_errors_to_correct_job(monkeypatch):
+    monkeypatch.setitem(rd._gmail_ops, "errors", [
+        "resume runa: RuntimeError", "sync runb: HTTPException",
+        "scan: database unavailable"])
+    jobs = rd.status()["jobs"]
+    assert jobs["sendResume"]["recentErrors"] == [
+        "resume runa: RuntimeError", "scan: database unavailable"]
+    assert jobs["sync"]["recentErrors"] == [
+        "sync runb: HTTPException", "scan: database unavailable"]

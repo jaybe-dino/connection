@@ -388,7 +388,8 @@ def status() -> dict:
                             "데모 모드(실 Google 키 없음)"),
                  "lastRunAt": _gmail_ops["lastSyncAt"],
                  "count": _gmail_ops["synced"],
-                 "recentErrors": _gmail_ops["errors"]},
+                 "recentErrors": [e for e in _gmail_ops["errors"]
+                                  if not e.startswith("resume ")]},
         "sendResume": {"enabled": running and not demo and resume_env,
                        "reason": ("차단됨(GMAIL_SEND_RESUME_ENABLED=0)"
                                   if not resume_env else
@@ -397,7 +398,8 @@ def status() -> dict:
                                   "데모 모드(실 Google 키 없음)"),
                        "lastRunAt": _gmail_ops["lastResumeAt"],
                        "count": _gmail_ops["resumed"],
-                       "recentErrors": []},
+                       "recentErrors": [e for e in _gmail_ops["errors"]
+                                        if e.startswith(("resume ", "scan:"))]},
         "translation": {"enabled": running, "reason": "" if running else "러너 꺼짐",
                         "lastRunAt": _iso(_tr_state["last"]),
                         "count": _tr_state["done"],

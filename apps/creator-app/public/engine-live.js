@@ -101,6 +101,7 @@
     window.__billing = null;
     billingInvoices = [];
     billingConfigured = false;
+    billingCardInfo = null; billingCardMsg = "";   // 브랜드 전환 혼입 방지
     req("GET", "/brands/" + BRAND() + "/billing").then(function (summary) {
       if (version !== billingVersion) return;
       window.__billing = summary;
@@ -109,8 +110,9 @@
         billingStatus="";
         billingInvoices = result.invoices;
         billingConfigured = result.configured;
-        if (typeof ST !== 'undefined' && ST.b === 'settle' && window.render) render();
+        if ((typeof ST !== 'undefined' && ST.b === 'settle') || (typeof livePage !== 'undefined' && livePage === 'billing')) { if (window.render) render(); }
       }).catch(function(e){if(version===billingVersion){billingStatus="청구 조회 실패: "+e.message;if(window.render)render();}});
+      loadBillingCard();
       if (typeof ST !== "undefined" && ST.b === "settle" && window.render) render();
     }).catch(function (e) {
       if(version===billingVersion)billingStatus="청구 조회 실패: "+e.message;
@@ -118,6 +120,88 @@
     });
   }
   window.refreshBilling = loadBilling;
+
+  /* ── 카드 자동청구(빌링키) — 등록/상태/해지. 카드 원문은 어디에도 보관하지
+     않는다: 상태 변수·localStorage 저장 금지, submit 즉시 입력창 비움. ── */
+  var billingCardInfo = null, billingCardBusy = false, billingCardMsg = "";
+  function loadBillingCard() {
+    if (!BRAND()) return;
+    var version = billingVersion, owner = BRAND();
+    req("GET", "/brands/" + owner + "/billing/card").then(function (c) {
+      if (version !== billingVersion || owner !== BRAND()) return;
+      billingCardInfo = c;
+      if (livePage === 'billing' && window.render) render();
+    }).catch(function () { if (version === billingVersion) billingCardInfo = null; });
+  }
+  window.billingCardRegister = function () {
+    if (billingCardBusy || !billingCardInfo) return;
+    var g = function (id) { var el = document.getElementById(id); return el ? el.value : ""; };
+    var payload = { cardNo: g("bcNo"), expYear: g("bcYY"), expMonth: g("bcMM"),
+                    idNo: g("bcId"), cardPw: g("bcPw"),
+                    consent: !!(document.getElementById("bcConsent") || {}).checked,
+                    consentVersion: billingCardInfo.consentVersion };
+    // 카드 입력값은 전송 직전에 즉시 비운다 — 성공/실패와 무관하게 화면에 남기지 않는다
+    ["bcNo", "bcYY", "bcMM", "bcId", "bcPw"].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ""; });
+    if (!payload.consent) { payload = null; return toast("동의 필요", "자동청구 동의 체크박스를 확인해 주세요. (카드 입력값은 안전을 위해 비웠습니다)"); }
+    var owner = BRAND(), version = billingVersion;
+    billingCardBusy = true; billingCardMsg = ""; render();
+    req("POST", "/brands/" + owner + "/billing/card", payload).then(function (r) {
+      payload = null;
+      if (version !== billingVersion || owner !== BRAND()) return;
+      billingCardMsg = "카드 등록 완료 (" + (r.cardLabel || "등록 카드") + ") — 등록 시 결제는 발생하지 않았습니다.";
+      loadBillingCard();
+    }).catch(function (e) {
+      payload = null;
+      if (version === billingVersion) billingCardMsg = "카드 등록 실패: " + e.message + " — 입력값은 저장되지 않았습니다. 다시 시도해 주세요.";
+    }).finally(function () { if (version === billingVersion) { billingCardBusy = false; render(); } });
+  };
+  window.billingCardExpire = function () {
+    if (billingCardBusy) return;
+    var owner = BRAND(), version = billingVersion;
+    billingCardBusy = true; billingCardMsg = ""; render();
+    req("DELETE", "/brands/" + owner + "/billing/card").then(function (r) {
+      if (version !== billingVersion || owner !== BRAND()) return;
+      billingCardMsg = r.state === "expired" ? "카드 해지 완료 — 자동청구가 중단되었습니다. 미결제 청구서는 수동 결제할 수 있습니다."
+                                             : (r.hint || "해지 대기 중 — 자동청구는 중단되었습니다. 잠시 후 다시 시도해 주세요.");
+      loadBillingCard();
+    }).catch(function (e) { if (version === billingVersion) billingCardMsg = "해지 실패: " + e.message; })
+      .finally(function () { if (version === billingVersion) { billingCardBusy = false; render(); } });
+  };
+  window.billingCardHtml = function () {
+    if (!billingCardInfo) return '<div class="cc"><div class="t">카드 자동청구</div><p>상태를 불러오는 중입니다…</p></div>';
+    var c = billingCardInfo, h = '<div class="cc"><div class="t">카드 자동청구 (선택)</div>';
+    if (billingCardMsg) h += '<p role="status"><b>' + mailEscape(billingCardMsg) + '</b></p>';
+    if (!c.configured) {
+      // 운영 플래그 off — 입력창을 렌더하지 않는다(카드 입력 자체가 불가)
+      h += '<p>자동청구 준비 중입니다. 지금은 각 청구서의 <b>카드 결제</b> 버튼으로 수동 결제해 주세요.</p></div>';
+      return h;
+    }
+    var attempts = (c.attempts || []).filter(function (a) { return a.outcome === 'failed' || a.outcome === 'review'; });
+    if (c.card && c.card.state !== 'expired') {
+      var states = { active: '자동청구 활성', expire_pending: '해지 처리 대기 — 자동청구는 중단됨' };
+      h += '<p>등록 카드: <b>' + mailEscape(c.card.cardLabel || '등록 카드') + '</b> · ' + (states[c.card.state] || mailEscape(c.card.state)) +
+        '<br><small>동의 ' + mailEscape(c.card.consentVersion) + ' · ' + mailEscape((c.card.consentAt || '').slice(0, 10)) + (c.autochargeFlag ? '' : ' · 자동청구 실행은 운영 준비 중(수동 결제 가능)') + '</small></p>' +
+        '<button class="btn line" onclick="billingCardExpire()" ' + (billingCardBusy ? 'disabled' : '') + '>' + (c.card.state === 'expire_pending' ? '해지 다시 시도' : '카드 해지') + '</button>';
+    } else {
+      h += '<p>카드를 등록하면 매월 마감된 청구서 금액(검증 가입 5,000원/명 · VAT 포함 · 고정료 0원)이 자동 결제됩니다. <b>등록 시 결제는 발생하지 않습니다.</b></p>' +
+        '<label>카드번호<input id="bcNo" inputmode="numeric" autocomplete="off" placeholder="숫자만" style="width:100%;box-sizing:border-box"></label>' +
+        '<div style="display:flex;gap:8px"><label style="flex:1">유효기간(YY)<input id="bcYY" maxlength="2" autocomplete="off" placeholder="YY" style="width:100%;box-sizing:border-box"></label>' +
+        '<label style="flex:1">유효기간(MM)<input id="bcMM" maxlength="2" autocomplete="off" placeholder="MM" style="width:100%;box-sizing:border-box"></label>' +
+        '<label style="flex:1">카드 비밀번호 앞 2자리<input id="bcPw" type="password" maxlength="2" autocomplete="off" style="width:100%;box-sizing:border-box"></label></div>' +
+        '<label>생년월일 6자리(법인카드는 사업자번호 10자리)<input id="bcId" inputmode="numeric" autocomplete="off" style="width:100%;box-sizing:border-box"></label>' +
+        '<label style="display:block;margin-top:8px"><input id="bcConsent" type="checkbox"> ' + mailEscape(c.consentText || '자동청구에 동의합니다.') + '</label>' +
+        '<button class="btn" onclick="billingCardRegister()" ' + (billingCardBusy ? 'disabled' : '') + '>' + (billingCardBusy ? '등록 중…' : '카드 등록 (결제 없음)') + '</button>' +
+        '<p style="font-size:12px">카드 정보는 등록 요청에만 사용되며 서버·브라우저 어디에도 저장되지 않습니다.</p>';
+    }
+    if (attempts.length) {
+      h += '<h4 style="margin:12px 0 4px">자동청구 처리 안내</h4>' + attempts.slice(0, 5).map(function (a) {
+        return '<p style="font-size:12px;margin:2px 0">' + mailEscape((a.finishedAt || '').slice(0, 10)) + ' · ' +
+          (a.outcome === 'failed' ? '자동청구 실패 — 카드 상태 확인 후 청구서의 [카드 결제]로 수동 결제해 주세요.' : '거래 확인 필요 — 청구서의 [거래 확인]을 눌러 주세요.') +
+          (a.failMsg ? ' <span style="color:#8a6d3b">(' + mailEscape(a.failMsg) + ')</span>' : '') + '</p>';
+      }).join('');
+    }
+    return h + '</div>';
+  };
 
   /* ── 게이트 결정 → 실서버 (kind 매핑, 데모 동작은 그대로) ── */
   var GATE_KIND = { pii: "PII", payout: "PAYOUT" };
@@ -1257,7 +1341,7 @@
       else if(livePage==='products')body=productsCard();
       else if(livePage==='community')body=brandCommunityCard();
       else if(livePage==='mail')body='<h1>브랜드 메일링</h1>'+identityCard()+gmailCard()+outreachCard()+inboxCard();
-      else if(livePage==='billing')body='<h1>월별 청구</h1><p>검증 가입 1명당 5,000원 · 부가세 포함 · 월 단위 합산</p><p>카드 결제 최소금액은 1,000원입니다. 미만 청구서도 보관되며 자동 결제되지 않습니다.</p><button class="btn line" onclick="refreshBilling()">새로고침</button>'+window.billingInvoicesHtml();
+      else if(livePage==='billing')body='<h1>월별 청구</h1><p>검증 가입 1명당 5,000원 · 부가세 포함 · 월 단위 합산</p><p>카드 결제 최소금액은 1,000원입니다. 미만 청구서도 보관되며 자동 결제되지 않습니다.</p><button class="btn line" onclick="refreshBilling()">새로고침</button>'+window.billingCardHtml()+window.billingInvoicesHtml();
       else if(livePage==='status')body='<h1>서비스 상태</h1><div class="cc"><h2>이용 가능한 흐름</h2><p>브랜드 신청 → 운영자 승인 → 계정 생성 → 홈페이지 분석·프로필 저장 → Gmail 연결 → 초안 검토·발송 → 월별 청구 확인</p></div><div class="cc"><h2>준비 중</h2><p>틱톡·인스타 계정 검증과 자동 후보 수집, 크리에이터 커뮤니티·캠페인 참여, 자동 답장 수신, 크리에이터 대금 지급은 아직 공개 운영 대상이 아닙니다.</p><p>메일 답장은 연결된 Gmail에서 확인하세요. 가입 과금은 실제 검증 가입이 기록될 때만 발생합니다.</p></div>';
       else body='<p class="live-eyebrow">YOUR BRAND, IN GOOD COMPANY</p><h1>브랜드의 다음 연결을<br>만들어 보세요.</h1><p>'+(window.__ME.kind==='admin'?'관리자 ':'')+mailEscape(window.__ME.email)+' · 브랜드 <b>'+mailEscape(BRAND()||'')+'</b>'+(window.__ME.kind==='admin'?' <span class="cbt no" onclick="adminSwitchBrand()">브랜드 전환</span>':'')+'</p><div class="live-grid"><button class="cc" onclick="liveNav(\'learn\')"><h2>01. 브랜드 학습</h2><p>홈페이지 분석과 근거를 확인하고 저장하세요.</p></button><button class="cc" onclick="liveNav(\'mail\')"><h2>02. 메일링</h2><p>Gmail을 연결하고 초안을 검토한 뒤 발송하세요.</p></button></div><h2>theprlist에게 물어보세요</h2><p>저장된 브랜드 프로필을 참고해 답합니다. 대화로 메일을 발송하거나 결제를 실행하지 않습니다.</p>'+chatMessages.map(function(m){return '<div class="cc"><b>'+(m.role==='user'?'나':'theprlist')+'</b><p>'+mailEscape(m.content)+'</p></div>';}).join('')+'<form onsubmit="event.preventDefault();liveChat()"><input id="liveQuestion" maxlength="2000" placeholder="우리 브랜드를 소개하는 문구를 제안해 줘" required '+(chatBusy?'disabled':'')+'><button class="btn" '+(chatBusy?'disabled':'')+'>'+(chatBusy?'답변 중…':'질문하기')+'</button></form>';
       stage.innerHTML=nav+'<main class="live-main">'+body+'</main><footer class="live-footer"><a href="https://theprlist.net/privacy">개인정보처리방침</a> · <a href="https://theprlist.net/terms">이용약관</a> · <a href="mailto:chief@dinostudio.kr">문의</a></footer>';

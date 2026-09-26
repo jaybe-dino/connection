@@ -1003,3 +1003,60 @@ viewport 375/390(isMobile) 실측값 `window.innerWidth`로 확인:
 - PG 취소 후 늦은 paid 응답으로 청구서가 다시 paid가 되는 문제를 재현했다. `cancel_reported_at` 영구 표식으로 취소가 승인보다 먼저 도착하는 경우까지 review를 유지하며, 취소 통지 원장도 한 번만 기록한다. 환불 API 호출 없음.
 - 수동 번역 재시도 중에는 메시지 행 잠금을 유지해 자동 러너가 같은 메시지를 중복 번역하지 않도록 수정했다. 프로세스 실패 시 트랜잭션이 롤백되어 재시도 가능하다.
 - 독립 검증: API/청구 206개, UI/signup 34개 통과. 4개 웹앱 빌드와 diff 검사 통과. 결제 응답 순서 역전 2개와 수동/자동 번역 경쟁 1개 회귀 포함. 외부 실결제는 실행하지 않았다.
+
+---
+
+# 카드 자동청구(NICEpay 빌링키) 이식 (2026-09-26)
+
+기준: origin 47af197(Codex — 취소 종결 표식·재시도 잠금) ff 통합 후.
+원본: jaybe-dino/service2@9c53250 (src/lib/nicepay.ts, payment/subscribe·
+cancel, cron/subscribe) + 공식 nicepay-manual(payment-subscribe.md,
+status-transaction.md) 직접 대조. 상세 명세는 docs/BILLING_AUTOCHARGE.md.
+
+## 개발 완료 (이 커밋)
+
+- 어댑터 nicepay_billing.py: encData AES128/ECB/PKCS7 hex(+A2 AES256/CBC
+  옵션 — 둘 다 공식 매뉴얼 예시 벡터와 바이트 일치 테스트), regist/
+  charge/expire/find(signData 포함), 기존과 동일한 호스트 allowlist.
+- bid 저장은 Fernet(TOKEN_ENC_KEY) 암호문만 — 키 없거나 불량이면
+  등록·청구·복호화 전부 거부(fail-closed, 평문 폴백 없음).
+- 034: brand_billing_keys(동의 버전/시각/주체) + invoice_charge_attempts
+  (invoice_id PK=청구서당 평생 1회, 원주문일 order_date 보관).
+- 등록(브랜드 본인만, 명시 동의 필수, 등록 시 청구 0원, 422 반향 차단),
+  해지(expire_pending 커밋으로 자동청구 즉시 중단→PG expire, 실패 시
+  안전 재시도, 미청구 invoice 유지), 관리자는 조회만.
+- 자동청구: NICEPAY_AUTOCHARGE_ENABLED=1일 때만 러너 잡이 지난달 open
+  청구서(데모/현재월/1,000원 미만/취소표식 제외)를 orderId=invoice_id로
+  청구, paid 확정은 기존 settle(서명·금액·orderId·tid·취소표식) 재사용.
+  확정 실패→open 복귀+안내(재시도 없음), 모호 응답→review+find 대사
+  (reconcile이 tid 유실도 원주문일로 복구). 수동 결제 경로는 무변경.
+- 콘솔 월별청구 UI: 카드 상태/등록 폼(동의 체크박스·submit 즉시 입력
+  비움·localStorage 금지)/해지/실패 안내, flags off면 입력창 숨기고
+  준비중 표시.
+- glovek 원본의 자체 HMAC 웹훅·0000 단독 성공판정·실패 익일 재승인·
+  bid 평문 저장은 의도적으로 복사하지 않음.
+
+## 실행한 테스트 (전부 격리·모사 — 실PG/실카드/환불 호출 0)
+
+- tests_billing **82 passed** (신규 test_autocharge.py 17: 공식 암호화
+  벡터 2, 동의/테넌트/시크릿·카드원문 비노출/fail-closed/flags off,
+  중복 청구 0(반복 tick·수동 경쟁·현재월·데모·0원·취소표식), 타임아웃
+  review+재승인 금지+find 대사 복구, 확정거절 open 복귀+무재시도+안내,
+  위조 서명 승인 거부, 5,000원 월집계 금액 일치, 해지 즉시중단·재시도·
+  재등록)
+- services/api **141 passed** (runner autocharge 잡 기본 차단 표시 포함)
+- tests_ui **35** (신규 billing-card 5: localStorage 금지·flags off 숨김·
+  submit 즉시 비움·동의 가드·실패 안내) · signup 4
+- 실브라우저: billing-card 8체크(off 숨김/on 폼·동의 미체크 시 서버/PG
+  호출 0·입력 즉시 비움·JS 에러 0) + 회귀 admin_ctx 23·cycle3 15·
+  cycle2 9·번역 재시도 4·signup 4
+- 웹앱 4종(console/creator/signup/admin) 빌드 성공
+
+## 운영 실증 없음 — 활성화 절차(소유자)
+
+1. NICEpay 계약에 빌키(정기) 결제 포함 여부 확인.
+2. Railway에 TOKEN_ENC_KEY(Fernet) 확인 후 NICEPAY_BILLING_ENABLED=1
+   먼저 — 등록/해지만 열림(청구 없음). 소액 실카드 등록·해지 Codex 검수.
+3. 검수 통과 후 NICEPAY_AUTOCHARGE_ENABLED=1 — 다음 월마감 청구서부터
+   자동청구. 첫 실청구 1건 대조 검수.
+   (이 커밋은 두 flag 모두 켜지 않았다.)

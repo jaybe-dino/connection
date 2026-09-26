@@ -214,6 +214,37 @@ def _translation_tick() -> list[str]:
 _recon_state = {"last": 0.0, "checked": 0, "settled": 0, "errors": []}
 RECONCILE_EVERY_SEC = 1800
 
+_autocharge_state = {"last": 0.0, "paid": 0, "failed": 0, "review": 0,
+                     "errors": []}
+AUTOCHARGE_EVERY_SEC = 3600
+
+
+def _autocharge_tick() -> list[str]:
+    """월 청구서 카드 자동청구 — NICEPAY_AUTOCHARGE_ENABLED=1일 때만.
+
+    청구서별 영구 attempt(PK)가 재시도·중복을 차단하므로 tick 반복은
+    안전하다. 새 승인 검증·취소 표식 규칙은 routes_payments.settle 그대로."""
+    from . import nicepay_billing
+    if not nicepay_billing.autocharge_enabled():
+        return []
+    now = time.time()
+    if now - _autocharge_state["last"] < AUTOCHARGE_EVERY_SEC:
+        return []
+    _autocharge_state["last"] = now
+    notes: list[str] = []
+    try:
+        from .routes_payments import autocharge_tick
+        r = autocharge_tick()
+        for k in ("paid", "failed", "review"):
+            _autocharge_state[k] += r[k]
+        if r["scanned"]:
+            notes.append(f"자동청구 {r['scanned']}건 — 완료 {r['paid']}"
+                         f"·실패 {r['failed']}·대사 {r['review']}")
+    except Exception as e:
+        _autocharge_state["errors"] = ([f"autocharge: {type(e).__name__}"]
+                                       + _autocharge_state["errors"])[:5]
+    return notes
+
 
 def _reconcile_tick() -> list[str]:
     """결제 대사 — processing으로 남은 청구서의 PG 거래를 '조회'해 확정/보류.
@@ -291,7 +322,8 @@ def _gmail_loop(interval: int) -> None:
         try:
             with _lock:
                 notes = (_translation_tick() + _gmail_ops_tick()
-                         + _billing_tick() + _reconcile_tick())
+                         + _billing_tick() + _reconcile_tick()
+                         + _autocharge_tick())
                 _state["ticks"] += 1
                 _state["last_tick"] = datetime.now(UTC).isoformat()
                 _state["error"] = None
@@ -364,7 +396,11 @@ def status() -> dict:
     """러너 상태 — 모든 카운터는 '프로세스 시작(countersSince) 이후' 수치다.
     jobs에는 잡별 활성/비활성과 사유·마지막 실행·최근 오류를 담는다."""
     from . import nicepay
+    from . import nicepay_billing
     from . import routes_gmail as gmail
+
+    def _autocharge_on():
+        return nicepay_billing.autocharge_enabled()
     out = dict(_state)
     running = bool(_state.get("enabled"))
     demo = gmail._demo_mode()
@@ -415,6 +451,14 @@ def status() -> dict:
                       "lastRunAt": _iso(_recon_state["last"]),
                       "count": _recon_state["settled"],
                       "recentErrors": _recon_state["errors"]},
+        "autocharge": {"enabled": running and _autocharge_on(),
+                       "reason": ("" if running and _autocharge_on() else
+                                  "러너 꺼짐" if not running else
+                                  "차단됨(NICEPAY_AUTOCHARGE_ENABLED=0"
+                                  " — 기본값)"),
+                       "lastRunAt": _iso(_autocharge_state["last"]),
+                       "count": _autocharge_state["paid"],
+                       "recentErrors": _autocharge_state["errors"]},
     }
     if _runner is not None:
         with _lock:

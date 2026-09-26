@@ -193,7 +193,10 @@ def test_status_reports_job_split_and_counters_origin(client, monkeypatch):
     assert s["countersSince"]                    # 카운터 기준 시각 명시
     jobs = s["jobs"]
     assert set(jobs) == {"sync", "sendResume", "translation", "billing",
-                         "reconcile"}
+                         "reconcile", "autocharge"}
+    # 자동청구는 기본 차단(opt-in) — 사유에 차단 env를 명시
+    assert jobs["autocharge"]["enabled"] is False
+    assert "NICEPAY_AUTOCHARGE_ENABLED" in jobs["autocharge"]["reason"]
     assert jobs["sync"]["enabled"] is True
     assert jobs["sendResume"]["enabled"] is False
     assert "차단" in jobs["sendResume"]["reason"]

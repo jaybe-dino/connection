@@ -105,9 +105,18 @@ def _enroll_from_pool(runner) -> int:
     return n
 
 
+_PROC_STARTED = datetime.now(UTC)
+
 _gmail_ops = {"lastSync": {}, "lastResume": {}, "synced": 0, "resumed": 0,
-              "errors": []}
+              "errors": [], "lastSyncAt": None, "lastResumeAt": None}
 SYNC_EVERY_SEC, RESUME_EVERY_SEC = 600, 900
+
+
+def send_resume_enabled() -> bool:
+    """승인 배치 자동 발송 재개 스위치 — GMAIL_SEND_RESUME_ENABLED=0 이면
+    러너가 켜져 있어도 발송 재개만 확실히 차단된다(동기화·번역·월마감·
+    대사는 계속). 미설정/그 외 값은 기존 동작과 동일(켜짐)."""
+    return os.environ.get("GMAIL_SEND_RESUME_ENABLED", "1") != "0"
 
 
 def _gmail_ops_tick() -> list[str]:
@@ -127,10 +136,11 @@ def _gmail_ops_tick() -> list[str]:
                 "SELECT DISTINCT brand_id FROM gmail_accounts"
                 " WHERE state='connected'"
                 "   AND scopes LIKE %s", ("%gmail.readonly%",)).fetchall()]
-            resumable = [r["brand_id"] for r in conn.execute(
-                "SELECT DISTINCT b.brand_id FROM outreach_batches b"
-                " JOIN outreach_recipients r USING (batch_id)"
-                " WHERE b.state='approved' AND r.state='pending'").fetchall()]
+            resumable = [] if not send_resume_enabled() else [
+                r["brand_id"] for r in conn.execute(
+                    "SELECT DISTINCT b.brand_id FROM outreach_batches b"
+                    " JOIN outreach_recipients r USING (batch_id)"
+                    " WHERE b.state='approved' AND r.state='pending'").fetchall()]
     except Exception as e:
         _gmail_ops["errors"] = ([f"scan: {e}"] + _gmail_ops["errors"])[:5]
         return []
@@ -138,6 +148,7 @@ def _gmail_ops_tick() -> list[str]:
         if now - _gmail_ops["lastSync"].get(brand, 0) < SYNC_EVERY_SEC:
             continue
         _gmail_ops["lastSync"][brand] = now
+        _gmail_ops["lastSyncAt"] = datetime.now(UTC).isoformat()
         try:
             from . import gmail_sync
             r = gmail_sync.sync(brand)
@@ -146,10 +157,14 @@ def _gmail_ops_tick() -> list[str]:
         except Exception as e:                     # 동의 철회·토큰 만료 등 — 기록만
             _gmail_ops["errors"] = ([f"sync {brand}: {type(e).__name__}"]
                                     + _gmail_ops["errors"])[:5]
+    if not send_resume_enabled():
+        # 발송 재개 차단 모드 — deliver_pending 경로에 도달하지 않는다.
+        return notes
     for brand in resumable:
         if now - _gmail_ops["lastResume"].get(brand, 0) < RESUME_EVERY_SEC:
             continue
         _gmail_ops["lastResume"][brand] = now
+        _gmail_ops["lastResumeAt"] = datetime.now(UTC).isoformat()
         try:
             from .routes_outreach import deliver_pending
             with connect() as conn:
@@ -339,8 +354,22 @@ def start_if_enabled() -> bool:
     return started
 
 
+def _iso(epoch: float | None) -> str | None:
+    if not epoch:
+        return None
+    return datetime.fromtimestamp(epoch, UTC).isoformat()
+
+
 def status() -> dict:
+    """러너 상태 — 모든 카운터는 '프로세스 시작(countersSince) 이후' 수치다.
+    jobs에는 잡별 활성/비활성과 사유·마지막 실행·최근 오류를 담는다."""
+    from . import nicepay
+    from . import routes_gmail as gmail
     out = dict(_state)
+    running = bool(_state.get("enabled"))
+    demo = gmail._demo_mode()
+    resume_env = send_resume_enabled()
+    out["countersSince"] = _PROC_STARTED.isoformat()
     out["gmailOps"] = {"synced": _gmail_ops["synced"],
                        "resumed": _gmail_ops["resumed"],
                        "recentErrors": _gmail_ops["errors"]}
@@ -352,6 +381,39 @@ def status() -> dict:
     out["reconcile"] = {"checked": _recon_state["checked"],
                         "settled": _recon_state["settled"],
                         "recentErrors": _recon_state["errors"]}
+    out["jobs"] = {
+        "sync": {"enabled": running and not demo,
+                 "reason": ("" if running and not demo else
+                            "러너 꺼짐" if not running else
+                            "데모 모드(실 Google 키 없음)"),
+                 "lastRunAt": _gmail_ops["lastSyncAt"],
+                 "count": _gmail_ops["synced"],
+                 "recentErrors": _gmail_ops["errors"]},
+        "sendResume": {"enabled": running and not demo and resume_env,
+                       "reason": ("차단됨(GMAIL_SEND_RESUME_ENABLED=0)"
+                                  if not resume_env else
+                                  "" if running and not demo else
+                                  "러너 꺼짐" if not running else
+                                  "데모 모드(실 Google 키 없음)"),
+                       "lastRunAt": _gmail_ops["lastResumeAt"],
+                       "count": _gmail_ops["resumed"],
+                       "recentErrors": []},
+        "translation": {"enabled": running, "reason": "" if running else "러너 꺼짐",
+                        "lastRunAt": _iso(_tr_state["last"]),
+                        "count": _tr_state["done"],
+                        "recentErrors": _tr_state["errors"]},
+        "billing": {"enabled": running, "reason": "" if running else "러너 꺼짐",
+                    "lastRunAt": _iso(_billing_state["lastClose"]),
+                    "count": _billing_state["closedInvoices"],
+                    "recentErrors": _billing_state["errors"]},
+        "reconcile": {"enabled": running and nicepay.configured(),
+                      "reason": ("" if running and nicepay.configured() else
+                                 "러너 꺼짐" if not running else
+                                 "NICEpay 미설정"),
+                      "lastRunAt": _iso(_recon_state["last"]),
+                      "count": _recon_state["settled"],
+                      "recentErrors": _recon_state["errors"]},
+    }
     if _runner is not None:
         with _lock:
             out["outreach"] = _runner.outreach.stats()

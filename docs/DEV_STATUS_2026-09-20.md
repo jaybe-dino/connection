@@ -919,3 +919,81 @@ Google 키 존재·GIT_SHA 주입)으로 **10/10 전부 PASS**, 키 없는 인�
 에서는 "데모 모드" 사유와 함께 정확히 FAIL — 양방향 판정 확인.
 서버 pytest 130 재통과. 운영 도메인은 이 환경에서 여전히 차단(000)이라
 운영 실행 자체는 소유자/Codex 몫이다.
+
+---
+
+# 잔여 구현 결함 사이클: 번역 재시도·모바일 실측·결제/OAuth 보강 (2026-09-26)
+
+기준: origin e513af4(Codex — open-check.sh 짧은 SHA·보호 라우트 오인
+수정) ff 통합 후. Codex 운영 검수로 확인된 사실: 크레딧 충전 후 AI
+학습/초안/번역 실사용 성공, **기존 failed 번역 글은 재시도 경로가 없어
+남음**, AI 초안 버튼이 작성 중에도 활성으로 보임.
+
+## 개발 완료 (이 커밋)
+
+1. **번역 수동 재시도** (크레딧 소진 등 MAX 5회 후 failed 메시지):
+   - API `POST /community/cells/{cell}/messages/{msg}/translation-retry`
+     — 브랜드(자기 셀)·운영만(크리에이터/타 브랜드 403). failed→pending
+     전환을 조건부 UPDATE로 원자화해 **중복 클릭이 이중 작업이 되지
+     않고**(둘째 요청 409), 원문·부분 번역은 절대 수정하지 않는다.
+     즉시 1회 시도 후 미완이면 pending으로 남아 러너가 새 한도(5회)로
+     이어받는다. done/pending 메시지는 409로 구분 안내.
+   - 콘솔 UI: failed 메시지에 "번역 실패 — 원문은 보존" 안내 +
+     "번역 재시도" 버튼(재시도 중… disabled), pending은 "자동 재시도
+     대기" 표기. 성공/접수/실패 각각 상태 문구.
+2. **AI 초안 버튼 로딩 피드백**: 작성 중 버튼 disabled + "AI 작성 중…"
+   (재렌더가 입력값을 지우므로 DOM 직접 갱신 방식).
+3. **NICEpay 취소 통지 반영** (검수 지적: settle이 paid 청구서의 PG
+   취소/부분취소를 유료로 유지):
+   - `nicepay.cancellation_reported` — resultCode·orderId·tid·**서명
+     (tid+amount+ediDate, payment_valid와 동일 규격)** 검증된
+     cancelled/partialCancelled 응답만 인정. status 문자열만으로는
+     절대 강등 불가.
+   - settle: 검증된 취소 통지면 paid라도 review로 전환(사람 확정 대기)
+     + 원장 INVOICE_CANCEL_REPORTED 1회. 통지 재생·대사 반복은 멱등.
+     **환불/취소 실행 API 호출은 추가하지 않음** — 이미 일어난 취소의
+     통지 반영만.
+4. **Gmail OAuth 콜백 오류 처리** (신규 브랜드 연결 흐름):
+   - 토큰 교환 네트워크 실패/비JSON 응답 → 500 스택 대신 502 재시도
+     안내 HTML(상세 비노출). 콜백의 모든 HTTPException(만료 state,
+     409 충돌 등)도 브라우저에 JSON 대신 안내 HTML로.
+   - 비정상 expires_in에도 연결 자체는 성공(기본 1시간).
+   - 동기화/발송 경로의 갱신 실패 처리는 기존 계정별 격리로 충분함을
+     확인(변경 없음).
+5. **버그 수정(실브라우저에서 발견)**: 재시도 버튼 초기 구현이 존재하지
+   않는 esc()를 호출해 대화 렌더가 통째로 죽던 문제 — vm 단위테스트의
+   스텁이 가렸고 실브라우저 E2E에서 잡음. 숫자 msgId 정제로 교체.
+
+## 모바일 375/390 실측 (로컬 Playwright — 요청된 실측 증거)
+
+viewport 375/390(isMobile) 실측값 `window.innerWidth`로 확인:
+- 광역: 콘솔(로그인 전/홈/제품·캠페인/아웃리치·인박스/청구/커뮤니티)·
+  크리에이터(초대 카드/로그인 후)·signup(랜딩/가입 폼 긴 URL) —
+  **22/22 가로 넘침 없음**(scrollWidth == viewport, 두 폭 모두).
+- 심화: 로고 입력에 초장문 URL, 커뮤니티 대화에 160자 무공백 URL 실삽입
+  후 재측정 — **10/10 넘침 없음**. 넘침 요소 자동 검출 로직 포함.
+- 결론: 현 CSS로 375/390에서 입력·버튼·긴 URL 가로 넘침 없음 —
+  CSS 수정 불필요(수정 없음).
+
+## 실행한 테스트 (격리 DB — 실결제/실메일/외부 호출 없음)
+
+- 서버 pytest **140 passed** (신규: 번역 재시도 6 — 권한/원문 보존/
+  409 구분/중복 클릭 원자성/러너 이어받기/관리자·404, Gmail 콜백 4 —
+  네트워크 실패 502 HTML/비JSON 502/state 오류 HTML/비정상 expires_in
+  연결 성공)
+- tests_billing **63 passed** (신규 3: 서명 취소 통지 paid→review 1회
+  +재생 멱등, 부분취소 대사 멱등, 위조/무서명 취소는 paid 유지·원장
+  무기록)
+- tests_ui **30/30** (신규 3: failed에만 버튼·pending 안내, 중복 클릭
+  방지+로딩 표시, 성공 시 재조회) · signup **4/4**
+- 실브라우저 E2E: 번역 재시도 4체크(버튼 표시→클릭→접수 피드백→JS 에러
+  0) · 모바일 32체크 · 기존 회귀(아래)
+- 빌드: sync-demo + console/creator-app vite build
+
+## 운영 실증과 구분 (docs/OPEN_CHECKLIST.md 개정 반영)
+
+이 사이클은 전부 코드 테스트/로컬 실측이다. 신규 브랜드 Gmail OAuth
+실동의(운영 Google Cloud 조직 본인인증 진행 중), NICEpay 실결제·실취소
+(운영 콘솔 로그아웃), TikTok 실연동, 후보 데이터 품질(valid 필터 통과
+후보 확보)은 **운영 실증 없음** 상태 그대로이며, 재시도 UI의 운영 실증
+(기존 실패 글 해소)은 배포 후 Codex 검수 몫이다.

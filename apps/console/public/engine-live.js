@@ -497,13 +497,20 @@
     var productId=(document.getElementById('outProduct')||{}).value||'';
     if(productId&&!(productsData||[]).some(function(p){return p.productId===productId;}))return toast('제품 확인','제품 목록을 다시 불러온 뒤 선택해 주세요.');
     var payload={brief:brief};if(productId)payload.product_id=productId;
-    var current=jwtGet(),brand=BRAND();composeBusy=true;toast('AI 작성 중','브랜드 정보를 참고해 제안 메일을 작성하고 있습니다.');
+    var current=jwtGet(),brand=BRAND();composeBusy=true;
+    // 재렌더는 작성 중 입력값을 지우므로 버튼만 직접 갱신해 로딩을 표시한다
+    var composeBtn=document.getElementById('outComposeBtn');
+    if(composeBtn){composeBtn.disabled=true;composeBtn.textContent='AI 작성 중…';}
+    toast('AI 작성 중','브랜드 정보를 참고해 제안 메일을 작성하고 있습니다.');
     try{var r=await req('POST','/brands/'+brand+'/outreach/compose',payload);
       if(jwtGet()!==current||BRAND()!==brand)return;
       var subject=document.getElementById('outSubject'),body=document.getElementById('outBody');
       if(subject&&body&&!subject.value&&!body.value&&((document.getElementById('outProduct')||{}).value||'')===productId){subject.value=r.subject;body.value=r.body;toast('초안 작성 완료','아직 저장·발송되지 않았습니다. 내용을 확인해 주세요.');}
       else toast('다시 시도','화면이나 작성 내용이 바뀌어 AI 결과를 덮어쓰지 않았습니다.');
-    }catch(e){toast('AI 작성 실패',mailEscape(e.message));}finally{composeBusy=false;}
+    }catch(e){toast('AI 작성 실패',mailEscape(e.message));}
+    finally{composeBusy=false;
+      var btn=document.getElementById('outComposeBtn');
+      if(btn){btn.disabled=false;btn.textContent='AI로 제안 메일 작성';}}
   };
   window.outreachDraft = function() {
     if(outreachBusy)return;
@@ -548,7 +555,7 @@
     }).join('');
     return '<div class="cc"><div class="t">아웃리치 메일</div><p>수신자와 내용을 저장한 뒤 확인하고 발송합니다. 발송 한도를 넘긴 수신자는 대기하며, 수신 거부·90일 내 중복 발송은 제외합니다.</p>'+
       '<label>초안에 사용할 제품<select id="outProduct"><option value="">브랜드 공통 제안</option>'+(productsData||[]).map(function(p){return '<option value="'+mailEscape(p.productId)+'">'+mailEscape(p.name)+'</option>';}).join('')+'</select></label><p>제품을 선택하면 저장된 제품 프로필도 AI 초안에 반영합니다.</p>'+
-      '<label>협업 제안 내용<textarea id="outBrief" maxlength="2000" placeholder="제안할 제품, 협업 방식, 언어를 적어 주세요."></textarea></label><button class="cbt no" onclick="outreachCompose()">AI로 제안 메일 작성</button><p>AI는 저장한 브랜드 정보로 초안만 작성합니다. 내용을 확인하고 저장한 뒤 발송하세요.</p>'+
+      '<label>협업 제안 내용<textarea id="outBrief" maxlength="2000" placeholder="제안할 제품, 협업 방식, 언어를 적어 주세요."></textarea></label><button id="outComposeBtn" class="cbt no" onclick="outreachCompose()" '+(composeBusy?'disabled':'')+'>'+(composeBusy?'AI 작성 중…':'AI로 제안 메일 작성')+'</button><p>AI는 저장한 브랜드 정보로 초안만 작성합니다. 내용을 확인하고 저장한 뒤 발송하세요.</p>'+
       '<label>수신자 이메일 · 최대 20명<textarea id="outRecipients" rows="3" style="width:100%;box-sizing:border-box" placeholder="이메일을 줄바꿈 또는 쉼표로 구분"></textarea></label>'+
       '<label>제목<input id="outSubject" maxlength="150" style="width:100%;box-sizing:border-box"></label>'+
       '<label>본문<textarea id="outBody" rows="6" style="width:100%;box-sizing:border-box"></textarea></label>'+
@@ -1162,6 +1169,19 @@
     catch(e){if(version===brandConversationVersion){brandConversationError=e.message;render();}}
   };
   window.brandCommunityDraft=function(value){brandConversationDraft=value;};
+  var translationRetryBusy={};
+  window.brandTranslationRetry=async function(msgId){
+    if(!brandConversation||translationRetryBusy[msgId])return;   // 중복 클릭 방지
+    var version=brandConversationVersion,owner=BRAND(),token=jwtGet(),cell=brandConversation.cell;
+    translationRetryBusy[msgId]=true;brandConversationError='';render();
+    try{var r=await req('POST','/community/cells/'+encodeURIComponent(cell.cellId)+'/messages/'+encodeURIComponent(msgId)+'/translation-retry');
+      if(version!==brandConversationVersion||owner!==BRAND()||token!==jwtGet())return;
+      brandConversationError=r.translationState==='done'?'번역 재시도 완료 ✅':(r.hint||'재시도를 접수했습니다 — 자동 재시도가 이어집니다.');
+      var rows=await req('GET','/community/cells/'+encodeURIComponent(cell.cellId)+'/messages');
+      if(version===brandConversationVersion&&owner===BRAND()&&token===jwtGet())brandConversation.messages=rows;
+    }catch(e){if(version===brandConversationVersion)brandConversationError='번역 재시도 실패: '+e.message;}
+    finally{delete translationRetryBusy[msgId];if(version===brandConversationVersion)render();}
+  };
   window.brandCommunitySend=async function(){
     if(brandConversationBusy||!brandConversation||!brandConversationDraft.trim())return;
     var version=brandConversationVersion,owner=BRAND(),token=jwtGet(),cell=brandConversation.cell;
@@ -1178,7 +1198,13 @@
     h+=brandCells.map(function(c,i){return '<button class="btn line" onclick="brandCommunityOpen('+i+')" '+(brandConversationBusy?'disabled':'')+'>'+mailEscape((c.kind==='dm'?'DM · ':'라운지 · ')+c.name)+'</button>';}).join('');
     if(!brandCells.length)h+='<p>표시할 대화가 없습니다.</p>';
     if(brandConversation){h+='<h2>'+mailEscape(brandConversation.cell.name)+'</h2>';
-      h+=brandConversation.messages.map(function(m){var translated=m.originalLocale!=='ko'&&m.translations&&m.translations.ko;return '<article class="cc"><small>'+mailEscape(m.author)+' · '+mailEscape(m.at)+'</small><p>'+mailEscape(translated||m.original)+'</p>'+(translated?'<small>원문 ('+mailEscape(m.originalLocale)+'): '+mailEscape(m.original)+'</small>':'')+'</article>';}).join('')||'<p>아직 메시지가 없습니다.</p>';
+      h+=brandConversation.messages.map(function(m){var translated=m.originalLocale!=='ko'&&m.translations&&m.translations.ko;
+        var retry='';
+        if(m.translationState==='failed'){var busy=!!translationRetryBusy[m.msgId];
+          var safeId=String(m.msgId).replace(/[^0-9]/g,'');
+          retry='<div style="margin-top:4px"><small style="color:#8a6d3b">번역 실패 — 원문은 보존되어 있습니다.</small> <button class="btn line" style="font-size:11px;padding:2px 8px" onclick="brandTranslationRetry(\''+safeId+'\')" '+(busy?'disabled':'')+'>'+(busy?'재시도 중…':'번역 재시도')+'</button></div>';}
+        else if(m.translationState==='pending'){retry='<div style="margin-top:4px"><small style="color:#8a6d3b">번역 준비 중 — 자동 재시도 대기</small></div>';}
+        return '<article class="cc"><small>'+mailEscape(m.author)+' · '+mailEscape(m.at)+'</small><p>'+mailEscape(translated||m.original)+'</p>'+(translated?'<small>원문 ('+mailEscape(m.originalLocale)+'): '+mailEscape(m.original)+'</small>':'')+retry+'</article>';}).join('')||'<p>아직 메시지가 없습니다.</p>';
       h+='<label>담당자 답장<textarea maxlength="2000" oninput="brandCommunityDraft(this.value)" '+(brandConversationBusy?'disabled':'')+'>'+mailEscape(brandConversationDraft)+'</textarea></label><button class="btn" onclick="brandCommunitySend()" '+(brandConversationBusy?'disabled':'')+'>'+(brandConversationBusy?'전송 중…':'대화에 보내기')+'</button>';
     }return h;
   }

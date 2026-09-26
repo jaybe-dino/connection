@@ -1,5 +1,7 @@
 """지메일 연동 — 데모 연결 → 인바운드 답장 → 아리 분류 → 게이트 답장 발송."""
 
+import os
+
 
 def test_demo_connect_and_list(client):
     r = client.post("/brands/glowlab/gmail/connect",
@@ -83,3 +85,84 @@ def test_oauth_state_signing(monkeypatch):
     from fastapi import HTTPException
     with _pytest.raises(HTTPException):             # 위조된 brand → 거부
         g._verify_state(s.replace("glowlab", "evil"))
+
+
+# ── OAuth 콜백 오류 처리 — 신규 브랜드 연결 흐름 (외부 호출 전부 모사) ──
+
+def test_callback_network_failure_returns_friendly_html(client, monkeypatch):
+    """토큰 교환 네트워크 실패 — 브라우저에 500 스택/JSON이 아니라
+    재시도 안내 HTML(502)이 뜬다."""
+    import httpx
+    from api import routes_gmail as rg
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid-test")   # 실모드
+    state = rg._new_oauth_state("glowlab")
+
+    def down(*a, **k):
+        raise httpx.ConnectError("dns fail")
+    monkeypatch.setattr(httpx, "post", down)
+    r = client.get(f"/gmail/callback?code=abc&state={state}")
+    assert r.status_code == 502
+    assert "다시" in r.text and "<h3>" in r.text          # 사람이 읽는 안내
+    assert "Traceback" not in r.text and "dns fail" not in r.text
+
+
+def test_callback_non_json_token_response_is_502(client, monkeypatch):
+    import httpx
+    from api import routes_gmail as rg
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid-test")
+    state = rg._new_oauth_state("glowlab")
+
+    class Resp:
+        def json(self):
+            raise ValueError("not json")
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: Resp())
+    r = client.get(f"/gmail/callback?code=abc&state={state}")
+    assert r.status_code == 502 and "<h3>" in r.text
+
+
+def test_callback_state_errors_render_html_not_json(client, monkeypatch):
+    """만료/위조 state — 콜백 창에 JSON({"detail":…}) 대신 안내 HTML."""
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid-test")
+    r = client.get("/gmail/callback?code=abc&state=forged-state")
+    assert r.status_code == 400
+    assert "연결 실패" in r.text and "다시 연결" in r.text
+    assert not r.text.startswith("{")
+
+
+def test_callback_bad_expires_in_still_connects(client, monkeypatch):
+    """구글이 비정상 expires_in을 줘도 연결 자체는 성공한다."""
+    import base64 as b64
+    import json as js
+    import httpx
+    from api import routes_gmail as rg
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid-test")
+    import psycopg
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+        conn.execute("INSERT INTO brands (brand_id, name, is_demo) VALUES"
+                     " ('cbtest','CBTEST',false)"
+                     " ON CONFLICT (brand_id) DO NOTHING")
+        conn.commit()
+    state = rg._new_oauth_state("cbtest")
+    claims = b64.urlsafe_b64encode(js.dumps(
+        {"email": "ops.cb@glowlab.test", "email_verified": True}
+    ).encode()).decode().rstrip("=")
+
+    class Resp:
+        def json(self):
+            return {"access_token": "at", "refresh_token": "rt",
+                    "expires_in": "abc",              # 비정상 값
+                    "id_token": f"h.{claims}.s",
+                    "scope": ("https://www.googleapis.com/auth/gmail.send"
+                              " https://www.googleapis.com/auth/gmail.readonly"
+                              " openid email")}
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: Resp())
+    r = client.get(f"/gmail/callback?code=abc&state={state}")
+    assert r.status_code == 200 and "연결 완료" in r.text
+    import psycopg
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+        st = conn.execute("SELECT state FROM gmail_accounts WHERE email="
+                          "'ops.cb@glowlab.test'").fetchone()[0]
+        conn.execute("DELETE FROM gmail_accounts WHERE email="
+                     "'ops.cb@glowlab.test'")
+        conn.commit()
+    assert st == "connected"

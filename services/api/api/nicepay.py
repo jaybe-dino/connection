@@ -42,6 +42,23 @@ def payment_valid(data, order_id, amount, tid):
                 [tid, amount, data['ediDate']], data.get('signature')))
 
 
+CANCELLED_STATUSES = ('cancelled', 'partialCancelled')
+
+
+def cancellation_reported(data, order_id, tid):
+    """Signed cancel/partial-cancel notice for this exact transaction.
+
+    This only recognizes a cancellation that already happened at the PG;
+    it never initiates one. Signature scheme matches payment_valid/webhook
+    (tid + amount + ediDate), so a status field alone can never demote an
+    invoice."""
+    return (data.get('resultCode') == '0000'
+            and data.get('status') in CANCELLED_STATUSES
+            and data.get('orderId') == order_id and data.get('tid') == tid
+            and bool(data.get('ediDate')) and _signature(
+                [tid, data.get('amount'), data['ediDate']], data.get('signature')))
+
+
 def request(method, tid, amount=None):
     if not configured():
         raise PaymentUnavailable('Payment configuration is incomplete')

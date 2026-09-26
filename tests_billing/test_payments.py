@@ -419,3 +419,51 @@ def test_decimal_unit_prices_summed_exactly(setup):
     with db() as c:c.execute("UPDATE signup_usage SET unit_price=50 WHERE creator_id='c1'")
     i=invoice(client,h)
     assert i['amount']==5050 and i['quantity']==2
+
+
+def cancelled(iid,status='cancelled'):
+    return {'resultCode':'0000','status':status,'orderId':iid,'amount':10000,'tid':'test-tid',
+            'ediDate':'2026-02-02','signature':signature('test-tid100002026-02-02')}
+
+def test_signed_cancel_notice_moves_paid_to_review_once(setup,monkeypatch):
+    """paid 이후 서명 검증된 PG 취소 통지(웹훅) — 유료 유지가 아니라 review로
+    전환하고, 통지 재생(replay)에도 원장 기록은 한 번, 상태는 안정적."""
+    client,db,h,events=setup;i=invoice(client,h)
+    monkeypatch.setattr(nicepay,'request',lambda *a: paid(i['id']))
+    client.post('/payments/return',data=form(i['id']),follow_redirects=False)
+    assert events==['INVOICE_PAID']
+    monkeypatch.setattr(nicepay,'request',lambda *a: cancelled(i['id']))
+    for _ in range(2):                     # 취소 통지 재생
+        r=client.post('/payments/webhook',json=cancelled(i['id']))
+        assert r.status_code==409          # settle False → 대사 필요 응답
+    with db() as c:
+        assert c.execute('SELECT status FROM signup_invoices').fetchone()['status']=='review'
+    assert events==['INVOICE_PAID','INVOICE_CANCEL_REPORTED']
+
+def test_partial_cancel_via_reconcile_and_idempotent(setup,monkeypatch):
+    client,db,h,events=setup;i=invoice(client,h)
+    monkeypatch.setattr(nicepay,'request',lambda *a: paid(i['id']))
+    client.post('/payments/return',data=form(i['id']),follow_redirects=False)
+    monkeypatch.setattr(nicepay,'request',
+                        lambda *a: cancelled(i['id'],'partialCancelled'))
+    for _ in range(2):                     # 수동 대사 반복도 멱등
+        r=client.post('/brands/real/billing/invoices/'+i['id']+'/reconcile',headers=h)
+        assert r.status_code==200 and r.json()['paid'] is False
+    with db() as c:
+        assert c.execute('SELECT status FROM signup_invoices').fetchone()['status']=='review'
+    assert events==['INVOICE_PAID','INVOICE_CANCEL_REPORTED']
+
+def test_forged_or_unsigned_cancel_never_demotes_paid(setup,monkeypatch):
+    """status 필드만 cancelled인 무서명/위조 응답은 paid를 절대 강등하지
+    못한다 — 웹훅은 401, 대사는 paid 유지·원장 무기록."""
+    client,db,h,events=setup;i=invoice(client,h)
+    monkeypatch.setattr(nicepay,'request',lambda *a: paid(i['id']))
+    client.post('/payments/return',data=form(i['id']),follow_redirects=False)
+    forged=cancelled(i['id']);forged['signature']='0'*64
+    assert client.post('/payments/webhook',json=forged).status_code==401
+    monkeypatch.setattr(nicepay,'request',lambda *a: dict(forged))
+    r=client.post('/brands/real/billing/invoices/'+i['id']+'/reconcile',headers=h)
+    assert r.status_code==200 and r.json()['paid'] is False
+    with db() as c:
+        assert c.execute('SELECT status FROM signup_invoices').fetchone()['status']=='paid'
+    assert events==['INVOICE_PAID']

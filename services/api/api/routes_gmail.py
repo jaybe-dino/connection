@@ -188,7 +188,19 @@ def connect_gmail(brand_id: str, body: ConnectIn,
 
 @router.get("/gmail/callback")
 def gmail_callback(code: str = "", state: str = "", error: str = "") -> HTMLResponse:
-    """구글 동의 후 리다이렉트 — 코드를 토큰으로 교환하고 계정 저장 (실모드)."""
+    """구글 동의 후 리다이렉트 — 코드를 토큰으로 교환하고 계정 저장 (실모드).
+
+    이 응답은 브랜드 사용자의 브라우저 창에 그대로 뜨므로, 어떤 실패든
+    JSON/스택이 아니라 읽을 수 있는 안내 HTML로 돌려준다."""
+    try:
+        return _gmail_callback(code, state, error)
+    except HTTPException as e:
+        return HTMLResponse(
+            f"<h3>연결 실패</h3><p>{escape(str(e.detail))}</p>"
+            "<p>이 창을 닫고 콘솔에서 다시 연결해 주세요.</p>", e.status_code)
+
+
+def _gmail_callback(code: str, state: str, error: str) -> HTMLResponse:
     if error or not code:
         return HTMLResponse(f"<h3>연결 취소됨</h3><p>{escape(error or 'code 없음')}</p>", 400)
     if _demo_mode():
@@ -198,11 +210,19 @@ def gmail_callback(code: str = "", state: str = "", error: str = "") -> HTMLResp
     redirect = os.environ.get(
         "GOOGLE_REDIRECT_URI",
         "https://api.theprlist.net/gmail/callback")
-    tok = httpx.post("https://oauth2.googleapis.com/token", data={
-        "code": code, "grant_type": "authorization_code",
-        "client_id": os.environ["GOOGLE_CLIENT_ID"],
-        "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET", ""),
-        "redirect_uri": redirect}, timeout=15).json()
+    try:
+        tok = httpx.post("https://oauth2.googleapis.com/token", data={
+            "code": code, "grant_type": "authorization_code",
+            "client_id": os.environ["GOOGLE_CLIENT_ID"],
+            "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET", ""),
+            "redirect_uri": redirect}, timeout=15).json()
+        if not isinstance(tok, dict):
+            raise ValueError()
+    except (httpx.HTTPError, ValueError) as exc:
+        # 네트워크/비JSON 응답 — 브라우저에 500 스택 대신 재시도 안내
+        raise HTTPException(
+            502, "Google 토큰 교환에 실패했습니다 — 잠시 후 콘솔에서 다시"
+                 " 연결해 주세요.") from exc
     if "access_token" not in tok:
         return HTMLResponse(f"<h3>토큰 교환 실패</h3><pre>{escape(str(tok.get('error','')))}</pre>", 400)
     # id_token(구글이 TLS로 직접 준 값)에서 이메일만 꺼낸다
@@ -214,7 +234,11 @@ def gmail_callback(code: str = "", state: str = "", error: str = "") -> HTMLResp
     except (ValueError,IndexError,TypeError,AttributeError):raise HTTPException(400,'Google 이메일 확인에 실패했습니다. 다시 연결하세요.')
     granted=tok.get('scope','')
     if 'https://www.googleapis.com/auth/gmail.send' not in granted.split():raise HTTPException(400,'메일 발송 권한을 허용해 주세요.')
-    expiry = datetime.now(UTC) + timedelta(seconds=int(tok.get("expires_in", 3600)))
+    try:
+        expires_in = int(tok.get("expires_in", 3600))
+    except (TypeError, ValueError):
+        expires_in = 3600            # 비정상 값이어도 연결 자체는 막지 않는다
+    expiry = datetime.now(UTC) + timedelta(seconds=expires_in)
     with connect() as conn:
         conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('gmail-email:'+email,))
         if conn.execute("SELECT 1 FROM gmail_accounts WHERE email=%s AND brand_id<>%s AND state<>'revoked'",(email,brand_id)).fetchone():

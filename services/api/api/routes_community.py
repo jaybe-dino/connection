@@ -220,6 +220,71 @@ def post_message(cell_id: str, body: PostIn,
             "original": body.text}
 
 
+@router.post("/cells/{cell_id}/messages/{msg_id}/translation-retry")
+def retry_failed_translation(cell_id: str, msg_id: int,
+                             authorization: str = Header(default="")) -> dict:
+    """failed 확정 메시지의 번역 수동 재시도 — 브랜드(자기 셀)·운영 전용.
+
+    크레딧 소진 등으로 MAX_TRANSLATION_ATTEMPTS를 다 쓴 메시지는 러너가
+    다시 집지 않으므로, 충전 후 이 경로로 재큐한다. failed→pending 전환을
+    조건부 UPDATE로 원자화해 중복 클릭/중복 작업을 막고, 원문은 절대
+    수정하지 않는다. 즉시 1회 시도하고, 미완이면 러너가 이어서 재시도한다."""
+    claims = _actor(authorization)
+    with connect() as conn:
+        cell = _cell(conn, cell_id)
+        _member_or_owner(conn, claims, cell)     # 타 브랜드 403 포함
+        if claims.get("kind") not in ("brand", "admin"):
+            raise HTTPException(403, "번역 재시도는 브랜드·운영만 할 수 있습니다")
+        row = conn.execute(
+            "SELECT translation_state FROM cell_messages"
+            " WHERE msg_id=%s AND cell_id=%s", (msg_id, cell_id)).fetchone()
+        if not row:
+            raise HTTPException(404, "메시지를 찾을 수 없습니다")
+        if row["translation_state"] == "done":
+            raise HTTPException(409, "이미 번역이 완료된 메시지입니다")
+        if row["translation_state"] == "pending":
+            raise HTTPException(409, "자동 재시도 대기 중입니다 — 잠시 후 확인하세요")
+        claimed = conn.execute(
+            "UPDATE cell_messages SET translation_state='pending',"
+            " translation_attempts=0"
+            " WHERE msg_id=%s AND cell_id=%s AND translation_state='failed'"
+            " RETURNING original, original_locale, translations",
+            (msg_id, cell_id)).fetchone()
+        if not claimed:                          # 동시 클릭 — 한쪽만 집는다
+            raise HTTPException(409, "이미 재시도가 진행 중입니다")
+        ledger_append(conn, f"{claims.get('kind')}:{claims.get('email', '')}",
+                      "TRANSLATION_RETRY_REQUESTED", cell_id,
+                      {"msgId": msg_id})
+    # 재큐를 먼저 커밋(중복 방지 확정) 후 즉시 1회 시도 — 실패해도 pending
+    # 이라 러너가 이어받고, 원문·기존 부분 번역은 그대로 보존된다.
+    merged, state = dict(claimed["translations"] or {}), "pending"
+    try:
+        tr = ai.translate(claimed["original"], claimed["original_locale"],
+                          ALL_LOCALES) or {}
+        merged.update(tr)
+        if translation_complete(merged, claimed["original_locale"]):
+            state = "done"
+    except Exception:
+        log.exception("수동 재시도 즉시 번역 실패 — 러너 재시도로 이어짐"
+                      " (msg %s)", msg_id)
+    with connect() as conn:
+        conn.execute(
+            "UPDATE cell_messages SET translations=%s, translation_state=%s,"
+            " translation_attempts=1"
+            " WHERE msg_id=%s AND translation_state='pending'",
+            (json.dumps(merged, ensure_ascii=False), state, msg_id))
+        final = conn.execute(
+            "SELECT translation_state, translations FROM cell_messages"
+            " WHERE msg_id=%s", (msg_id,)).fetchone()
+    out = {"msgId": msg_id, "translationState": final["translation_state"],
+           "translations": final["translations"]}
+    if final["translation_state"] != "done":
+        out["hint"] = ("이번 시도는 완료되지 않았습니다 — 원문은 보존되며"
+                       " 자동 재시도가 이어집니다. API 크레딧/키 상태를"
+                       " 확인하세요.")
+    return out
+
+
 def retry_pending_translations(limit: int = 10) -> dict:
     """러너 틱 — pending 메시지 번역 재시도. FOR UPDATE SKIP LOCKED로
     다중 워커 중복 처리를 막고, 시도 한도 초과 시 'failed'로 확정한다."""

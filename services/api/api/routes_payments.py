@@ -133,6 +133,22 @@ def settle(tid, invoice_id, data):
         if not row or row['tid'] != tid:
             return False
         if not nicepay.payment_valid(data, invoice_id, row['amount'], tid):
+            if nicepay.cancellation_reported(data, invoice_id, tid):
+                # Signed cancel notice: a paid invoice must not stay 'paid'.
+                # Move to review for human confirmation; we never call any
+                # refund API, and repeated notices record the ledger once.
+                moved = conn.execute(
+                    "UPDATE signup_invoices SET status='review'"
+                    " WHERE invoice_id=%s AND status<>'review'"
+                    " RETURNING invoice_id", (invoice_id,)).fetchone()
+                if moved:
+                    ledger_append(conn, 'nicepay', 'INVOICE_CANCEL_REPORTED',
+                                  invoice_id,
+                                  {'brand': row['brand_id'], 'tid': tid,
+                                   'pgStatus': data.get('status'),
+                                   'cancelledAmt': data.get('cancelledAmt')})
+                return False
+            # Unverified mismatch never demotes a paid invoice.
             conn.execute("UPDATE signup_invoices SET status='review' WHERE invoice_id=%s AND status<>'paid'", (invoice_id,))
             return False
         if row['status'] != 'paid':

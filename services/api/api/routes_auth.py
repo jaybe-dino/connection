@@ -18,6 +18,9 @@ router = APIRouter(prefix="/auth")
 
 MAGIC_TTL_MIN, INVITE_TTL_MIN = 15, 60 * 72   # 매직링크 15분 · 초대 72시간
 SITE = os.environ.get("SITE_URL", "https://theprlist.net")
+# 매직링크는 크리에이터 앱 고정 origin으로만 발급한다(P0: 랜딩 오분기 수정).
+# 요청 파라미터로 임의 redirect URL을 받지 않는다 — env 또는 이 기본값뿐.
+APP_SITE = os.environ.get("CREATOR_APP_URL", "https://app.theprlist.net")
 
 
 def _mail_demo_mode() -> bool:
@@ -255,14 +258,24 @@ def accept_invite(body: AcceptIn) -> dict:
 
 class MagicIn(BaseModel):
     email: str
+    brand: str = ""      # 초대 브랜드 slug(선택) — 로그인 후 합류 카드 유지용
 
 
 @router.post("/magic")
 def magic_request(body: MagicIn) -> dict:
-    """매직링크 요청 — 계정이 없으면 크리에이터로 만든다(가입 겸용)."""
+    """매직링크 요청 — 계정이 없으면 크리에이터로 만든다(가입 겸용).
+
+    링크는 크리에이터 앱 고정 origin(APP_SITE)으로만 발급한다. brand는
+    slug 형식 검증 + 실존 브랜드일 때만 쿼리로 보존한다(임의 redirect 불가).
+    """
+    import re as _re
+    from urllib.parse import quote as _q
     email = body.email.strip().lower()
     if "@" not in email:
         raise HTTPException(400, "이메일 형식이 올바르지 않습니다")
+    brand = body.brand.strip().lower()
+    if brand and not _re.fullmatch(r"[a-z0-9][a-z0-9-]{2,39}", brand):
+        brand = ""
     with connect() as conn:
         u = conn.execute("SELECT * FROM users WHERE email=%s",
                          (email,)).fetchone()
@@ -272,8 +285,11 @@ def magic_request(body: MagicIn) -> dict:
             u = conn.execute(
                 "INSERT INTO users (kind, email) VALUES ('creator', %s)"
                 " RETURNING *", (email,)).fetchone()
+        if brand and not conn.execute("SELECT 1 FROM brands WHERE brand_id=%s",
+                                      (brand,)).fetchone():
+            brand = ""                      # 실존 브랜드만 보존
         raw = auth.one_time_token(conn, u["user_id"], "magic", MAGIC_TTL_MIN)
-    link = f"{SITE}/?magic={raw}"
+    link = f"{APP_SITE}/?{('brand=' + _q(brand) + '&') if brand else ''}magic={raw}"
     out = {"ok": True, "sent": True}
     if _mail_demo_mode():
         out["demoLink"] = link

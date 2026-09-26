@@ -1,6 +1,11 @@
 import {normalizeSlug,slugProblem,availabilityMessage} from './slug-validation.js';
+import {magicForwardUrl} from './magic-forward.js';
 const params=new URLSearchParams(location.search);
-if(params.has('invite')||params.has('magic')||params.has('reset')) location.replace('/account.html'+location.search);
+// 매직링크는 소비 전에 크리에이터 앱(고정 origin)으로 전달 — 여기(bjoin)서
+// 소비하면 로그인 세션이 엉뚱한 도메인에 남는다. invite/reset은 기존 경로 유지.
+const magicTarget=magicForwardUrl(location.search);
+if(magicTarget){location.replace(magicTarget);}
+else if(params.has('invite')||params.has('reset')) location.replace('/account.html'+location.search);
 const isSignup=location.pathname.replace(/\/$/,'')==='/signup';
 document.querySelector('#landing').hidden=isSignup;document.querySelector('#signup').hidden=!isSignup;
 const api=/^(localhost|127\.0\.0\.1)$/.test(location.hostname)?(params.get('api')||'http://127.0.0.1:8912'):'https://api.theprlist.net';

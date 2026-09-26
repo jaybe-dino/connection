@@ -1,7 +1,7 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const vm=require('node:vm');const fs=require('node:fs');
 const s=fs.readFileSync('packages/demo-core/src/engine-live.js','utf8');
 const identity=s.slice(s.indexOf('  function loadIdentity()'),s.indexOf('  window.identitySave'));
-function ctx(){const c={window:{__ME:{kind:'brand',email:'test@example.com'}},document:{getElementById:()=>c.chip},chip:{textContent:'creator'},brand:'qa',token:'a',BRAND:()=>c.brand,jwtGet:()=>c.token,render(){},req:async()=>({name:'QA'})};vm.createContext(c);return c;}
+function ctx(){const c={window:{__ME:{kind:'brand',email:'test@example.com'}},document:{getElementById:()=>c.chip},chip:{textContent:'creator'},brand:'qa',token:'a',BRAND:()=>{const me=c.window.__ME;if(!me)return null;if(me.kind==='brand')return c.brand;if(me.kind==='admin')return c.adminBrand||null;return null;},jwtGet:()=>c.token,render(){},req:async()=>({name:'QA'})};vm.createContext(c);return c;}
 const flush=()=>new Promise(r=>setImmediate(r));
 test('creator identity never receives fallback brand name',async()=>{const c=ctx();c.window.__ME.kind='creator';let calls=0;c.req=async()=>{calls++;return {name:'GLOWLAB'}};vm.runInContext(identity,c);c.loadIdentity();await flush();assert.equal(calls,0);assert.equal(c.chip.textContent,'creator');});
 test('stale brand identity response ignored after switching account',async()=>{const c=ctx();let resolve;c.req=()=>new Promise(r=>resolve=r);vm.runInContext(identity,c);c.loadIdentity();c.token='new';resolve({name:'OLD'});await flush();assert.equal(c.chip.textContent,'creator');assert.equal(c.window.__BID,undefined);});

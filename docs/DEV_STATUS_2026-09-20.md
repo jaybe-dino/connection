@@ -816,3 +816,85 @@ AUTH_REQUIRED=1 가드 유지(신규 경로는 핸들러 자체 검사+allowlist
 3. 어드민 화면에서 실행기 가동·수신 동기화 카운터 증가·계정 오래됨 경고
    해소 확인(마지막 동기화 2026-09-18 → 갱신).
 4. 이후 발송 자동 재개를 원할 때만 GMAIL_SEND_RESUME_ENABLED 제거(또는 1).
+
+---
+
+# P0: 콘솔 브랜드 컨텍스트 + 매직링크 랜딩 복구 (2026-09-26)
+
+기준: origin 26bb01f(Codex — 러너 오류의 잡별 귀속 수정) fast-forward
+통합 후 개발. 사용자 실측 P0 두 건에 대한 대응:
+(1) 관리자 콘솔이 항상 데모 브랜드(glowlab) 컨텍스트로 떠서 실브랜드
+운영이 불가능하고, 로그인 전에도 브랜드 API를 조회함.
+(2) 실메일 매직링크가 소개 사이트(theprlist.net → account.html)로
+랜딩해 verify는 성공하는데 정작 앱(app.theprlist.net)에는 로그인이
+안 됨 — 모집→가입 진입 흐름 단절.
+
+## 개발 완료 (이 커밋)
+
+1. **glowlab 자동 폴백 제거**: `BRAND()`가 로그인 전·크리에이터·브랜드
+   미선택 관리자에서 null을 반환. 방어 3중 — ① BRAND() null 계약
+   ② 모든 브랜드 로더(senders/dispatch/billing/outreach/gmail/inbox/
+   products/profile/identity/커뮤니티 필터) 초입 가드 ③ req()가
+   `/brands/null/`·`/brands//` 경로를 서버 도달 전에 거부.
+   자동 Gmail 동기화 인터벌도 브랜드 선택 전에는 절대 호출 없음.
+2. **관리자 명시 브랜드 선택**: 로그인 직후 선택 화면(기존 관리자
+   권한인 `/community/my-cells` 전체 셀에서 브랜드 목록 구성 — 신규
+   역할/권한 없음). 데모 브랜드는 "데모 브랜드" 라벨로 구분, 선택
+   시에만 조회. 선택 후 홈·헤더에 `관리자 · <brand>` 배지와 "전환"
+   버튼 — 전환 시 선택 초기화·입력 초안/캐시/비동기 응답 혼입 방지
+   (reloadBrand 초기화 + 기존 버전 가드 재사용). localStorage
+   `CONNECTION_ADMIN_BRAND`로 새로고침 간 유지.
+3. **계정 종류별 컨텍스트**: 브랜드 계정은 종전대로 자기 브랜드 즉시
+   (선택 화면 없음), 크리에이터 계정은 콘솔 업무 차단 화면(크리에이터
+   앱 링크 + 로그아웃)에 브랜드 API 0건.
+4. **인박스 개선**: 목록 6개 제한 → "더보기 — 전체 N개"/"접기" 토글과
+   `(최근 6 / 전체 N개)` 표기. Gmail 수동 동기화 성공 시 인박스·계정
+   목록 재조회 + 라이브 콘솔(mail 페이지) 재렌더 보장.
+5. **저장형 XSS 격리**: identityCard가 브랜드 name/tagline/logoUrl을
+   HTML escape 없이 삽입하던 것 수정(`<img onerror=…>`류가 텍스트로만
+   렌더), 관리자 선택 화면 옵션도 escape + onclick 인자 슬러그 필터.
+6. **매직링크 P0**:
+   - 서버(`routes_auth.magic_request`): 링크를 **고정 크리에이터 앱
+     origin**(`CREATOR_APP_URL`, 기본 https://app.theprlist.net)으로
+     발급. `brand`는 slug 형식(정규식) + 실존 브랜드일 때만 쿼리 보존
+     — 임의 redirect URL을 받지 않으므로 open redirect 불가.
+     invite/reset 링크는 기존 SITE 경로 그대로.
+   - 기존 형식 링크 호환: 소개 사이트(site.js + magic-forward.js)와
+     콘솔/bjoin 표면(engine-live tail)이 `?magic=`을 **소비하기 전에**
+     고정 앱 origin으로 전달(brand slug만 화이트리스트 보존). 크리에이터
+     앱 표면만 verify를 수행.
+   - `creatorMagic`이 초대 브랜드 slug를 서버로 전달해 로그인 후에도
+     초대 브랜드 카드 유지(verify 후 URL에서 토큰 제거, brand만 유지).
+
+## 실행한 테스트 (격리 DB·로컬 빌드 — 실메일/실결제/운영 접근 없음)
+
+- 서버 pytest **130 passed** (신규 test_magic_link.py 5: 고정 origin,
+  유효 brand 보존+소비 정상, 비슬러그 6종 폐기, 미존재 brand 폐기,
+  invite/reset은 기존 SITE 유지·reset demoLink 비노출) ·
+  tests_billing **60 passed**.
+- tests_ui **27/27** (신규 console-context 5: BRAND 폴백 제거/관리자
+  선택/크리에이터 null·동기화 성공 시 재조회·브랜드 없음 시 req 0건·
+  로더 가드·identityCard/선택 옵션 escape; 신규 magic-landing 3:
+  비크리에이터 표면 소비 전 전달·비슬러그 brand 폐기·크리에이터 표면
+  로컬 소비) · signup 단위 **4/4**(magicForwardUrl 고정 origin·slug
+  보존·invite/reset 미전달).
+- 실브라우저 E2E(e2e_admin_ctx) **23/23**: 로그인 전/선택 전/전환 후
+  브랜드 API 0건, 선택 화면·데모 라벨, glowlab→realco 전환 혼입 없음,
+  크리에이터 차단, 브랜드 계정 회귀, 인박스 더보기/접기, **매직 경로 A**
+  (기존 회원: 콘솔 표면 랜딩→소비 전 앱 전달→로그인→브랜드 카드→토큰
+  URL 제거→새로고침 후 유지)·**경로 B**(미가입자: `?brand=` 초대 안내
+  →링크 로그인 후 합류 카드), JS 에러 0.
+- signup 스모크 4/4: 랜딩 렌더·JS 에러 0·`?magic=` 고정 앱 origin
+  전달·`?invite=`는 account.html 유지.
+- 기존 E2E 회귀: e2e_cycle3 15/15 · e2e_cycle2 9/9 (공개 화면 불파괴).
+- 빌드: sync-demo + console/creator-app/signup vite build 성공.
+
+## 운영 완료 아님 — 남은 운영 확인 (배포 후)
+
+1. 배포 반영 후 **Codex 실발송 1회 재검수**: 실메일 매직링크가
+   app.theprlist.net으로 랜딩→1회 소비→로그인 유지·새로고침 확인.
+   (필요 시 Railway에 CREATOR_APP_URL 명시 — 기본값이 이미
+   https://app.theprlist.net 이므로 통상 불필요.)
+2. 관리자 콘솔 실검수: 선택 화면→실브랜드 선택→Gmail/인박스/청구
+   동일 컨텍스트, 데모 브랜드는 명시 선택 시에만.
+3. 운영 환경변수·DB는 이 커밋에서 변경하지 않음.

@@ -75,14 +75,20 @@ def _demo_mode() -> bool:
     return not os.environ.get("GOOGLE_CLIENT_ID")
 
 
-# ── 토큰 보관 — TOKEN_ENC_KEY 있으면 암호화(Fernet), 없으면 평문+경고 ──
+# ── 토큰 보관 — 운영 인증 모드에서는 암호화 설정 없으면 저장/사용 차단 ──
 
 def _fernet():
     key = os.environ.get("TOKEN_ENC_KEY")
     if not key:
-        return None
+        from .auth import auth_required
+        if auth_required():
+            raise HTTPException(503, '메일 연결 보안 설정이 필요합니다. 운영팀에 문의해 주세요.')
+        return None  # isolated development/demo only
     from cryptography.fernet import Fernet
-    return Fernet(key.encode())
+    try:
+        return Fernet(key.encode())
+    except (ValueError, TypeError):
+        raise HTTPException(503, '메일 연결 보안 설정을 확인해 주세요.') from None
 
 
 def _enc(v: str) -> str:
@@ -238,6 +244,7 @@ def _gmail_callback(code: str, state: str, error: str) -> HTMLResponse:
         expires_in = int(tok.get("expires_in", 3600))
     except (TypeError, ValueError):
         expires_in = 3600            # 비정상 값이어도 연결 자체는 막지 않는다
+    expires_in = max(60, min(expires_in, 86400))
     expiry = datetime.now(UTC) + timedelta(seconds=expires_in)
     with connect() as conn:
         conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('gmail-email:'+email,))
@@ -246,6 +253,10 @@ def _gmail_callback(code: str, state: str, error: str) -> HTMLResponse:
         conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('gmail-brand:'+brand_id,))
         if conn.execute("SELECT 1 FROM gmail_accounts WHERE brand_id=%s AND email<>%s AND state='connected'",(brand_id,email)).fetchone():
             raise HTTPException(409,'기존 이메일 연결을 해제한 뒤 새 계정을 연결하세요. 브랜드당 하나의 발신 계정을 사용합니다.')
+        existing = conn.execute('SELECT refresh_token FROM gmail_accounts WHERE brand_id=%s AND email=%s',
+                                (brand_id, email)).fetchone()
+        if not tok.get('refresh_token') and not (existing and existing['refresh_token']):
+            raise HTTPException(400, '지속 연결 권한을 받지 못했습니다. 콘솔에서 Google 계정을 다시 연결해 주세요.')
         r = conn.execute(
             "INSERT INTO gmail_accounts (brand_id, email, access_token,"
             " refresh_token, token_expiry, scopes) VALUES (%s,%s,%s,%s,%s,%s)"

@@ -10,7 +10,8 @@
 """
 
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from urllib.parse import urlsplit
 
 from . import auth
 from .db import connect, ledger_append
@@ -176,6 +177,11 @@ def select_creator(brand: str, campaign_id: str, body: SelectIn,
 class TrackingIn(BaseModel):
     tracking: str = Field(min_length=1, max_length=120)
 
+    @field_validator('tracking', mode='before')
+    @classmethod
+    def clean_tracking(cls, v):
+        return v.strip() if isinstance(v, str) else v
+
 
 @router.post("/brands/{brand}/campaigns/{campaign_id}/terms/{creator_id}/sample-shipped")
 def sample_shipped(brand: str, campaign_id: str, creator_id: str,
@@ -201,8 +207,29 @@ def sample_shipped(brand: str, campaign_id: str, creator_id: str,
     return _terms_out(t)
 
 
+def _https_evidence(value):
+    # Validate the submitted address, not whether its content/ownership is genuine.
+    # No remote fetch here: storing a link must not introduce SSRF.
+    if not isinstance(value, str):
+        raise ValueError('https 주소를 입력해 주세요')
+    value = value.strip()
+    if any(c.isspace() or ord(c) < 32 for c in value) or '\\' in value:
+        raise ValueError('주소에 공백이나 제어문자를 사용할 수 없습니다')
+    try:
+        url = urlsplit(value)
+        port = url.port
+        if url.scheme != 'https' or not url.hostname or url.username or url.password:
+            raise ValueError()
+        if '.' not in url.hostname or url.hostname.startswith('.') or url.hostname.endswith('.'):
+            raise ValueError()
+    except ValueError:
+        raise ValueError('정상적인 https 주소를 입력해 주세요') from None
+    return value
+
+
 class LinkIn(BaseModel):
     link: str = Field(min_length=8, max_length=500)
+    _valid_link = field_validator('link', mode='before')(_https_evidence)
 
 
 @router.post("/brands/{brand}/campaigns/{campaign_id}/terms/{creator_id}/affiliate-link")
@@ -334,6 +361,11 @@ def agree_offer(campaign_id: str, body: AgreeIn,
 class SparkIn(BaseModel):
     spark_code: str = Field(min_length=4, max_length=120)
 
+    @field_validator('spark_code', mode='before')
+    @classmethod
+    def clean_code(cls, v):
+        return v.strip() if isinstance(v, str) else v
+
 
 @router.post("/me/campaign-offers/{campaign_id}/spark-code")
 def submit_spark_code(campaign_id: str, body: SparkIn,
@@ -356,6 +388,7 @@ def submit_spark_code(campaign_id: str, body: SparkIn,
 
 class ContentIn(BaseModel):
     content_url: str = Field(min_length=8, max_length=500)
+    _valid_url = field_validator('content_url', mode='before')(_https_evidence)
 
 
 @router.post("/me/campaign-offers/{campaign_id}/content")

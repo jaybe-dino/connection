@@ -127,6 +127,15 @@ export const adminApi = {
     req(`/admin/disputes/${id}/resolve`, {
       method: "POST", body: JSON.stringify({ verdict }),
     }),
+  poolStatus: () => req<any>("/admin/pool/status"),
+  poolPreview: (csv: string) =>
+    req<any>("/admin/pool/candidates/preview", {
+      method: "POST", body: JSON.stringify({ csv }),
+    }),
+  poolImport: (csv: string) =>
+    req<any>("/admin/pool/candidates", {
+      method: "POST", body: JSON.stringify({ csv }),
+    }),
   submissions: (status = "in_review") =>
     req<Submission[]>(`/submissions?status=${status}`),
   reviewSubmission: (id: string, result: "passed" | "needs_fix", note = "") =>

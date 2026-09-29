@@ -1060,3 +1060,78 @@ status-transaction.md) 직접 대조. 상세 명세는 docs/BILLING_AUTOCHARGE.m
 3. 검수 통과 후 NICEPAY_AUTOCHARGE_ENABLED=1 — 다음 월마감 청구서부터
    자동청구. 첫 실청구 1건 대조 검수.
    (이 커밋은 두 flag 모두 켜지 않았다.)
+
+---
+
+# 모집 실사용 경로 + 계산서 운영 안내 + 어드민 모바일 (2026-09-29)
+
+기준: origin 9193798(Codex — Gmail/협업 입력 검증 + 5쌍 여정) ff 통합 후
+개발, 결제 자동청구 검증은 사용자 지시로 보류(월별 계산서 운영).
+조사 결과 운영 DB의 creator_pool은 채워지는 경로 자체가 없었고(harvest는
+미연결 독립 배치), 추천 응답에 email이 없어 초안 연결이 끊겨 있었다.
+
+## 개발 완료 (이 커밋)
+
+1. **운영자 후보 등록** `/admin/pool/*` (routes_pool.py, 신규):
+   - 수동(rows)/CSV 등록 + **미리보기(무변경)** — 행별 등록/건너뜀/오류와
+     사유. 입력검증(handle/이메일/국가 ISO2/팔로워), **CSV 수식 주입
+     문자(= @ + -) 거부**, 256KB·500행 제한, 알 수 없는 컬럼 거부,
+     파일 내·DB(platform+uid, 이메일) 중복 방지, 오류 응답에 셀 원문
+     비반향.
+   - **정직한 검증 구분**: 등록 이메일은 전부 email_status='none'
+     (미검증) — 형식 검사로 'valid'를 만들지 않는다. 'valid'는 검증
+     벤더 경로 전용. 출처(sources)에 manual:<운영자>·시각 기록, 원장
+     POOL_CANDIDATES_IMPORTED.
+   - 현황 API: 후보수/추천가능/검증·미검증/제외사유(이메일 없음·risky·
+     EXCLUDED·수신거부 이메일)/국가별. 어드민 UI "후보 풀" 화면(현황+
+     CSV 미리보기→등록). 035: platform enum에 youtube/manual 추가.
+2. **추천→초안→합류 연결 복구**:
+   - 추천 필터: 미검증(none) 포함(응답에 emailStatus/emailVerified·
+     "미검증 — 발송 전 확인" 근거 명시), **EXCLUDED 상태 제외(기존
+     누락)**, 수신거부 비교를 lower(email)로 정합화 — 수신거부 보존.
+     응답에 email 동봉(초안 연결용, 브랜드 JWT 필수).
+   - 콘솔: 후보 카드 체크박스(이메일 보유만) → "선택 N명으로 아웃리치
+     초안" → mail 페이지 수신자/제품/브리프 자동 프리필(제품·국가·후보
+     핸들 컨텍스트 보존, 미검증 수 경고, 최대 20명).
+   - compose 응답 본문 끝에 **브랜드 합류 링크를 서버가 결정적으로
+     첨부**(CREATOR_APP_URL/?brand=slug — AI 출력 비의존, 임의 URL
+     불가). 자동 외부발송 없음(기존 승인 발송 흐름 그대로).
+3. **계산서 청구 운영 안내**(콘솔 월별 청구): 5,000원/VAT/월합산 유지,
+   "카드 등록은 필수가 아닙니다" + 계산서(수기) 운영 안내 — 발행 여부는
+   표시하지 않음(이메일 안내로 위임). status 화면의 낡은 "커뮤니티·
+   캠페인 참여, 자동 답장 수신 미공개" 문구 정정(이용 가능 흐름으로
+   이동, 준비 중은 자동 후보 수집·SNS 자동 검증·대금 지급만).
+   GmailOps 잡 라벨에 autocharge 추가.
+4. **어드민 모바일(사용자 재현 버그)**: 375에서 200px 고정 좌측 레일로
+   본문이 세로로 찌그러지던 문제 — ≤760px에서 상단 랩 메뉴로 전환,
+   대시보드 그리드 auto-fit, main minWidth:0. 375/390 실측: nav 전체폭·
+   본문 375px 확보·타일 351px·CSV 입력창 321px, 스크린샷 증거 전달.
+5. **E2E 영구화**: 컨테이너 리셋으로 스크래치 E2E가 유실되던 문제 —
+   재현 가능한 스크립트를 tests_e2e/로 리포에 보존(admin-context 23·
+   mobile-width 24·pool-flow 16·admin-mobile 16·signup-magic 4·
+   billing-card 4·translation-retry 4). 구 cycle2/3 스크립트는 복원
+   범위에서 제외(사용자 확인 — Codex의 5쌍 API 여정+브라우저 협업/DM
+   검수로 대체).
+
+## 실행한 테스트 (격리 DB — 실인물/실이메일/실발송/실PG 0)
+
+- 서버 pytest **163 passed** (신규 test_pool_admin.py 6: 관리자 전용·
+  미리보기 무변경/valid 미부여·출처 기록·중복/수식/크기/컬럼 검증·현황
+  집계/수신거부·EXCLUDED/미검증 추천 규칙·compose 합류 링크;
+  test_products_api 미검증 포함 계약 갱신; Codex launch 테스트 포함)
+- tests_billing **92** · tests_ui **42**(신규 candidate-outreach 4:
+  이메일 보유만 선택·컨텍스트 보존 프리필·미검증 경고·빈 선택 가드) ·
+  signup **4**
+- 실브라우저: pool-flow **16/16**(CSV 등록→현황→추천 미검증 표시→선택
+  →프리필→계산서/status 문구), admin-mobile **16/16**(375/390 스크린샷),
+  admin-context 23 · mobile-width 24 · signup 4 · billing(off) 4 ·
+  번역 재시도 4 — 전부 0 FAIL
+- 웹앱 4종 빌드 성공
+
+## 운영 실증 아님 / 외부 제약
+
+- Railway 공식 API 장애로 배포 반영 보류 중 — 배포 후 Codex가 후보
+  흐름 독립 검수 예정.
+- 실카드/실PG/신규 OAuth 실동의/TikTok 실연동/실메일 발송은 여전히
+  미실증(완료 주장 없음). 후보 등록은 운영자가 공개 비즈니스 연락처만
+  넣는 운영 수칙 전제 — 코드가 임의 데이터를 만들지 않는다.

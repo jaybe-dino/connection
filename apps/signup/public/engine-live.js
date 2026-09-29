@@ -1172,17 +1172,44 @@
       .then(function(c){prodNotice='어필리에이트 캠페인 개설: '+c.campaignId+' · 커미션 '+c.affiliatePct+'%';loadProducts();render();})
       .catch(function(){toast('개설 실패','잠시 후 다시.');});
   };
-  var candidateCountry='',candidateVersion=0;
+  var candidateCountry='',candidateVersion=0,candSelected={};
   window.prodShowCandidates=function(pid,mode){
     var brand=BRAND(),token=jwtGet(),version=++candidateVersion;
     var country=(document.getElementById('candidateCountry')||{}).value||'';
     if(['','KR','TH','US','VN','JP'].indexOf(country)<0)return;
-    candidateCountry=country;prodCandidates=null;
+    candidateCountry=country;prodCandidates=null;candSelected={};
     return req('GET','/brands/'+brand+'/products/'+pid+'/candidates?'+(mode==='ai'?'mode=ai&':'')+'country='+encodeURIComponent(country))
       .then(function(r){if(version!==candidateVersion||BRAND()!==brand||jwtGet()!==token)return;r.searchCountry=country;prodCandidates=r;render();})
       .catch(function(e){if(version===candidateVersion&&BRAND()===brand&&jwtGet()===token)toast('후보 조회 실패',mailEscape(e.message||'잠시 후 다시 시도해 주세요.'));});
   };
-  window.candidateCountryChanged=function(value){candidateCountry=value;candidateVersion++;prodCandidates=null;};
+  window.candidateCountryChanged=function(value){candidateCountry=value;candidateVersion++;prodCandidates=null;candSelected={};};
+  window.candToggle=function(uid){
+    if(!prodCandidates)return;
+    var cd=(prodCandidates.candidates||[]).filter(function(c){return c.uid===uid||String(c.uid||'').replace(/[^a-zA-Z0-9._-]/g,'')===uid;})[0];
+    if(!cd||!cd.email)return;
+    if(candSelected[cd.uid])delete candSelected[cd.uid];
+    else candSelected[cd.uid]={email:cd.email,handle:cd.handle,country:cd.country,verified:!!cd.emailVerified};
+    render();
+  };
+  window.outreachFromCandidates=function(pid){
+    if(!prodCandidates||prodCandidates.productId!==pid)return;
+    var picked=Object.keys(candSelected).map(function(k){return candSelected[k];});
+    if(!picked.length)return toast('후보 선택','아웃리치에 담을 후보를 먼저 체크하세요.');
+    if(picked.length>20)return toast('최대 20명','아웃리치는 한 번에 최대 20명입니다.');
+    var pname=prodCandidates.productName||'제품';
+    var countryLabel=prodCandidates.searchCountry||'전체';
+    // 추천 컨텍스트(제품·국가·근거)를 초안 브리프에 보존 — AI가 이 근거로 작성
+    var brief='제품 "'+pname+'" 협업 제안. 타깃 국가: '+countryLabel+'. 선택 후보: '
+      +picked.map(function(c){return '@'+(c.handle||'')+(c.country?'('+c.country+')':'');}).join(', ')
+      +'. 각 후보의 관심 분야 근거를 반영해 정중한 첫 제안을 작성. 브랜드 PR 리스트 합류를 권유.';
+    var unverified=picked.filter(function(c){return !c.verified;}).length;
+    liveNav('mail');
+    var set=function(id,v){var el=document.getElementById(id);if(el)el.value=v;};
+    set('outRecipients',picked.map(function(c){return c.email;}).join('\n'));
+    set('outProduct',pid);
+    set('outBrief',brief.slice(0,2000));
+    toast('후보 '+picked.length+'명 담김','AI 초안 하단에 브랜드 합류 링크가 자동 포함됩니다.'+(unverified?' 미검증 이메일 '+unverified+'건 — 발송 전 주소를 확인하세요.':'')+' 자동 발송은 없으며 검토 후 직접 발송합니다.');
+  };
   function productsCard(){
     var h='<h1>제품 · 어필리에이트 캠페인</h1><p>제품별로 정보를 학습·저장하면, 후보 추천과 아웃리치 초안이 그 제품 근거를 사용합니다.</p>';
     if(prodNotice)h+='<p role="status">'+mailEscape(prodNotice)+'</p>';
@@ -1206,10 +1233,15 @@
         var modeLabel=aim.mode==='ai'?('AI 의미 평가 · '+mailEscape(aim.model||'')+' · 신규 '+(aim.evaluated||0)+'건 · 캐시 '+(aim.cachedHits||0)+'건'+(aim.notice?' · '+mailEscape(aim.notice):'')):aim.mode==='fallback_keyword'?('키워드 폴백 — '+mailEscape(aim.reason||'')):'키워드 일치';
         h+='<h2 style="margin-top:14px">추천 후보 — '+mailEscape(prodCandidates.searchCountry||'전체 국가')+' · '+modeLabel+'</h2><p style="font-size:12px">'+mailEscape(prodCandidates.note)+'</p>';
         (prodCandidates.candidates||[]).slice(0,10).forEach(function(cd){
-          h+='<div class="cc"><b>@'+mailEscape(cd.handle||'')+'</b>'+(cd.aiFit!=null?' · <b>AI 적합 '+cd.aiFit+'</b>'+(cd.aiCached?' (캐시)':''):'')+(cd.fitScore?' · 키워드 '+cd.fitScore:'');
+          var safeUid=String(cd.uid||'').replace(/[^a-zA-Z0-9._-]/g,'');
+          var pick=cd.email?'<label style="float:right;font-size:12px"><input type="checkbox" onchange="candToggle(\''+safeUid+'\')" '+(candSelected[cd.uid]?'checked':'')+'> 아웃리치 담기</label>':'';
+          h+='<div class="cc">'+pick+'<b>@'+mailEscape(cd.handle||'')+'</b>'+(cd.aiFit!=null?' · <b>AI 적합 '+cd.aiFit+'</b>'+(cd.aiCached?' (캐시)':''):'')+(cd.fitScore?' · 키워드 '+cd.fitScore:'');
+          if(cd.email)h+='<div style="font-size:12px;margin-top:2px">'+mailEscape(cd.email)+(cd.emailVerified?' <span style="color:#2e7d4f">검증됨</span>':' <span style="color:#8a6d3b">미검증 — 발송 전 확인</span>')+'</div>';
           if(cd.aiReason)h+='<p style="font-size:12px;margin:4px 0 0">'+mailEscape(cd.aiReason)+((cd.aiSignals||[]).length?' — 근거 태그: '+mailEscape(cd.aiSignals.join(', ')):'')+'</p>';
           h+='<ul style="margin:6px 0 0;padding-left:18px">'+ (cd.evidence||[]).map(function(e){return '<li style="font-size:12px">'+mailEscape(e)+'</li>';}).join('')+'</ul></div>';
         });
+        var pickedCount=Object.keys(candSelected).length;
+        if((prodCandidates.candidates||[]).length)h+='<button class="btn" onclick="outreachFromCandidates(\''+pd.productId+'\')" '+(pickedCount?'':'disabled')+'>선택 '+pickedCount+'명으로 아웃리치 초안 만들기</button><p style="font-size:12px">초안 하단에 브랜드 PR 리스트 합류 링크가 자동 포함됩니다. 자동 발송은 없습니다.</p>';
         if(!(prodCandidates.candidates||[]).length)h+='<p>조건에 맞는 후보가 아직 없습니다 (후보 DB 수집 대기).</p>';
       }
       h+='</div>';
@@ -1344,14 +1376,14 @@
       else if(livePage==='products')body=productsCard();
       else if(livePage==='community')body=brandCommunityCard();
       else if(livePage==='mail')body='<h1>브랜드 메일링</h1>'+identityCard()+gmailCard()+outreachCard()+inboxCard();
-      else if(livePage==='billing')body='<h1>월별 청구</h1><p>검증 가입 1명당 5,000원 · 부가세 포함 · 월 단위 합산</p><p>카드 결제 최소금액은 1,000원입니다. 미만 청구서도 보관되며 자동 결제되지 않습니다.</p><button class="btn line" onclick="refreshBilling()">새로고침</button>'+window.billingCardHtml()+window.billingInvoicesHtml();
-      else if(livePage==='status')body='<h1>서비스 상태</h1><div class="cc"><h2>이용 가능한 흐름</h2><p>브랜드 신청 → 운영자 승인 → 계정 생성 → 홈페이지 분석·프로필 저장 → Gmail 연결 → 초안 검토·발송 → 월별 청구 확인</p></div><div class="cc"><h2>준비 중</h2><p>틱톡·인스타 계정 검증과 자동 후보 수집, 크리에이터 커뮤니티·캠페인 참여, 자동 답장 수신, 크리에이터 대금 지급은 아직 공개 운영 대상이 아닙니다.</p><p>메일 답장은 연결된 Gmail에서 확인하세요. 가입 과금은 실제 검증 가입이 기록될 때만 발생합니다.</p></div>';
+      else if(livePage==='billing')body='<h1>월별 청구</h1><p>검증 가입 1명당 5,000원 · 부가세 포함 · 월 단위 합산</p><p>현재는 월별 합산 금액을 계산서(수기 청구) 방식으로 안내하는 운영입니다 — <b>카드 등록은 필수가 아닙니다.</b> 계산서 발행 여부·시점은 별도 이메일로 안내됩니다(이 화면은 발행 여부를 표시하지 않습니다).</p><p>카드 결제 최소금액은 1,000원입니다. 미만 청구서도 보관되며 자동 결제되지 않습니다.</p><button class="btn line" onclick="refreshBilling()">새로고침</button>'+window.billingCardHtml()+window.billingInvoicesHtml();
+      else if(livePage==='status')body='<h1>서비스 상태</h1><div class="cc"><h2>이용 가능한 흐름</h2><p>브랜드 신청 → 운영자 승인 → 계정 생성 → 홈페이지 분석·프로필 저장 → 제품별 후보 추천 → Gmail 연결 → 아웃리치 초안 검토·발송 → 답장 수신(인박스 동기화) → 크리에이터 커뮤니티·캠페인 협업 → 월별 청구 확인</p></div><div class="cc"><h2>준비 중</h2><p>틱톡·인스타 계정 자동 검증과 자동 후보 수집(현재는 운영자 등록 후보 기준), 크리에이터 대금 지급 화면은 아직 공개 운영 대상이 아닙니다.</p><p>가입 과금은 실제 검증 가입이 기록될 때만 발생합니다.</p></div>';
       else body='<p class="live-eyebrow">YOUR BRAND, IN GOOD COMPANY</p><h1>브랜드의 다음 연결을<br>만들어 보세요.</h1><p>'+(window.__ME.kind==='admin'?'관리자 ':'')+mailEscape(window.__ME.email)+' · 브랜드 <b>'+mailEscape(BRAND()||'')+'</b>'+(window.__ME.kind==='admin'?' <span class="cbt no" onclick="adminSwitchBrand()">브랜드 전환</span>':'')+'</p><div class="live-grid"><button class="cc" onclick="liveNav(\'learn\')"><h2>01. 브랜드 학습</h2><p>홈페이지 분석과 근거를 확인하고 저장하세요.</p></button><button class="cc" onclick="liveNav(\'mail\')"><h2>02. 메일링</h2><p>Gmail을 연결하고 초안을 검토한 뒤 발송하세요.</p></button></div><h2>theprlist에게 물어보세요</h2><p>저장된 브랜드 프로필을 참고해 답합니다. 대화로 메일을 발송하거나 결제를 실행하지 않습니다.</p>'+chatMessages.map(function(m){return '<div class="cc"><b>'+(m.role==='user'?'나':'theprlist')+'</b><p>'+mailEscape(m.content)+'</p></div>';}).join('')+'<form onsubmit="event.preventDefault();liveChat()"><input id="liveQuestion" maxlength="2000" placeholder="우리 브랜드를 소개하는 문구를 제안해 줘" required '+(chatBusy?'disabled':'')+'><button class="btn" '+(chatBusy?'disabled':'')+'>'+(chatBusy?'답변 중…':'질문하기')+'</button></form>';
       stage.innerHTML=nav+'<main class="live-main">'+body+'</main><footer class="live-footer"><a href="https://theprlist.net/privacy">개인정보처리방침</a> · <a href="https://theprlist.net/terms">이용약관</a> · <a href="mailto:chief@dinostudio.kr">문의</a></footer>';
       Object.keys(preserved).forEach(function(id){var el=document.getElementById(id);if(el)el.value=preserved[id];});
     };
     var previousReload=reloadBrand;
-    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';productsData=null;prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;brandCampaigns=null;collabOpen=null;window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;inboxShowAll=false;previousReload();if(window.__ME&&BRAND()){loadProfile();loadProducts();loadIdentity();}};
+    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';productsData=null;prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;candSelected={};brandCampaigns=null;collabOpen=null;window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;inboxShowAll=false;previousReload();if(window.__ME&&BRAND()){loadProfile();loadProducts();loadIdentity();}};
     var style=document.createElement('style');style.textContent='body{background:#f5f4ef}.stage{display:block!important;overflow:auto!important;height:calc(100vh - 1px)!important}.live-head{padding:24px 5%;display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid #dadbd2;background:#fafbf5}.live-head>a{font-size:25px;font-weight:800;color:#163f35;text-decoration:none}.live-head span{font-size:12px;font-weight:400}.live-head nav{display:flex;gap:8px;flex-wrap:wrap}.live-main{max-width:1050px;margin:0 auto;padding:55px 24px 95px;font-size:15px;line-height:1.8}.live-main h1{font-size:40px;line-height:1.25;margin:0 0 25px}.live-main h2{font-size:21px;margin:18px 0 10px}.live-main p{margin:12px 0}.live-main .cc{background:#fff;border:1px solid #dadbd2;border-radius:12px;padding:24px;margin:15px 0;text-align:left}.live-main input,.live-main textarea{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid #aebcb1;border-radius:6px;margin:8px 0 14px;font:inherit}.live-main .btn,.live-main .cbt{font-size:14px;padding:10px 16px;cursor:pointer}.live-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.live-eyebrow{letter-spacing:.1em;color:#41684c}.live-footer{padding:20px 24px 75px;text-align:center}.live-main blockquote{padding:12px;border-left:3px solid #5e8c6a;color:#526157;overflow-wrap:anywhere}@media(max-width:700px){.live-head{display:block}.live-head nav{margin-top:15px}.live-main{padding-top:30px}.live-main h1{font-size:30px}.live-grid{grid-template-columns:1fr}}';document.head.appendChild(style);render();
   }
 

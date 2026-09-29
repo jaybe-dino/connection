@@ -7,6 +7,7 @@ import Reports from "./screens/Reports";
 import Disputes from "./screens/Disputes";
 import Submissions from "./screens/Submissions";
 import GmailOps from "./screens/GmailOps";
+import Pool from "./screens/Pool";
 
 const RAIL = [
   { to: "/dashboard", label: "대시보드", icon: "◐" },
@@ -15,6 +16,7 @@ const RAIL = [
   { to: "/disputes", label: "분쟁 심판", icon: "⚖", badge: "openDisputes" },
   { to: "/submissions", label: "검수 현황", icon: "◑", badge: "inReviewSubmissions" },
   { to: "/gmail", label: "Gmail 운영", icon: "✉" },
+  { to: "/pool", label: "후보 풀", icon: "◎" },
 ] as const;
 
 /** 실인증 게이트 — 최초 1회 부트스트랩 → 이후 이메일+비밀번호(+OTP) 로그인.
@@ -182,6 +184,15 @@ export default function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [live, setLive] = useState(true);
   const [authed, setAuthed] = useState<boolean | null>(null);
+  // 모바일(≤760px) 감지 — 좌측 고정 레일을 상단 메뉴로 전환
+  const [narrow, setNarrow] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 760px)");
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
 
   useEffect(() => {
     const t = localStorage.getItem("CONNECTION_JWT");
@@ -205,24 +216,33 @@ export default function App() {
   if (authed === false) return <AuthGate onDone={() => setAuthed(true)} />;
 
   return (
-    <div style={{ display: "flex", height: "100dvh", background: "var(--n50)" }}>
-      <nav style={{
+    <div style={{ display: "flex", flexDirection: narrow ? "column" : "row",
+      minHeight: "100dvh", height: narrow ? "auto" : "100dvh", background: "var(--n50)" }}>
+      <nav style={narrow ? {
+        /* 모바일(≤760px): 좌측 고정 레일 대신 상단 랩 메뉴 — 본문 폭 확보 */
+        width: "100%", boxSizing: "border-box", background: "var(--d800)",
+        color: "var(--d400)", display: "flex", flexDirection: "row",
+        flexWrap: "wrap", alignItems: "center", gap: 2, padding: "10px 8px",
+      } : {
         width: 200, background: "var(--d800)", color: "var(--d400)",
         display: "flex", flexDirection: "column", padding: "16px 10px", flexShrink: 0,
       }}>
-        <div style={{ padding: "0 10px 4px", color: "var(--n0)", fontWeight: 900, fontSize: 15 }}>
+        <div style={{ padding: narrow ? "0 8px" : "0 10px 4px", color: "var(--n0)", fontWeight: 900, fontSize: narrow ? 13 : 15 }}>
           theprlist 어드민
         </div>
+        {!narrow && (
         <div style={{ padding: "0 10px 14px", fontSize: 10, color: live ? "var(--s300)" : "var(--c300)" }}>
           {live ? "● 서버 연결됨 · 관리자" : "● 서버 연결 확인 필요"}
         </div>
+        )}
         {RAIL.map((r) => {
           const n = summary && "badge" in r ? summary[r.badge as keyof Summary] : 0;
           return (
             <NavLink key={r.to} to={r.to}
               style={({ isActive }) => ({
-                display: "flex", alignItems: "center", gap: 9, padding: "9px 10px",
-                borderRadius: 9, textDecoration: "none", fontSize: 13, fontWeight: 700,
+                display: "flex", alignItems: "center", gap: narrow ? 4 : 9,
+                padding: narrow ? "6px 8px" : "9px 10px",
+                borderRadius: 9, textDecoration: "none", fontSize: narrow ? 12 : 13, fontWeight: 700,
                 color: isActive ? "var(--n0)" : "var(--d400)",
                 background: isActive ? "var(--d600)" : "transparent", marginBottom: 2,
               })}>
@@ -236,16 +256,19 @@ export default function App() {
             </NavLink>
           );
         })}
-        <div style={{ marginTop: "auto", padding: "10px", fontSize: 10, color: "var(--d400)", lineHeight: 1.6 }}>
-          <TwoFA />
+        <div style={narrow
+          ? { marginLeft: "auto", padding: "0 8px", fontSize: 11, color: "var(--d400)" }
+          : { marginTop: "auto", padding: "10px", fontSize: 10, color: "var(--d400)", lineHeight: 1.6 }}>
+          {!narrow && <TwoFA />}
           <div onClick={() => { clearJwt(); location.reload(); }}
-            style={{ cursor: "pointer", textDecoration: "underline", marginBottom: 8 }}>
+            style={{ cursor: "pointer", textDecoration: "underline", marginBottom: narrow ? 0 : 8 }}>
             로그아웃
           </div>
-          모든 조치는 원장에 기록됩니다.<br />기획: docs/ADMIN_PLAN.md
+          {!narrow && <>모든 조치는 원장에 기록됩니다.<br />기획: docs/ADMIN_PLAN.md</>}
         </div>
       </nav>
-      <main style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+      <main style={{ flex: 1, overflowY: "auto", minWidth: 0,
+        padding: narrow ? "14px 12px" : "20px 24px" }}>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard summary={summary} />} />
@@ -254,6 +277,7 @@ export default function App() {
           <Route path="/disputes" element={<Disputes onChange={refresh} />} />
           <Route path="/submissions" element={<Submissions onChange={refresh} />} />
           <Route path="/gmail" element={<GmailOps />} />
+          <Route path="/pool" element={<Pool />} />
         </Routes>
       </main>
     </div>

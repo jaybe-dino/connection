@@ -64,7 +64,15 @@ def compose(brand: str, body: AIDraft, authorization: str = Header(default='')):
         if not isinstance(subject,str) or not isinstance(text,str) or not subject.strip() or not text.strip() or len(subject)>150 or len(text)>10000 or any(c in subject for c in '\r\n'):raise ValueError('invalid draft')
     except Exception:
         raise HTTPException(503,'AI 초안을 받지 못했습니다. 다시 시도하거나 직접 작성해 주세요.')
-    return {'subject':subject.strip(),'body':text.strip(),'sent':False}
+    # 브랜드 PR 리스트 합류 링크 — AI 출력에 맡기지 않고 서버가 결정적으로
+    # 덧붙인다(모집→가입 진입로 보장, 임의 URL 삽입 불가). 발송은 여전히
+    # 초안 검토·승인 후에만 진행된다.
+    import os as _os
+    join_url = (_os.environ.get('CREATOR_APP_URL', 'https://app.theprlist.net')
+                + '/?brand=' + brand)
+    text = text.strip() + f"\n\n▶ 브랜드 PR 리스트 합류(무료): {join_url}"
+    return {'subject':subject.strip(),'body':text,'sent':False,
+            'joinUrl':join_url}
 
 
 def batch_out(conn, row):

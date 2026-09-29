@@ -248,12 +248,17 @@ def product_candidates(brand: str, product_id: UUID, country: str = "",
         rows = conn.execute(
             "SELECT platform_uid, handle, display_name, country, lang,"
             "       category, product_tags, followers, engagement_rate,"
-            "       influence_score, contact_score, email_status"
+            "       influence_score, contact_score, email, email_status"
             " FROM creator_pool"
-            " WHERE email IS NOT NULL AND email_status='valid'"
+            # 이메일 보유 후보만. 'valid'(검증 통과) 외에 'none'(운영자 등록
+            # 미검증)도 포함하되 응답에 미검증임을 명시한다 — 형식만으로
+            # 검증을 주장하지 않는다. 'risky'(검증 실패 이력)와 EXCLUDED
+            # 상태는 제외, 이 브랜드 수신거부 이메일 제외(보존).
+            " WHERE email IS NOT NULL AND email_status IN ('valid','none')"
+            "   AND state <> 'EXCLUDED'"
             "   AND (%s = '' OR country = %s)"
             "   AND NOT EXISTS (SELECT 1 FROM outreach_optouts o"
-            "        WHERE o.brand_id=%s AND o.email=creator_pool.email"
+            "        WHERE o.brand_id=%s AND o.email=lower(creator_pool.email)"
             "          AND o.opted_out_at IS NOT NULL)",
             (country, country, brand)).fetchall()
         scored = []
@@ -278,13 +283,20 @@ def product_candidates(brand: str, product_id: UUID, country: str = "",
                 evidence.append(f"참여율 {r['engagement_rate']:.2%}")
             if r["influence_score"] is not None:
                 evidence.append(f"영향력 점수 {r['influence_score']:.0f}/100")
-            evidence.append("이메일 검증 통과 · 수신거부 이력 없음")
+            if r["email_status"] == "valid":
+                evidence.append("이메일 검증 통과 · 이 브랜드 수신거부 이력 없음")
+            else:
+                evidence.append("이메일 미검증(운영자 등록) — 발송 전 주소 확인"
+                                " 권장 · 이 브랜드 수신거부 이력 없음")
             scored.append((fit, r["contact_score"] or 0,
                            r["influence_score"] or 0, r["followers"] or 0,
                            {"uid": r["platform_uid"], "handle": r["handle"],
                             "displayName": r["display_name"],
                             "country": r["country"],
                             "followers": r["followers"],
+                            "email": r["email"],
+                            "emailStatus": r["email_status"],
+                            "emailVerified": r["email_status"] == "valid",
                             "fitScore": fit, "matchedTerms": matched,
                             "evidence": evidence}))
         scored.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3]))

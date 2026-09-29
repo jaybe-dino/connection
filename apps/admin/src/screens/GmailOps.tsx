@@ -29,6 +29,7 @@ interface GmailStatus {
 const JOB_LABEL: Record<string, string> = {
   sync: "수신 동기화", sendResume: "승인 발송 재개(자동)",
   translation: "번역 재시도", billing: "월마감 청구서", reconcile: "결제 대사",
+  autocharge: "카드 자동청구(기본 차단)",
 };
 
 function ago(iso: string | null | undefined): string {

@@ -114,6 +114,8 @@ app.include_router(_outreach_router)
 app.include_router(_auth_router)
 app.include_router(_billing_router)
 app.include_router(_payments_router)
+from .routes_pool import router as _pool_router
+app.include_router(_pool_router)
 
 ALL_LOCALES = ["ko", "th", "en", "vi", "ja"]
 

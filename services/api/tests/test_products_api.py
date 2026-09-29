@@ -107,9 +107,16 @@ def test_product_campaign_and_candidates(client):
     handles = [x["handle"] for x in r["candidates"]]
     assert "ploy.beauty" in handles and "nok.skin" in handles
     assert "linh.glow" not in handles              # 국가 필터
-    assert "x.spam" not in handles                 # 이메일 미검증 제외
+    # 미검증(none) 이메일도 추천에 포함하되 '미검증'을 명시한다 —
+    # 형식 검사만으로 valid를 주장하지 않는 정직한 구분 (운영자 등록 경로)
+    assert "x.spam" in handles
+    spam = [x for x in r["candidates"] if x["handle"] == "x.spam"][0]
+    assert spam["emailVerified"] is False and spam["emailStatus"] == "none"
+    assert spam["email"] == "bad@ex.com"           # 초안 연결용 이메일 동봉
+    assert any("미검증" in e for e in spam["evidence"])
     top = r["candidates"][0]
     assert top["handle"] == "ploy.beauty"          # contact_score 순
+    assert top["emailVerified"] is True
     assert any("팔로워" in e for e in top["evidence"])
     assert any("수신거부" in e for e in top["evidence"])
     assert "생성하지 않" in r["note"]           # 지표 비생성 명시

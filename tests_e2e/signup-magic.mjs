@@ -1,0 +1,24 @@
+// signup 공개 표면 — 랜딩 렌더·magic 전달(고정 origin)·invite 경로 유지
+import { chromium } from "/opt/node22/lib/node_modules/playwright/index.mjs";
+const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const results = []; const ok=(n,p,note="")=>results.push(`${p?"PASS":"FAIL"} ${n}${note?" — "+note:""}`);
+const errs=[];
+const ctx=await browser.newContext(); const p=await ctx.newPage();
+p.on("pageerror",e=>errs.push(String(e)));
+await p.goto("http://localhost:5177/");
+await p.waitForTimeout(900);
+const t=await p.evaluate(()=>document.body.innerText);
+ok("랜딩 렌더", t.includes("theprlist"));
+ok("JS 에러 없음", errs.length===0, errs.join("|").slice(0,200));
+const p2=await ctx.newPage(); let target="";
+await p2.route("https://app.theprlist.net/**", r=>{ target=r.request().url(); r.abort(); });
+await p2.goto("http://localhost:5177/?brand=glowlab&magic=tok-e2e").catch(()=>{});
+await p2.waitForTimeout(900);
+ok("magic 랜딩 → 고정 앱 origin 전달", target.startsWith("https://app.theprlist.net/?brand=glowlab&magic=tok-e2e"), target||"(no nav)");
+const p3=await ctx.newPage();
+await p3.goto("http://localhost:5177/?invite=tok-x").catch(()=>{});
+await p3.waitForTimeout(700);
+ok("invite는 account.html 유지", (await p3.evaluate(()=>location.pathname)).includes("account.html"));
+await browser.close();
+console.log(results.join("\n"));
+process.exit(results.some(r=>r.startsWith("FAIL"))?1:0);

@@ -20,7 +20,7 @@ export default function Dashboard({ summary }: { summary: Summary | null }) {
       <div style={{ fontSize: 12, color: "var(--n500)", marginBottom: 16 }}>
         저장된 운영 데이터 기준입니다. 기존 테스트 데이터가 포함될 수 있으며, 실제 검증 가입·결제 실적을 의미하지 않습니다.
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
         {tiles.map(([label, value, note]) => (
           <Card key={label} style={{ padding: 14 }}>
             <div style={{ fontSize: 11, color: "var(--n500)", fontWeight: 700 }}>{label}</div>

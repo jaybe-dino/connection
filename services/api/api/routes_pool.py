@@ -29,6 +29,7 @@ from .routes_ops import require_admin
 router = APIRouter(prefix="/admin/pool")
 
 MAX_CSV_CHARS = 262_144          # 256KB
+MAX_REQUEST_BYTES = 1_048_576
 MAX_ROWS = 500                   # 한 번에 처리하는 행 수
 EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}$")
 PLATFORMS = ("tiktok", "instagram", "youtube", "manual")
@@ -37,16 +38,12 @@ COLUMNS = ("platform", "platform_uid", "handle", "display_name", "email",
 
 
 def _formula_risk(v: str) -> bool:
-    """스프레드시트 수식 주입 위험 셀 — '=', '@', 탭/CR 시작, 숫자가 아닌
+    """스프레드시트 수식 주입 위험 셀 — '=', '@', 탭/CR 시작, 모든
     '+'/'-' 시작 값을 거부한다(내보내기·재가공 시 실행 위험)."""
     if not v:
         return False
-    c = v[0]
-    if c in ("=", "@", "\t", "\r"):
-        return True
-    if c in ("+", "-") and not v[1:2].isdigit():
-        return True
-    return False
+    return v[0] in ("=", "@", "+", "-", "\t", "\r")
+
 
 
 def _split_list(v: str) -> list[str]:
@@ -91,27 +88,49 @@ def _normalize_row(raw: dict, line: int) -> tuple[dict | None, str]:
 async def _parse_payload(request: Request) -> list[dict]:
     """{csv: "..."} 또는 {rows: [{...}]} — 검증 실패 시 원문 비반향 400."""
     try:
-        body = await request.json()
+        chunks = bytearray()
+        async for chunk in request.stream():
+            chunks.extend(chunk)
+            if len(chunks) > MAX_REQUEST_BYTES:
+                raise HTTPException(413, "요청이 너무 큽니다")
+        body = json.loads(chunks)
         if not isinstance(body, dict):
             raise ValueError()
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(400, "요청 형식을 확인해 주세요 (JSON)")
     rows = body.get("rows")
     text = body.get("csv")
     if isinstance(text, str) and text.strip():
-        if len(text) > MAX_CSV_CHARS:
+        if len(text.encode('utf-8')) > MAX_CSV_CHARS:
             raise HTTPException(413, f"CSV가 너무 큽니다 — {MAX_CSV_CHARS // 1024}KB 이하")
         reader = csv.DictReader(io.StringIO(text))
-        if not reader.fieldnames:
+        try:
+            fieldnames = reader.fieldnames
+        except csv.Error:
+            raise HTTPException(400, "CSV 필드 형식 또는 길이를 확인하세요") from None
+        if not fieldnames:
             raise HTTPException(400, "CSV 헤더가 필요합니다 (handle,email,country,…)")
-        unknown = [f for f in reader.fieldnames
+        unknown = [f for f in fieldnames
                    if f and f.strip().lower() not in COLUMNS]
         if unknown:
             raise HTTPException(400, "알 수 없는 CSV 컬럼: "
                                 + ", ".join(sorted(unknown)[:5])
                                 + f" — 허용: {', '.join(COLUMNS)}")
-        rows = [{(k or "").strip().lower(): v for k, v in r.items()}
-                for r in reader]
+        headers = [(k or "").strip().lower() for k in fieldnames]
+        if len(headers) != len(set(headers)) or "" in headers:
+            raise HTTPException(400, "CSV 헤더는 비어 있거나 중복될 수 없습니다")
+        try:
+            rows = []
+            for r in reader:
+                if None in r:
+                    raise HTTPException(400, "CSV 행의 컬럼 수가 헤더와 다릅니다")
+                rows.append({k.strip().lower(): v for k, v in r.items()})
+                if len(rows) > MAX_ROWS:
+                    raise HTTPException(413, f"한 번에 {MAX_ROWS}행까지 처리합니다")
+        except csv.Error:
+            raise HTTPException(400, "CSV 필드 형식 또는 길이를 확인하세요") from None
     if not isinstance(rows, list) or not rows:
         raise HTTPException(400, "rows 배열 또는 csv 텍스트가 필요합니다")
     if len(rows) > MAX_ROWS:
@@ -209,6 +228,9 @@ async def import_candidates(request: Request,
     source = {"vendor": f"manual:{admin}", "seen_at": now}
     inserted = 0
     with connect() as conn:
+        # Serialize manual imports before their email deduplication query.
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                     ("manual-pool-import",))
         plan = _plan(conn, rows)
         for p in plan:
             if p["action"] != "insert":

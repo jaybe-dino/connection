@@ -61,24 +61,25 @@ def test_ai_mode_scores_validates_signals_and_caches(client, monkeypatch):
 
         def fake(product_name, fields, candidates):
             seen["payload"] = candidates
+            ids = {c["handle"]: c["uid"] for c in candidates}
             return [
-                {"uid": "ai-th", "fit": 91,
+                {"uid": ids["ai.th"], "fit": 91,
                  "reason": "태국어 태그 ครีมกันแดด가 선케어 제품과 같은 의미",
                  "signals": ["ครีมกันแดด", "존재하지-않는-태그"]},
-                {"uid": "ai-ja", "fit": 84,
+                {"uid": ids["ai.ja"], "fit": 84,
                  "reason": "일본어 태그 日焼け止め가 자외선 차단 제품",
                  "signals": ["日焼け止め"]},
                 {"uid": "ai-fake", "fit": 99, "reason": "x", "signals": []},
-                {"uid": "ai-th", "fit": 999, "reason": "범위밖", "signals": []},
+                {"uid": ids["ai.th"], "fit": 999, "reason": "범위밖", "signals": []},
             ]
         monkeypatch.setattr(ai_mod, "match_candidates", fake)
         r = client.get(f"/brands/glowlab/products/{pid}/candidates?mode=ai",
                        headers=_bearer(t)).json()
         assert r["ai"]["mode"] == "ai" and r["ai"]["evaluated"] == 2
         # 언어 간 원문 데이터가 그대로 AI에 전달됐다 (허구 입력 없음)
-        sent = {c["uid"]: c for c in seen["payload"]}
-        assert sent["ai-th"]["category"] == ["ครีมกันแดด"]
-        assert sent["ai-ja"]["category"] == ["日焼け止め"]
+        sent = {c["handle"]: c for c in seen["payload"]}
+        assert sent["ai.th"]["category"] == ["ครีมกันแดด"]
+        assert sent["ai.ja"]["category"] == ["日焼け止め"]
         cands = {c["handle"]: c for c in r["candidates"]}
         assert cands["ai.th"]["aiFit"] == 91
         # 허구 근거("존재하지-않는-태그")는 채택되지 않는다 — 실데이터만
@@ -244,5 +245,33 @@ def test_failed_attempts_consume_budget_and_changed_input_invalidates_cache(clie
         count = len(calls)
         assert client.get(url, headers=_bearer(t)).json()['ai']['mode'] == 'fallback_keyword'
         assert len(calls) == count
+    finally:
+        _cleanup()
+
+
+def test_same_platform_uid_has_independent_ai_identity_and_cache(client, monkeypatch):
+    from api import ai as ai_mod
+    t = _brand_token(client, "aim-collision@ex.com", "glowlab")
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+        conn.execute("INSERT INTO creator_pool(platform,platform_uid,handle,email,email_status,category) VALUES "
+                     "('tiktok','ai-shared','ai.network1','network1@example.com','valid',ARRAY['sun care']),"
+                     "('instagram','ai-shared','ai.network2','network2@example.com','valid',ARRAY['sun care'])")
+    try:
+        pid = _product(client, t, "플랫폼 구분 선케어")
+        seen = []
+        def fake(product_name, fields, candidates):
+            seen.extend(candidates)
+            return [{"uid": c["uid"], "fit": 80 if c["platform"] == 'tiktok' else 90,
+                     "reason": c["handle"], "signals": ["sun care"]} for c in candidates]
+        monkeypatch.setattr(ai_mod, "match_candidates", fake)
+        path = f"/brands/glowlab/products/{pid}/candidates?mode=ai"
+        first = client.get(path, headers=_bearer(t)).json()
+        found = [c for c in first["candidates"] if c["uid"] == 'ai-shared']
+        assert len(found) == 2 and len({c["candidateId"] for c in found}) == 2
+        assert {c["handle"]: c["aiFit"] for c in found} == {'ai.network1': 80, 'ai.network2': 90}
+        assert len({c["uid"] for c in seen}) == len(seen)
+        monkeypatch.setattr(ai_mod, "match_candidates", lambda *args: (_ for _ in ()).throw(AssertionError('cache missed')))
+        second = client.get(path, headers=_bearer(t)).json()
+        assert all(c["aiCached"] for c in second["candidates"] if c["uid"] == 'ai-shared')
     finally:
         _cleanup()

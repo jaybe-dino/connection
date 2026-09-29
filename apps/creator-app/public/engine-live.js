@@ -1185,10 +1185,11 @@
   window.candidateCountryChanged=function(value){candidateCountry=value;candidateVersion++;prodCandidates=null;candSelected={};};
   window.candToggle=function(uid){
     if(!prodCandidates)return;
-    var cd=(prodCandidates.candidates||[]).filter(function(c){return c.uid===uid||String(c.uid||'').replace(/[^a-zA-Z0-9._-]/g,'')===uid;})[0];
+    var cd=(prodCandidates.candidates||[]).filter(function(c){return (c.candidateId||c.uid)===uid||String(c.candidateId||c.uid||'').replace(/[^a-zA-Z0-9._-]/g,'')===uid;})[0];
     if(!cd||!cd.email)return;
-    if(candSelected[cd.uid])delete candSelected[cd.uid];
-    else candSelected[cd.uid]={email:cd.email,handle:cd.handle,country:cd.country,verified:!!cd.emailVerified};
+    var key=cd.candidateId||cd.uid;
+    if(candSelected[key])delete candSelected[key];
+    else candSelected[key]={email:cd.email,handle:cd.handle,country:cd.country,verified:!!cd.emailVerified,reason:cd.aiReason||(cd.evidence||[]).join('; ')};
     render();
   };
   window.outreachFromCandidates=function(pid){
@@ -1200,7 +1201,7 @@
     var countryLabel=prodCandidates.searchCountry||'전체';
     // 추천 컨텍스트(제품·국가·근거)를 초안 브리프에 보존 — AI가 이 근거로 작성
     var brief='제품 "'+pname+'" 협업 제안. 타깃 국가: '+countryLabel+'. 선택 후보: '
-      +picked.map(function(c){return '@'+(c.handle||'')+(c.country?'('+c.country+')':'');}).join(', ')
+      +picked.map(function(c){return '@'+(c.handle||'')+(c.country?'('+c.country+')':'')+' [근거: '+String(c.reason||'별도 근거 없음').slice(0,70)+']';}).join(', ')
       +'. 각 후보의 관심 분야 근거를 반영해 정중한 첫 제안을 작성. 브랜드 PR 리스트 합류를 권유.';
     var unverified=picked.filter(function(c){return !c.verified;}).length;
     liveNav('mail');
@@ -1233,8 +1234,8 @@
         var modeLabel=aim.mode==='ai'?('AI 의미 평가 · '+mailEscape(aim.model||'')+' · 신규 '+(aim.evaluated||0)+'건 · 캐시 '+(aim.cachedHits||0)+'건'+(aim.notice?' · '+mailEscape(aim.notice):'')):aim.mode==='fallback_keyword'?('키워드 폴백 — '+mailEscape(aim.reason||'')):'키워드 일치';
         h+='<h2 style="margin-top:14px">추천 후보 — '+mailEscape(prodCandidates.searchCountry||'전체 국가')+' · '+modeLabel+'</h2><p style="font-size:12px">'+mailEscape(prodCandidates.note)+'</p>';
         (prodCandidates.candidates||[]).slice(0,10).forEach(function(cd){
-          var safeUid=String(cd.uid||'').replace(/[^a-zA-Z0-9._-]/g,'');
-          var pick=cd.email?'<label style="float:right;font-size:12px"><input type="checkbox" onchange="candToggle(\''+safeUid+'\')" '+(candSelected[cd.uid]?'checked':'')+'> 아웃리치 담기</label>':'';
+          var safeUid=String(cd.candidateId||cd.uid||'').replace(/[^a-zA-Z0-9._-]/g,'');
+          var pick=cd.email?'<label style="float:right;font-size:12px"><input type="checkbox" onchange="candToggle(\''+safeUid+'\')" '+(candSelected[cd.candidateId||cd.uid]?'checked':'')+'> 아웃리치 담기</label>':'';
           h+='<div class="cc">'+pick+'<b>@'+mailEscape(cd.handle||'')+'</b>'+(cd.aiFit!=null?' · <b>AI 적합 '+cd.aiFit+'</b>'+(cd.aiCached?' (캐시)':''):'')+(cd.fitScore?' · 키워드 '+cd.fitScore:'');
           if(cd.email)h+='<div style="font-size:12px;margin-top:2px">'+mailEscape(cd.email)+(cd.emailVerified?' <span style="color:#2e7d4f">검증됨</span>':' <span style="color:#8a6d3b">미검증 — 발송 전 확인</span>')+'</div>';
           if(cd.aiReason)h+='<p style="font-size:12px;margin:4px 0 0">'+mailEscape(cd.aiReason)+((cd.aiSignals||[]).length?' — 근거 태그: '+mailEscape(cd.aiSignals.join(', ')):'')+'</p>';

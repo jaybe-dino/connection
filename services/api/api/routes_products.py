@@ -246,7 +246,7 @@ def product_candidates(brand: str, product_id: UUID, country: str = "",
                 used_fields.append(k)
                 product_text += "\n" + _norm(v or "")
         rows = conn.execute(
-            "SELECT platform_uid, handle, display_name, country, lang,"
+            "SELECT creator_id, platform, platform_uid, handle, display_name, country, lang,"
             "       category, product_tags, followers, engagement_rate,"
             "       influence_score, contact_score, email, email_status"
             " FROM creator_pool"
@@ -290,7 +290,7 @@ def product_candidates(brand: str, product_id: UUID, country: str = "",
                                 " 권장 · 이 브랜드 수신거부 이력 없음")
             scored.append((fit, r["contact_score"] or 0,
                            r["influence_score"] or 0, r["followers"] or 0,
-                           {"uid": r["platform_uid"], "handle": r["handle"],
+                           {"uid": r["platform_uid"], "candidateId": str(r["creator_id"]), "platform": r["platform"], "handle": r["handle"],
                             "displayName": r["display_name"],
                             "country": r["country"],
                             "followers": r["followers"],
@@ -302,7 +302,7 @@ def product_candidates(brand: str, product_id: UUID, country: str = "",
         scored.sort(key=lambda x: (-x[0], -x[1], -x[2], -x[3]))
         ai_meta = {"mode": "keyword"}
         if mode == "ai":
-            rows_by_uid = {r["platform_uid"]: r for r in rows}
+            rows_by_uid = {str(r["creator_id"]): r for r in rows}
             pool = [x[4] for x in scored[:limit]]
             ai_meta = _ai_annotate(conn, p, profile_version, fields,
                                    pool, rows_by_uid)
@@ -353,12 +353,16 @@ def _ai_annotate(conn, p, profile_version, fields, pool, rows_by_uid) -> dict:
     # Serialize cache lookup + reservation per brand, including concurrent products.
     conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
                  ("candidate-ai:" + p["brand_id"],))
-    fingerprints = {d["uid"]: hashlib.sha256(json.dumps(
+    # Platform UIDs can collide across networks. Cache/model IDs use pool UUIDs.
+    def candidate_key(d):
+        return d.get("candidateId", d["uid"])
+
+    fingerprints = {candidate_key(d): hashlib.sha256(json.dumps(
         {"product": p["name"], "fields": fields, "model": _ai.MODEL,
-         "candidate": dict(rows_by_uid[d["uid"]])},
+         "candidate": dict(rows_by_uid[candidate_key(d)])},
         ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
         for d in pool}
-    uids = [d["uid"] for d in pool]
+    uids = [candidate_key(d) for d in pool]
     if not uids:
         return {"mode": "fallback_keyword", "reason": "평가할 후보가 없습니다"}
     cached = conn.execute(
@@ -366,7 +370,7 @@ def _ai_annotate(conn, p, profile_version, fields, pool, rows_by_uid) -> dict:
         " WHERE product_id=%s AND profile_version=%s AND platform_uid=ANY(%s)",
         (p["product_id"], profile_version, uids)).fetchall()
     cached = [c for c in cached if c["input_hash"] == fingerprints[c["platform_uid"]]]
-    by_uid = {d["uid"]: d for d in pool}
+    by_uid = {candidate_key(d): d for d in pool}
     for c in cached:
         d = by_uid[c["platform_uid"]]
         d.update(aiFit=c["fit"], aiReason=c["reason"],
@@ -389,8 +393,8 @@ def _ai_annotate(conn, p, profile_version, fields, pool, rows_by_uid) -> dict:
     batch = uncached[:min(per_call, daily_cap - used_today)]
     payload = []
     for d in batch:
-        r = rows_by_uid[d["uid"]]
-        payload.append({"uid": r["platform_uid"], "handle": r["handle"],
+        r = rows_by_uid[candidate_key(d)]
+        payload.append({"uid": candidate_key(d), "platform": r["platform"], "handle": r["handle"],
                         "country": r["country"], "lang": r["lang"],
                         "category": list(r["category"] or []),
                         "product_tags": list(r["product_tags"] or []),
@@ -419,7 +423,7 @@ def _ai_annotate(conn, p, profile_version, fields, pool, rows_by_uid) -> dict:
             meta["notice"] = "AI 응답 형식 오류 — 캐시된 평가만 사용"
             return meta
         return {"mode": "fallback_keyword", "reason": "AI 응답 형식 오류 — 키워드 순위 사용"}
-    allowed = {d["uid"] for d in batch}
+    allowed = {candidate_key(d) for d in batch}
     for item in results:
         if not isinstance(item, dict):
             continue

@@ -228,6 +228,7 @@ def test_compose_appends_brand_join_link(client, monkeypatch):
             " '{\"brand_one_liner\": {\"value\": \"글로우랩\"}}'::jsonb"
             " FROM brand_profile_versions WHERE brand_id='glowlab'")
         conn.commit()
+    monkeypatch.setenv("CREATOR_APP_URL", "https://app.theprlist.net/")
     r = client.post("/brands/glowlab/outreach/compose",
                     json={"brief": "태국 크리에이터 협업 제안"},
                     headers=_bearer(bt))
@@ -237,3 +238,36 @@ def test_compose_appends_brand_join_link(client, monkeypatch):
     assert "합류" in body
     assert r.json()["joinUrl"] == "https://app.theprlist.net/?brand=glowlab"
     assert r.json()["sent"] is False               # 자동 발송 없음
+    _Text.text = json.dumps({"subject": "긴 초안", "body": "x" * 9990})
+    long = client.post("/brands/glowlab/outreach/compose",
+                       json={"brief": "긴 초안 검사"}, headers=_bearer(bt))
+    assert long.status_code == 503  # 저장 불가능한 초안을 성공으로 돌려주지 않음
+
+
+def test_csv_malformed_and_byte_limits(client):
+    headers = _bearer(_admin_token(client))
+    path = "/admin/pool/candidates/preview"
+    for text in ("handle,handle\npool.a,pool.b", "handle,email\npool.a,a@example.com,extra",
+                 "handle,bio\npool.a," + "x" * 140_000, "x" * 140_000 + "\npool.a"):
+        assert client.post(path, json={"csv": text}, headers=headers).status_code == 400
+    assert client.post(path, json={"csv": "handle,bio\npool.a," + "한" * 90_000},
+                       headers=headers).status_code == 413
+    assert client.post(path, json={"rows": [{"handle": "pool.formula", "bio": "+1+HYPERLINK(foo)"}]},
+                       headers=headers).json()["counts"]["error"] == 1
+
+
+def test_concurrent_import_deduplicates_email(client):
+    from concurrent.futures import ThreadPoolExecutor
+    headers = _bearer(_admin_token(client))
+    def register(i):
+        return client.post("/admin/pool/candidates", headers=headers,
+                           json={"rows": [{"handle": f"pool.race{i}", "email": "pool.race@example.com"}]})
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            responses = list(executor.map(register, range(2)))
+        assert all(r.status_code == 200 for r in responses)
+        assert sum(r.json()["inserted"] for r in responses) == 1
+        with _db() as conn:
+            assert conn.execute("SELECT count(*) n FROM creator_pool WHERE email='pool.race@example.com'").fetchone()["n"] == 1
+    finally:
+        _cleanup()

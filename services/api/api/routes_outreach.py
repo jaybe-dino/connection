@@ -68,9 +68,11 @@ def compose(brand: str, body: AIDraft, authorization: str = Header(default='')):
     # 덧붙인다(모집→가입 진입로 보장, 임의 URL 삽입 불가). 발송은 여전히
     # 초안 검토·승인 후에만 진행된다.
     import os as _os
-    join_url = (_os.environ.get('CREATOR_APP_URL', 'https://app.theprlist.net')
+    join_url = (_os.environ.get('CREATOR_APP_URL', 'https://app.theprlist.net').rstrip('/')
                 + '/?brand=' + brand)
     text = text.strip() + f"\n\n▶ 브랜드 PR 리스트 합류(무료): {join_url}"
+    if len(text) > 10000:
+        raise HTTPException(503, 'AI 초안이 너무 깁니다. 더 짧게 작성해 달라고 요청해 주세요.')
     return {'subject':subject.strip(),'body':text,'sent':False,
             'joinUrl':join_url}
 

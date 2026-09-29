@@ -72,3 +72,13 @@ test('선택 없이 실행 — 이동/프리필 없이 안내만',()=>{
   assert.equal(c.els.outRecipients.value,'');
   assert.match(c.toasts.join('|'),/후보 선택/);
 });
+
+test('플랫폼 UID가 같아도 선택·이메일·추천 근거가 분리된다',()=>{
+  const c=ctx();const data=JSON.parse(JSON.stringify(cands));
+  data.candidates[0].uid='shared';data.candidates[0].candidateId='pool-1';data.candidates[0].aiReason='선케어 전문';
+  data.candidates[1].uid='shared';data.candidates[1].candidateId='pool-2';data.candidates[1].aiReason='태국 뷰티';
+  vm.runInContext('prodCandidates=('+JSON.stringify(data)+')',c);
+  vm.runInContext('window.candToggle("pool-1");window.candToggle("pool-2");window.outreachFromCandidates("prod-1")',c);
+  assert.equal(c.els.outRecipients.value,'ploy@example.com\nnok@example.com');
+  assert.match(c.els.outBrief.value,/선케어 전문/);assert.match(c.els.outBrief.value,/태국 뷰티/);
+});

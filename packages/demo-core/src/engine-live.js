@@ -689,7 +689,7 @@
       }).catch(function (e) {
         if(popup)popup.close();
         toast(e === 401 ? "인증 필요" : "연결 실패",
-          e === 401 ? "주소 뒤에 <b>?key=어드민키</b>를 붙여 접속한 뒤 다시 시도하세요."
+          e === 401 ? "세션이 만료되었습니다. 계정 메뉴에서 다시 로그인한 뒤 연결해 주세요."
                     : "잠시 후 다시 시도해 주세요.");
       });
       return;
@@ -821,7 +821,9 @@
         '<button class="cbt no" onclick="gmailDisconnect(\''+a.accountId+'\')">연결 해제</button>'+
         (g.accounts.length>1?'<p>여러 계정 중 위 주소를 발신자로 사용합니다. 변경하려면 현재 발신 계정을 해제하세요.</p>':'');
     }
-    return '<div class="cc" style="margin-bottom:12px"><div class="t">지메일 연동 — 구글 로그인으로 브랜드 명의 발송</div>' + inner + "</div>";
+    return '<div class="cc" style="margin-bottom:12px"><div class="t">지메일 연동 — 구글 로그인으로 브랜드 명의 발송</div>' +
+      '<div class="gmail-disclosure"><p><b>연결 전 확인</b> · 이 브랜드가 승인한 메일을 선택한 Google 계정으로 발송합니다. 받은편지함의 최근 30일 메일은 발신자·수신자·제목·본문·시각·대화 식별자를 theprlist 서버에 저장해 이 브랜드의 인박스에 표시합니다. 업무용 계정을 연결해 주세요.</p>'+
+      '<p>첨부파일은 수집하지 않고 Gmail 원본의 읽음·삭제 상태는 바꾸지 않습니다. 동기화한 메일 본문은 AI 제공자에게 보내지 않습니다. 연결 해제는 추가 수집·발송을 중단하며 기존 저장 메일은 자동 삭제하지 않습니다. 삭제는 <a href="mailto:chief@dinostudio.kr">운영팀에 요청</a>할 수 있습니다. <a href="https://theprlist.net/privacy" target="_blank" rel="noopener">개인정보처리방침</a></p></div>'+inner+'</div>';
   }
   function inboxCard() {
     var L = window.__INBOX;

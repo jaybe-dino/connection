@@ -24,23 +24,29 @@ def text_body(payload):
 
 
 def _import_account(conn, brand, account, token):
-    """한 계정의 받은편지함 한 페이지를 가져온다 — 커서(sync_page_token)는
-    계정별로 저장·재개된다. (added, next_page_token) 반환."""
+    """항상 최신 10통을 먼저 확인하고, 과거 커서가 있으면 10통을 추가 확인.
+    오래된 받은편지함을 채우는 동안 새 메일이 굶지 않도록 분리한다.
+    커서는 계정별로 저장하며 호출당 최대 2페이지다."""
     with httpx.Client(timeout=12,headers={'Authorization':'Bearer '+token}) as client:
         params={'q':'in:inbox newer_than:30d','maxResults':10}
-        if account['sync_page_token']:params['pageToken']=account['sync_page_token']
         result=client.get('https://gmail.googleapis.com/gmail/v1/users/me/messages',params=params)
-        if result.status_code==400 and account['sync_page_token']:
-            params.pop('pageToken');result=client.get('https://gmail.googleapis.com/gmail/v1/users/me/messages',params=params)
         result.raise_for_status()
-        page=result.json();added=0
-        for item in page.get('messages',[]):
+        page=result.json();pages=[page];added=0
+        if account['sync_page_token']:
+            result=client.get('https://gmail.googleapis.com/gmail/v1/users/me/messages',
+                              params={**params,'pageToken':account['sync_page_token']})
+            if result.status_code!=400:
+                result.raise_for_status();page=result.json();pages.append(page)
+            # 만료된 커서는 최신 페이지의 nextPageToken으로 다시 시작한다.
+        for item in (item for p in pages for item in p.get('messages',[])):
             mid=item['id']
             if conn.execute('SELECT 1 FROM mail_messages WHERE gmail_account_id=%s AND gmail_message_id=%s',(account['account_id'],mid)).fetchone():continue
             response=client.get('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+mid,params={'format':'full'})
             if response.status_code==404:continue
             response.raise_for_status();message=response.json()
-            if 'INBOX' not in message.get('labelIds',[]) or 'SENT' in message.get('labelIds',[]):continue
+            # 자신에게 보낸 메일은 INBOX와 SENT가 함께 붙는다. 받은편지함
+            # 라벨이 있으면 수신으로 표시하되 SENT만 있는 발신 메일은 제외한다.
+            if 'INBOX' not in message.get('labelIds',[]):continue
             payload=message.get('payload',{})
             headers={h['name'].lower():h['value'] for h in payload.get('headers',[])}
             sender=parseaddr(headers.get('from',''))[1].lower()

@@ -290,7 +290,45 @@ def test_sync_multiple_read_accounts_each_have_own_cursor(setup,monkeypatch):
     r2=c.post('/brands/real/gmail/sync',headers=h).json()
     assert r2['imported']==0
     listing=[p for t,u,p in captured if t=='tok-sender@example.com' and u.endswith('/messages')]
-    assert listing and listing[0].get('pageToken')=='page-2'
+    assert [p.get('pageToken') for p in listing]==[None,'page-2']
+
+
+@pytest.mark.parametrize('expired',[False,True])
+def test_sync_imports_new_mail_while_backfilling_and_keeps_self_inbox(setup,monkeypatch,expired):
+    import httpx
+    from types import SimpleNamespace
+    c,db,h,calls=setup
+    with db() as conn:
+        conn.execute("UPDATE gmail_accounts SET scopes=%s,sync_page_token='old-page' WHERE email='sender@example.com'",(gmail.SCOPES,))
+    monkeypatch.setattr(gmail,'_refresh_if_needed',lambda *a:'test')
+    fresh=_gmail_msg('fresh-self',sender='sender@example.com')
+    fresh['labelIds']=['INBOX','SENT']
+    old=_gmail_msg('older')
+    sent=_gmail_msg('sent-only');sent['labelIds']=['SENT']
+    messages={m['id']:m for m in [fresh,old,sent]};pages=[]
+    class Client:
+        def __init__(self,**kw):pass
+        def __enter__(self):return self
+        def __exit__(self,*a):pass
+        def get(self,url,**kw):
+            mid=url.rsplit('/',1)[-1]
+            if mid in messages:body=messages[mid];status=200
+            else:
+                cursor=kw['params'].get('pageToken');pages.append(cursor)
+                status=400 if expired and cursor else 200
+                body=({'messages':[{'id':'older'},{'id':'fresh-self'}],'nextPageToken':'old-next'}
+                      if cursor else {'messages':[{'id':'fresh-self'},{'id':'sent-only'}],'nextPageToken':'head-next'})
+            return SimpleNamespace(status_code=status,raise_for_status=lambda:None,json=lambda:body)
+    monkeypatch.setattr(httpx,'Client',Client)
+    r=c.post('/brands/real/gmail/sync',headers=h)
+    assert r.status_code==200 and r.json()['imported']==(1 if expired else 2)
+    assert pages==[None,'old-page']
+    with db() as conn:
+        imported=conn.execute("SELECT gmail_message_id FROM mail_messages WHERE gmail_message_id IS NOT NULL").fetchall()
+        account=conn.execute("SELECT sync_page_token FROM gmail_accounts WHERE email='sender@example.com'").fetchone()
+    assert {m['gmail_message_id'] for m in imported}==({'fresh-self'} if expired else {'fresh-self','older'})
+    assert account['sync_page_token']==('head-next' if expired else 'old-next')
+    assert calls==[]
 
 
 def test_sync_one_expired_account_does_not_block_others(setup,monkeypatch):

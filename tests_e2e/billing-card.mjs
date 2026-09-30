@@ -6,7 +6,7 @@ async function login(p,api){
   await p.goto(`http://localhost:5174/?api=${encodeURIComponent(api)}`);
   await p.waitForTimeout(800);
   await p.click("#authChip");await p.fill("#axEmail","cmo@glowlab.co");await p.fill("#axPw","glowlab-pw-123");
-  await p.click('span.cbt:text-is("로그인")');await p.waitForTimeout(1400);
+  await p.click('button.cbt:text-is("로그인")');await p.waitForTimeout(1400);
   await p.click('button:has-text("월별 청구")');await p.waitForTimeout(1500);
 }
 const errors=[];

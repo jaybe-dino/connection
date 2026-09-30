@@ -32,7 +32,7 @@ async function loginConsole(p) {
   await p.waitForTimeout(800);
   await p.click("#authChip");
   await p.fill("#axEmail", "cand.cmo@glowlab.co"); await p.fill("#axPw", "glowlab-pw-123");
-  await p.click('span.cbt:text-is("로그인")'); await p.waitForTimeout(1500);
+  await p.click('button.cbt:text-is("로그인")'); await p.waitForTimeout(1500);
 }
 
 for (const width of [375, 390, 768, 1440]) {

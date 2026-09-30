@@ -784,7 +784,7 @@
       inner = "<p>" + brandLogoImg(22) + "<b>" + mailEscape(b.name || BRAND() || "") + "</b>" +
         (b.tagline ? " · " + mailEscape(b.tagline) : "") +
         " <span style='font-size:9.6px;color:var(--n600)'>— PR 리스트·가입·커뮤니티 화면에 이 로고가 보입니다 (theprlist 표기는 유지)</span></p>" +
-        '<div style="display:flex;gap:6px;margin-top:9px"><input id="idLogo" placeholder="로고 URL (https:// 또는 data:image/…)" value="' +
+        '<div class="identity-fields" style="display:flex;gap:6px;margin-top:9px"><input id="idLogo" placeholder="로고 URL (https:// 또는 data:image/…)" value="' +
         mailEscape(b.logoUrl || "") + '" style="flex:2">' +
         '<input id="idTag" placeholder="태그라인" value="' + mailEscape(b.tagline || "") + '" style="flex:1">' +
         '<span class="cbt" onclick="identitySave()">저장</span></div>';
@@ -1002,12 +1002,22 @@
       "background:#fff;color:#22272b;border:1px solid #d8d2c7;border-radius:12px;" +
       "padding:14px;box-shadow:0 8px 28px rgba(0,0,0,.18);font-size:12px";
     d.innerHTML = html;
+    d.setAttribute('role','dialog');
+    d.setAttribute('aria-label',(d.querySelector('b')||{}).textContent||'계정');
+    var close=document.createElement('button');close.type='button';close.className='auth-close';
+    close.textContent='닫기';close.onclick=function(){authPanel(null);var chip=document.getElementById('authChip');if(chip)chip.focus();};
+    d.appendChild(close);
+    d.querySelectorAll('input').forEach(function(el){el.setAttribute('aria-label',el.placeholder||'입력');});
+    d.onkeydown=function(e){if(e.key==='Escape'){e.preventDefault();close.click();}
+      else if(e.key==='Enter'&&e.target.tagName==='INPUT'){e.preventDefault();var action=d.querySelector('button.cbt');if(action)action.click();}};
     document.body.appendChild(d);
+    var first=d.querySelector('input,button');if(first)first.focus();
   }
   function authChip() {
     var old = document.getElementById("authChip");
     if (old) old.remove();
-    var d = document.createElement("div");
+    var d = document.createElement("button");
+    d.type = "button";
     d.id = "authChip";
     d.style.cssText = "position:fixed;bottom:14px;left:14px;z-index:9999;cursor:pointer;" +
       "background:#22272b;color:#fff;border-radius:999px;padding:7px 13px;" +
@@ -1018,22 +1028,23 @@
       if (window.__ME) {
         authPanel("<b>" + mailEscape(window.__ME.email) + "</b><br><span style='color:#5a6560'>" +
           (window.__ME.kind === "brand" ? "브랜드 · " + (window.__ME.brandId || "") : window.__ME.kind) +
-          "</span><div style='margin-top:9px'><span class='cbt no' onclick=\"authLogout()\">로그아웃</span></div>");
+          "</span><div style='margin-top:9px'><button type='button' class='cbt no' onclick=\"authLogout()\">로그아웃</button></div>");
       } else if (window.__SURFACE === "creator") {
         authPanel("<b>이메일로 로그인</b><div style='margin-top:8px;display:flex;gap:5px'>" +
           "<input id='axEmail' placeholder='you@email.com' style='flex:1;padding:6px'>" +
-          "<span class='cbt' onclick='authMagic()'>보내기</span></div>" +
+          "<button type='button' class='cbt' onclick='authMagic()'>보내기</button></div>" +
           "<div style='margin-top:6px;color:#5a6560'>받은 링크를 누르면 바로 로그인돼요.</div>");
       } else {
         authPanel("<b>브랜드 로그인</b><div style='margin-top:8px'>" +
           "<input id='axEmail' placeholder='이메일' style='width:100%;padding:6px;margin-bottom:5px;box-sizing:border-box'>" +
           "<input id='axPw' type='password' placeholder='비밀번호' style='width:100%;padding:6px;box-sizing:border-box'>" +
-          "<div style='margin-top:8px'><span class='cbt' onclick='authLogin()'>로그인</span> " +
-          "<span class='cbt no' onclick='authForgot()'>비밀번호를 잊으셨나요?</span></div></div>");
+          "<div style='margin-top:8px'><button type='button' class='cbt' onclick='authLogin()'>로그인</button> " +
+          "<button type='button' class='cbt no' onclick='authForgot()'>비밀번호를 잊으셨나요?</button></div></div>");
       }
     };
     document.body.appendChild(d);
   }
+  window.authBack = function(){authPanel(null);var chip=document.getElementById('authChip');if(chip)chip.click();};
   window.authLogout = function () { jwtClear(); window.__ME = null; authPanel(null); authChip(); reloadBrand(); toast("로그아웃", "다시 로그인해야 서비스를 사용할 수 있습니다."); };
   window.authLogin = function () {
     var em = (document.getElementById("axEmail") || {}).value || "";
@@ -1053,7 +1064,7 @@
     var pre = (document.getElementById("axEmail") || {}).value || "";
     authPanel("<b>비밀번호 재설정</b><div style='margin-top:6px;color:#5a6560'>가입한 이메일로 재설정 링크를 보내드려요 (30분 유효·1회용).</div>" +
       "<input id='axEmail' placeholder='이메일' value='" + mailEscape(pre).replace(/'/g, "&#39;") + "' style='width:100%;padding:6px;margin-top:8px;box-sizing:border-box'>" +
-      "<div style='margin-top:8px'><span class='cbt' onclick='authForgotSend()'>재설정 메일 보내기</span> <span class='cbt no' onclick='authChip()'>돌아가기</span></div>");
+      "<div style='margin-top:8px'><button type='button' class='cbt' onclick='authForgotSend()'>재설정 메일 보내기</button> <button type='button' class='cbt no' onclick='authBack()'>돌아가기</button></div>");
   };
   window.authForgotSend = function () {
     var em = ((document.getElementById("axEmail") || {}).value || "").trim();
@@ -1086,9 +1097,9 @@
 
   /* Public console only exposes workflows backed by durable server results. */
   var profileData=null, profileError='', profileDraft=null, profileUrl='', profileBusy=false, profileNotice='';
-  var productsData=null, prodNotice='', prodCandidates=null;
+  var productsData=null, prodNotice='', prodCandidates=null, productsLoadError='';
   var brandCampaigns=null, collabOpen=null;   // {campaignId, rows}
-  function loadProducts(){var b=BRAND();if(!b)return;req('GET','/brands/'+b+'/products').then(function(r){if(BRAND()!==b)return;productsData=r;if(window.__SURFACE==='brand')render();}).catch(function(){});
+  function loadProducts(){var b=BRAND();if(!b)return;productsLoadError='';req('GET','/brands/'+b+'/products').then(function(r){if(BRAND()!==b)return;productsData=r;productsLoadError='';if(window.__SURFACE==='brand')render();}).catch(function(){if(BRAND()!==b)return;productsLoadError='제품 목록을 불러오지 못했습니다.';if(window.__SURFACE==='brand')render();});
     req('GET','/brands/'+b+'/campaigns').then(function(r){if(BRAND()!==b)return;brandCampaigns=r;if(window.__SURFACE==='brand')render();}).catch(function(){});}
   window.collabShow=function(cid){
     var owner=BRAND(),token=jwtGet();
@@ -1212,8 +1223,10 @@
     set('outBrief',brief.slice(0,2000));
     toast('후보 '+picked.length+'명 담김','AI 초안 하단에 브랜드 합류 링크가 자동 포함됩니다.'+(unverified?' 미검증 이메일 '+unverified+'건 — 발송 전 주소를 확인하세요.':'')+' 자동 발송은 없으며 검토 후 직접 발송합니다.');
   };
+  window.productsRetry=function(){loadProducts();render();};
   function productsCard(){
     var h='<h1>제품 · 어필리에이트 캠페인</h1><p>제품별로 정보를 학습·저장하면, 후보 추천과 아웃리치 초안이 그 제품 근거를 사용합니다.</p>';
+    if(typeof productsLoadError!=='undefined'&&productsLoadError)h+='<p role="alert">'+productsLoadError+' <button class="cbt" onclick="productsRetry()">다시 불러오기</button></p>';
     if(prodNotice)h+='<p role="status">'+mailEscape(prodNotice)+'</p>';
     h+='<div class="cc"><h2>새 제품</h2><input id="pNew" placeholder="제품 이름 (예: 시카 진정 앰플)"><input id="pRef" placeholder="틱톡샵 상품 ID·URL (선택)"><input id="pPct" placeholder="커미션 % (기본 10, 소수 가능)"><button class="btn" onclick="prodCreate()">제품 등록</button></div>';
     h+='<label>후보 타깃 국가<select id="candidateCountry" onchange="candidateCountryChanged(this.value)">'+[['','전체'],['KR','한국'],['TH','태국'],['US','미국'],['VN','베트남'],['JP','일본']].map(function(c){return '<option value="'+c[0]+'"'+(candidateCountry===c[0]?' selected':'')+'>'+c[1]+'</option>';}).join('')+'</select></label>';
@@ -1259,7 +1272,7 @@
   var livePage='home', chatMessages=[], chatBusy=false, profileAnswers={};
   var profileLabels={brand_one_liner:'브랜드 소개',hero_product:'주력 제품',ingredients:'성분·특징',price_range:'가격대',voice:'말투',ideal_creator:'원하는 크리에이터',banned_words:'금지 표현',sample_criteria:'샘플 기준'};
   function loadProfile(){var brand=BRAND();if(!brand)return;profileError='';req('GET','/brands/'+brand+'/profile/learned').then(function(r){if(BRAND()!==brand)return;profileData=r;Object.keys(r.fields||{}).forEach(function(k){profileAnswers[k]=typeof r.fields[k]==='string'?r.fields[k]:(r.fields[k].value||'');});if(window.__SURFACE==='brand')render();}).catch(function(e){profileError=e.message;if(window.__SURFACE==='brand')render();});}
-  window.liveNav=function(page){livePage=page;ST.b=page==='mail'?'src':page==='billing'?'settle':'brief';ST.srcTab='mail';if(BRAND()){if(page==='mail'){if(!window.__BID)loadIdentity();if(!window.__GMAIL)loadGmail();if(!window.__INBOX)loadInbox();if(!outreachData)loadOutreach();}if(page==='billing'&&!window.__billing)loadBilling();}render();if(page==='community')window.brandCommunityRefresh();};
+  window.liveNav=function(page){livePage=page;ST.b=page==='mail'?'src':page==='billing'?'settle':'brief';ST.srcTab='mail';if(BRAND()){if(page==='mail'){if(!window.__BID)loadIdentity();if(!window.__GMAIL)loadGmail();if(!window.__INBOX)loadInbox();if(!outreachData)loadOutreach();}if(page==='billing'&&!window.__billing)loadBilling();}render();var viewport=document.getElementById('stage');if(viewport)viewport.scrollTop=0;if(window.scrollTo)window.scrollTo(0,0);if(page==='community')window.brandCommunityRefresh();};
   window.profileUrlChanged=function(v){if(v!==profileUrl){profileUrl=v;profileDraft=null;profileNotice="주소가 바뀌었습니다. 다시 분석해 주세요.";var save=document.getElementById("profileSave");if(save){save.disabled=true;save.textContent="새 주소로 다시 분석해 주세요";}}};
   window.liveLearn=async function(){
     if(profileBusy)return;profileUrl=(document.getElementById('brandSite').value||'').trim();if(!profileUrl)return toast('주소 입력 필요','분석할 홈페이지 주소를 입력해 주세요.');
@@ -1408,7 +1421,7 @@
              :'저장된 프로필 0건 — 홈페이지 분석 또는 직접 입력으로 저장하세요.',
            act:'learn',cta:'브랜드 학습'},
           {done:pn>0,label:'제품 등록과 제품 프로필',
-           note:pn===null?'제품 목록 불러오는 중…'
+           note:productsLoadError?'제품 목록을 불러오지 못했습니다. 제품·캠페인에서 다시 시도하세요.':pn===null?'제품 목록 불러오는 중…'
              :pn>0?'✓ 제품 '+pn+'개 등록됨':'제품 0개 — 제품별 후보 추천의 출발점입니다.',
            act:'products',cta:'제품·캠페인'},
           {done:false,label:'후보 추천 → 선택 → 아웃리치 초안',
@@ -1427,7 +1440,7 @@
       Object.keys(preserved).forEach(function(id){var el=document.getElementById(id);if(el)el.value=preserved[id];});
     };
     var previousReload=reloadBrand;
-    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';productsData=null;prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;candSelected={};prodEditOpen={};brandCampaigns=null;collabOpen=null;window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;inboxShowAll=false;previousReload();if(window.__ME&&BRAND()){loadProfile();loadProducts();loadIdentity();}};
+    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';productsData=null;productsLoadError='';prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;candSelected={};prodEditOpen={};brandCampaigns=null;collabOpen=null;window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;inboxShowAll=false;previousReload();if(window.__ME&&BRAND()){loadProfile();loadProducts();loadIdentity();}};
     // 시각 정본은 live-theme.css(docs/UI_DESIGN_GUIDE.md) — 여기서는 표면
     // 활성 클래스만 부여한다.
     document.body.classList.add('live-surface');
@@ -1454,7 +1467,9 @@
     document.head.appendChild(crStyle);
     var joinTarget=null, joinBrandInfo=null, myMemberships=null, magicSent=false;
     var commCells=null, commOpen=null;   // {cellId, name, msgs}
-    var myCampaigns=null, myOffers=null;
+    var myCampaigns=null, myOffers=null, creatorLoadErrors={};
+    window.creatorReload=function(){loadCreatorData();render();};
+    function creatorLoadNotice(key,label){return creatorLoadErrors[key]?'<div class="cc" role="alert"><p>'+label+' 목록을 불러오지 못했습니다.</p><button class="btn" onclick="creatorReload()">다시 불러오기</button></div>':'';}
 
     try{joinTarget=(new URLSearchParams(location.search).get('brand')||'').toLowerCase()||null;}catch(e){}
     var membershipState='loading', membershipRequest=0;
@@ -1479,10 +1494,10 @@
     function loadCreatorData(){
       if(joinTarget)req('GET','/brands/'+joinTarget+'/identity').then(function(b){joinBrandInfo=b;render();}).catch(function(){joinBrandInfo={missing:true};render();});
       if(window.__ME&&window.__ME.kind==='creator'){
-        window.creatorRetryMemberships();
-        req('GET','/community/my-cells').then(function(c){commCells=c;render();}).catch(function(){});
-        req('GET','/me/campaigns').then(function(c){myCampaigns=c;render();}).catch(function(){});
-        req('GET','/me/campaign-offers').then(function(o){myOffers=o;render();}).catch(function(){});
+        window.creatorRetryMemberships();creatorLoadErrors={};
+        req('GET','/community/my-cells').then(function(c){commCells=c;creatorLoadErrors.community=false;render();}).catch(function(){creatorLoadErrors.community=true;render();});
+        req('GET','/me/campaigns').then(function(c){myCampaigns=c;creatorLoadErrors.campaigns=false;render();}).catch(function(){creatorLoadErrors.campaigns=true;render();});
+        req('GET','/me/campaign-offers').then(function(o){myOffers=o;creatorLoadErrors.offers=false;render();}).catch(function(){creatorLoadErrors.offers=true;render();});
       }
     }
     window.crApply=function(cid){
@@ -1513,11 +1528,14 @@
     };
     window.crDm=function(b){
       req('POST','/community/dm/'+b,{}).then(function(r){
+        creatorTab='community';
         window.commOpenCell(r.cellId,'담당자 DM');
       }).catch(function(){toast('DM 열기 실패','멤버십 가입 후 이용할 수 있어요.');});
     };
     function campHtml(){
-      if(!myCampaigns||!myCampaigns.length)return '';
+      if(creatorLoadErrors.campaigns)return creatorLoadNotice('campaigns','캠페인');
+      if(!myCampaigns)return '<p role="status">캠페인을 불러오는 중입니다…</p>';
+      if(!myCampaigns.length)return '<div class="cc"><p>참여 가능한 캠페인이 아직 없습니다. 가입한 브랜드의 모집 소식을 기다려 주세요.</p></div>';
       var h='<h2 style="margin-top:26px">참여 가능한 캠페인</h2>';
       myCampaigns.forEach(function(c){
         h+='<div class="cc"><b>'+esc(c.brandName||c.brandId)+'</b> · '+esc(c.name)+
@@ -1529,7 +1547,9 @@
       return h;
     }
     function offersHtml(){
-      if(!myOffers||!myOffers.length)return '';
+      if(creatorLoadErrors.offers)return creatorLoadNotice('offers','협업');
+      if(!myOffers)return '<p role="status">협업을 불러오는 중입니다…</p>';
+      if(!myOffers.length)return '<div class="cc"><p>아직 선정된 협업이 없습니다. 지원한 캠페인은 브랜드 검토 후 이곳에서 진행할 수 있습니다.</p><button class="btn line" onclick="crTab(\'campaigns\')">캠페인 보기</button></div>';
       var h='<h2 style="margin-top:26px">내 캠페인 진행</h2>';
       myOffers.forEach(function(o){
         var id=esc(o.campaignId);
@@ -1576,7 +1596,9 @@
     };
     function esc(x){return (x==null?'':String(x)).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
     function commHtml(){
-      if(!commCells||!commCells.length)return '';
+      if(creatorLoadErrors.community)return creatorLoadNotice('community','커뮤니티');
+      if(!commCells)return '<p role="status">커뮤니티를 불러오는 중입니다…</p>';
+      if(!commCells.length)return '<div class="cc"><p>참여 중인 커뮤니티가 없습니다. 브랜드 초대 링크로 먼저 합류해 주세요.</p></div>';
       var h='<h2 style="margin-top:26px">커뮤니티</h2>';
       if(!commOpen){
         h+='<p style="font-size:11px;color:#5a6560;margin:2px 0 8px">멤버 = PR 리스트 합류 계정 · 검증 = 본인 확인 완료 (실시간 집계)</p>';
@@ -1632,7 +1654,7 @@
         (membershipState!=='ready'?'<p>가입 여부는 가입 목록 조회가 끝나면 표시됩니다.</p>':joined?'<p>✓ 이미 이 브랜드의 PR 리스트 멤버입니다.</p>':'<button class="btn" onclick="creatorJoin(\''+b.brandId+'\')">이 브랜드 PR 리스트에 합류</button>')+'</div>';
     }
     var creatorTab='brand';
-    window.crTab=function(t){creatorTab=t;render();};
+    window.crTab=function(t){creatorTab=t;render();var viewport=document.getElementById('stage');if(viewport)viewport.scrollTop=0;if(window.scrollTo)window.scrollTo(0,0);};
     function creatorHeadHtml(){
       // 참여(또는 초대) 브랜드가 정체성의 중심 — 로고·이름 + 작은 theprlist.
       var b=(joinTarget&&joinBrandInfo&&!joinBrandInfo.missing)?joinBrandInfo

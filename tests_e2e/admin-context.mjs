@@ -34,7 +34,7 @@ ok("로그인 전 브랜드 API 0건(glowlab 기본값 제거)", brandReqs.lengt
 await pa.click("#authChip");
 await pa.fill("#axEmail", "admin.ctx@ex.com");
 await pa.fill("#axPw", "admin-ctx-pass-1");
-await pa.click('span.cbt:text-is("로그인")');
+await pa.click('button.cbt:text-is("로그인")');
 await pa.waitForTimeout(1600);
 const t1 = await pa.evaluate(() => document.body.innerText);
 ok("관리자 선택 화면 표시", t1.includes("브랜드 선택") && t1.includes("명시적으로 선택"));
@@ -90,7 +90,7 @@ await pb.waitForTimeout(900);
 await pb.click("#authChip");
 await pb.fill("#axEmail", "cmo@glowlab.co");
 await pb.fill("#axPw", "glowlab-pw-123");
-await pb.click('span.cbt:text-is("로그인")');
+await pb.click('button.cbt:text-is("로그인")');
 await pb.waitForTimeout(1600);
 const t7 = await pb.evaluate(() => document.body.innerText);
 ok("브랜드 계정 즉시 자기 컨텍스트", t7.includes("glowlab") && !t7.includes("브랜드 선택"));

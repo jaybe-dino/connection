@@ -35,7 +35,7 @@ for (const width of [390, 375]) {
   await pc.click("#authChip");
   await pc.fill("#axEmail", "cmo@glowlab.co");
   await pc.fill("#axPw", "glowlab-pw-123");
-  await pc.click('span.cbt:text-is("로그인")');
+  await pc.click('button.cbt:text-is("로그인")');
   await pc.waitForTimeout(1500);
   await measure(pc, `[${width}] 콘솔 홈`);
   for (const btn of ["제품·캠페인", "아웃리치·인박스", "월별 청구", "커뮤니티"]) {

@@ -15,7 +15,7 @@ const p=await ctx.newPage();p.on("pageerror",e=>errors.push(String(e).slice(0,12
 await p.goto(`http://localhost:5174/?api=${encodeURIComponent(API)}`);
 await p.waitForTimeout(800);
 await p.click("#authChip");await p.fill("#axEmail","cmo@glowlab.co");await p.fill("#axPw","glowlab-pw-123");
-await p.click('span.cbt:text-is("로그인")');await p.waitForTimeout(1400);
+await p.click('button.cbt:text-is("로그인")');await p.waitForTimeout(1400);
 await p.click('button:has-text("커뮤니티")');
 const lounge=p.locator('button:has-text("라운지 ·")').first();
 await lounge.waitFor({timeout:8000});await lounge.click();

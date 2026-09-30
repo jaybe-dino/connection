@@ -59,7 +59,7 @@ await pb.goto(`http://localhost:5174/?api=${encodeURIComponent(API)}`);
 await pb.waitForTimeout(900);
 await pb.click("#authChip");
 await pb.fill("#axEmail", "cand.cmo@glowlab.co"); await pb.fill("#axPw", "glowlab-pw-123");
-await pb.click('span.cbt:text-is("로그인")'); await pb.waitForTimeout(1500);
+await pb.click('button.cbt:text-is("로그인")'); await pb.waitForTimeout(1500);
 await pb.click('button:has-text("제품·캠페인")'); await pb.waitForTimeout(1000);
 await pb.fill("#pNew", "시카 진정 세럼"); await pb.click('button:has-text("제품 등록")');
 await pb.waitForTimeout(1200);

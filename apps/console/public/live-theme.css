@@ -1,0 +1,137 @@
+/* theprlist live 표면 공통 테마 — docs/UI_DESIGN_GUIDE.md 정본.
+   콘솔(brand)·크리에이터(creator)·계정(bjoin) 라이브 표면에서 사용.
+   에디토리얼 + 업무 도구: 밝은 배경, 조용한 탐색, 명확한 상태. */
+:root{
+  --bg:#F7F8FA; --surface:#FFFFFF; --ink:#18202B; --ink-2:#566274;
+  --line:#DCE2E8; --accent:#155E57; --accent-soft:#E7F1EE;
+  --ok:#1E6B4F; --warn:#8A5A1B; --bad:#A2372B;
+  --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp5:24px; --sp6:32px; --sp7:48px;
+  --r-sm:8px; --r-md:12px;
+  --fast:160ms;
+}
+@media (prefers-reduced-motion: reduce){ :root{ --fast:0ms; } }
+
+/* ── 라이브 표면 기본 (body.live-surface 는 engine-live가 부여) ── */
+body.live-surface{
+  background:var(--bg) !important; color:var(--ink) !important;
+  font-size:16px; line-height:1.6; overflow:auto;
+}
+body.live-surface .stage{display:block!important;overflow:auto!important;height:calc(100vh - 1px)!important}
+
+/* 헤더 — 모든 페이지 동일: 로고 · 브랜드 칩 · 탐색 · 전환 */
+.live-head{position:sticky;top:0;z-index:20;background:var(--surface);
+  border-bottom:1px solid var(--line);padding:var(--sp3) 5%;
+  display:flex;align-items:center;gap:var(--sp4);flex-wrap:wrap}
+.live-head>a{font-size:19px;font-weight:800;color:var(--ink);text-decoration:none;letter-spacing:-.01em}
+.live-head>a span{font-size:12px;font-weight:500;color:var(--ink-2)}
+.live-head nav{display:flex;gap:var(--sp1);flex-wrap:wrap;align-items:center;margin-left:auto}
+.brandchip{display:inline-flex;align-items:center;gap:8px;max-width:220px;
+  padding:6px 12px;border:1px solid var(--line);border-radius:999px;
+  background:var(--accent-soft);color:var(--ink);font-size:13px;font-weight:700}
+.brandchip img{width:22px;height:22px;border-radius:6px;object-fit:cover}
+.brandchip small{font-weight:500;color:var(--ink-2)}
+
+/* 본문 */
+.live-main{max-width:1020px;margin:0 auto;padding:var(--sp6) var(--sp4) 88px;font-size:16px;line-height:1.65}
+.live-main h1{font-size:30px;line-height:1.3;letter-spacing:-.015em;margin:0 0 var(--sp2)}
+.live-main h1+p{color:var(--ink-2);margin-top:0}
+.live-main h2{font-size:19px;margin:var(--sp5) 0 var(--sp2)}
+.live-main h3,.live-main h4{font-size:16px;margin:var(--sp4) 0 var(--sp1)}
+.live-main p{margin:var(--sp3) 0}
+.live-main small{font-size:14px;color:var(--ink-2)}
+.live-eyebrow{letter-spacing:.12em;font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase}
+.live-footer{padding:var(--sp5) var(--sp4) 72px;text-align:center;color:var(--ink-2);font-size:14px}
+.live-footer a{color:var(--ink-2)}
+
+/* 카드 — 그림자 없이 테두리, 중첩 최소 */
+.live-main .cc{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:var(--sp5);margin:var(--sp4) 0;text-align:left;transition:border-color var(--fast) ease}
+.live-main .cc:hover{border-color:#C3CCD5}
+.live-main .cc .t{font-weight:800;margin-bottom:var(--sp2)}
+.live-main blockquote{padding:var(--sp3);border-left:3px solid var(--accent);
+  background:var(--accent-soft);border-radius:0 var(--r-sm) var(--r-sm) 0;
+  color:var(--ink-2);overflow-wrap:anywhere;font-size:14px}
+
+/* 버튼 — 기본/보조/위험, 44px, 고정 규칙 */
+.live-main .btn,.live-head .btn,.live-main .cbt,.live-main button.cc{font-family:inherit}
+.live-main .btn,.live-head .btn{
+  min-height:44px;padding:10px 18px;font-size:15px;font-weight:700;cursor:pointer;
+  border-radius:var(--r-sm);border:1px solid var(--accent);
+  background:var(--accent);color:#fff;transition:background var(--fast) ease,border-color var(--fast) ease}
+.live-main .btn:hover,.live-head .btn:hover{background:#0F4A44}
+.live-main .btn.line,.live-head .btn.line{background:var(--surface);color:var(--ink);border-color:var(--line)}
+.live-main .btn.line:hover,.live-head .btn.line:hover{border-color:#B9C3CD;background:var(--bg)}
+.live-main .btn.danger{background:var(--bad);border-color:var(--bad)}
+.live-main .btn.danger:hover{background:#8A2C22}
+.live-main .btn[disabled],.live-main .cbt[disabled]{opacity:.55;cursor:not-allowed}
+.live-head nav .btn{min-height:38px;padding:7px 13px;font-size:14px}
+.live-head nav .btn.line{border-color:transparent;color:var(--ink-2)}
+.live-head nav .btn.line:hover{background:var(--bg);color:var(--ink)}
+.live-main .cbt{display:inline-flex;align-items:center;min-height:36px;padding:6px 12px;
+  border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface);
+  color:var(--ink);font-size:14px;font-weight:600;cursor:pointer;transition:border-color var(--fast) ease}
+.live-main .cbt:hover{border-color:#B9C3CD}
+.live-main .cbt.no{border-color:transparent;color:var(--ink-2)}
+.live-main .cbt.no:hover{color:var(--ink);background:var(--bg)}
+
+/* 입력 — 44px, 레이블 상시 */
+.live-main input,.live-main textarea,.live-main select{display:block;width:100%;box-sizing:border-box;
+  min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-sm);
+  margin:6px 0 var(--sp3);font:inherit;font-size:15px;background:var(--surface);color:var(--ink)}
+.live-main textarea{min-height:88px;line-height:1.55}
+.live-main input[type=checkbox]{display:inline-block;width:18px;height:18px;min-height:0;margin:0 6px 0 0;vertical-align:-3px}
+.live-main label{font-size:14px;font-weight:600;color:var(--ink-2)}
+.live-main ::placeholder{color:#93A0AF}
+
+/* 포커스 — 키보드 접근성 */
+.live-main :focus-visible,.live-head :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-sm)}
+
+/* 상태 문구 — 색+문자 병기 */
+.st-ok{color:var(--ok);font-weight:700}
+.st-warn{color:var(--warn);font-weight:700}
+.st-bad{color:var(--bad);font-weight:700}
+.pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700;
+  border:1px solid var(--line);background:var(--bg);color:var(--ink-2)}
+.pill.ok{background:var(--accent-soft);border-color:var(--accent-soft);color:var(--ok)}
+.pill.warn{background:#F6EEDD;border-color:#F6EEDD;color:var(--warn)}
+
+/* 다음 할 일(홈 온보딩) */
+.todo{display:flex;gap:var(--sp3);align-items:flex-start;padding:var(--sp3) 0;border-top:1px solid var(--line)}
+.todo:first-of-type{border-top:0}
+.todo .n{flex:none;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:800;background:var(--bg);border:1px solid var(--line);color:var(--ink-2)}
+.todo.done .n{background:var(--accent-soft);border-color:var(--accent-soft);color:var(--ok)}
+.todo .b{flex:1;min-width:0}
+.todo .b b{display:block}
+.todo .b small{display:block;margin-top:2px}
+
+/* 구획(메일 등 단계 위계) */
+.sect{margin:var(--sp6) 0 var(--sp3);padding-top:var(--sp4);border-top:1px solid var(--line)}
+.sect:first-of-type{border-top:0;margin-top:var(--sp4)}
+.sect .k{font-size:12px;font-weight:800;letter-spacing:.1em;color:var(--accent)}
+.sect h2{margin:2px 0 4px}
+.sect>p{margin-top:0;color:var(--ink-2);font-size:14px}
+
+/* 그리드·표 */
+.live-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp4)}
+.live-main table{width:100%;border-collapse:collapse;font-size:14px}
+.live-main th,.live-main td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+
+/* 크리에이터 탭 */
+.crtabs{display:flex;gap:var(--sp1);margin:var(--sp4) 0;flex-wrap:wrap}
+.crtabs button{min-height:40px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink-2);font:inherit;font-size:14px;font-weight:700;cursor:pointer;
+  transition:background var(--fast) ease,color var(--fast) ease}
+.crtabs button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.crhead{display:flex;align-items:center;gap:var(--sp3);margin-bottom:var(--sp2)}
+.crhead img{width:44px;height:44px;border-radius:10px;object-fit:cover;border:1px solid var(--line)}
+.crhead .bn{font-size:20px;font-weight:800;line-height:1.2}
+.crhead .svc{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--ink-2)}
+
+@media(max-width:700px){
+  .live-head{padding:var(--sp3) var(--sp4)}
+  .live-head nav{margin-left:0;width:100%}
+  .live-main{padding:var(--sp5) var(--sp4) 72px}
+  .live-main h1{font-size:25px}
+  .live-grid{grid-template-columns:1fr}
+}

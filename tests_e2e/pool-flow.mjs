@@ -10,6 +10,9 @@ const api = (m, p, b, tok) => fetch(API + p, { method: m,
              ...(tok ? { Authorization: "Bearer " + tok } : {}) },
   body: b ? JSON.stringify(b) : undefined }).then((r) => r.json().then((j) => ({ status: r.status, j })));
 
+import { execSync } from "node:child_process";
+// 멱등: 이전 실행이 남긴 e2e 후보 제거
+execSync(`PGUSER=postgres PGPASSWORD=postgres PGHOST=localhost psql -d e2e_c3 -c "DELETE FROM creator_pool WHERE handle LIKE 'e2e.%';" >/dev/null`);
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
 const errors = [];
 

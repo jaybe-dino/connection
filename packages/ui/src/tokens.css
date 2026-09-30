@@ -3,43 +3,43 @@
 :root {
   /* 웜 뉴트럴 */
   --n0: #ffffff;
-  --n50: #faf8f4;
-  --n100: #f3efe7;
-  --n150: #ede7dc;
-  --n200: #e4dccf;
-  --n300: #d3c8b6;
-  --n400: #b0a492;
-  --n500: #8a8072;
-  --n600: #6b6358;
-  --n700: #4a443c;
-  --n800: #2c2823;
-  --n900: #1a1820;
+  --n50: #F7F8FA;
+  --n100: #EEF1F4;
+  --n150: #E5EAEF;
+  --n200: #DCE2E8;
+  --n300: #C3CCD5;
+  --n400: #93A0AF;
+  --n500: #566274;
+  --n600: #4A5568;
+  --n700: #323D4C;
+  --n800: #18202B;
+  --n900: #10161F;
 
   /* 테라코타 (주 액션) */
-  --t100: #f7ddd4;
-  --t200: #edb8a7;
-  --t300: #de8c74;
-  --t400: #ce6c50;
-  --t500: #c2543c;
+  --t100: #E7F1EE;
+  --t200: #BBD8D2;
+  --t300: #7FB3AB;
+  --t400: #1B6E66;
+  --t500: #155E57;
 
   /* 세이지 (긍정·승인) */
   --s50: #eff5f0;
   --s100: #d5e5d9;
   --s300: #8fb79a;
-  --s500: #5e8c6a;
+  --s500: #1E6B4F;
   --s700: #3e6249;
 
   /* 앰버 (주의·보류) */
   --a50: #fbf3e2;
   --a100: #f3e2bc;
   --a300: #d9af61;
-  --a500: #b5852f;
+  --a500: #8A5A1B;
   --a700: #855f1c;
 
   /* 클레이 레드 (거절·위험) */
   --c50: #fbefec;
   --c300: #d08772;
-  --c500: #8e3b2a;
+  --c500: #A2372B;
   --c700: #672519;
 
   /* 다크 (콘솔 레일 등) */
@@ -60,7 +60,7 @@
 
   --radius: 12px;
   --radius-lg: 18px;
-  --shadow: 0 1px 3px rgb(26 24 32 / 0.08), 0 4px 16px rgb(26 24 32 / 0.06);
+  --shadow: 0 1px 2px rgb(24 32 43 / 0.06);
 }
 
 * {
@@ -73,4 +73,16 @@ body {
   background: var(--n50);
   color: var(--n800);
   -webkit-font-smoothing: antialiased;
+}
+
+/* 접근성 — 키보드 포커스 표시 + 모션 축소 지원 (docs/UI_DESIGN_GUIDE.md) */
+:focus-visible {
+  outline: 2px solid var(--t500);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition: none !important;
+    animation: none !important;
+  }
 }

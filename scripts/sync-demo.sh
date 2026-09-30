@@ -7,7 +7,7 @@ import hashlib,re,shutil
 source=Path('packages/demo-core/src')
 for app in ('console','signup','creator-app'):
     public=Path('apps')/app/'public'
-    names=['demo.css','product.css','engine.js','engine-live.js']+(['mobile.css'] if app=='creator-app' else [])
+    names=['demo.css','product.css','live-theme.css','engine.js','engine-live.js']+(['mobile.css'] if app=='creator-app' else [])
     for name in names:shutil.copyfile(source/name,public/name)
     for html in [Path('apps')/app/'index.html']+([public/'account.html'] if app=='signup' else []):
         text=html.read_text()

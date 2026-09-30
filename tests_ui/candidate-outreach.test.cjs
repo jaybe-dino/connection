@@ -1,7 +1,7 @@
 // 후보 선택 → 아웃리치 초안 연결 — 이메일 없는 후보 선택 불가·컨텍스트 보존·프리필
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
 const s=fs.readFileSync('packages/demo-core/src/engine-live.js','utf8');
-const slice=s.slice(s.indexOf("  var candidateCountry='',candidateVersion=0,candSelected={};"),
+const slice=s.slice(s.indexOf("  var candidateCountry="),
                     s.indexOf("  var livePage='home'"));
 
 function el(v){return {value:v==null?'':v,disabled:false};}

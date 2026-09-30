@@ -637,7 +637,7 @@
       var pending=b.recipients.some(function(r){return r.state==='pending';});
       return '<details style="margin-top:12px;border-top:1px solid #ddd;padding-top:12px"><summary>'+mailEscape(b.subject)+' · '+b.recipients.length+'명 · '+({draft:'초안',approved:'발송 승인됨',cancelled:'취소됨'}[b.state]||'')+'</summary>'+
         '<p>'+b.recipients.map(function(r){return mailEscape(r.email)+' — '+(states[r.state]||'확인 필요');}).join('<br>')+'</p><pre style="white-space:pre-wrap;font:inherit">'+mailEscape(b.body)+'</pre><p style="font-size:12px">수신 거부 링크가 본문 끝에 자동으로 추가됩니다.</p>'+
-        (pending && b.state!=='cancelled'?'<button class="cbt" onclick="outreachSend(\''+b.id+'\')">'+(b.state==='draft'?'내용 승인하고 발송':'남은 수신자 발송')+'</button> ':'')+
+        (pending && b.state!=='cancelled'?'<button class="btn" onclick="outreachSend(\''+b.id+'\')">'+(b.state==='draft'?'내용 승인하고 발송':'남은 수신자 발송')+'</button> ':'')+
         (b.state==='draft'?'<button class="cbt no" onclick="outreachCancel(\''+b.id+'\')">초안 취소</button>':'')+'</details>';
     }).join('');
     return '<div class="cc"><div class="t">아웃리치 메일</div><p>수신자와 내용을 저장한 뒤 확인하고 발송합니다. 발송 한도를 넘긴 수신자는 대기하며, 수신 거부·90일 내 중복 발송은 제외합니다.</p>'+
@@ -811,8 +811,8 @@
       var a = g.accounts[0];
       inner = '<p><b>실제 발신 주소: '+mailEscape(a.email)+'</b></p><p>Google Workspace 회사 도메인 또는 연결된 Gmail 계정으로 발송합니다.</p>'+
         '<p>오늘 Gmail 접수 '+a.sentToday+' / '+a.todayCap+'통 · 남은 한도 '+(a.remainingToday==null?'확인 중':a.remainingToday)+'통</p>'+
-        '<p>웜업 '+(a.warmupDay==null?'확인 중':a.warmupDay)+'단계 · 실제 발송한 날에만 한도 증가 · 2 → 4 → 6 → 8 → 12 → 16 → 20통</p>'+
-        '<p>전달률·스팸함 도착률·반송률: 아직 측정되지 않았습니다. 웜업 완료나 수신함 도착을 보장하지 않습니다.</p>'+
+        '<p>점진 발송 한도 '+(a.warmupDay==null?'확인 중':a.warmupDay)+'단계 — 새 계정 보호를 위해 실제 발송한 날에만 하루 한도가 2 → 4 → 6 → 8 → 12 → 16 → 20통으로 늘어납니다.</p>'+
+        '<p>전달률·스팸함 도착률·반송률: 아직 측정되지 않았습니다. 한도 단계 완료나 수신함 도착을 보장하지 않습니다.</p>'+
         (a.sendingPaused?'<p role="alert">발송 일시 중지: '+mailEscape(a.pauseReason)+'</p>':'')+
         (a.canRead?'<p>받은편지함 최근 30일을 10통씩 가져옵니다. 이 화면을 열어 두면 1분마다 동기화합니다. 첨부파일·읽음 표시·삭제는 Gmail에서 관리하세요.</p><p>마지막 동기화: '+mailEscape(a.syncedAt?new Date(a.syncedAt).toLocaleString():'아직 없음')+'</p><button class="cbt" onclick="gmailSync()" '+(gmailSyncBusy?'disabled':'')+'>받은 메일 동기화</button>':'<p>수신 권한이 없습니다. 받은 메일도 관리하려면 Google 계정을 다시 연결하고 읽기 권한을 허용하세요.</p>')+
         '<button class="cbt no" onclick="gmailConnect()">Google 발송·수신 권한 연결</button><p role="status">'+mailEscape(gmailSyncNotice||a.syncError||'')+'</p>'+
@@ -1172,7 +1172,8 @@
       .then(function(c){prodNotice='어필리에이트 캠페인 개설: '+c.campaignId+' · 커미션 '+c.affiliatePct+'%';loadProducts();render();})
       .catch(function(){toast('개설 실패','잠시 후 다시.');});
   };
-  var candidateCountry='',candidateVersion=0,candSelected={};
+  var candidateCountry='',candidateVersion=0,candSelected={},prodEditOpen={};
+  window.prodEditToggle=function(pid,open){prodEditOpen[String(pid)]=!!open;};
   window.prodShowCandidates=function(pid,mode){
     var brand=BRAND(),token=jwtGet(),version=++candidateVersion;
     var country=(document.getElementById('candidateCountry')||{}).value||'';
@@ -1217,14 +1218,18 @@
     h+='<div class="cc"><h2>새 제품</h2><input id="pNew" placeholder="제품 이름 (예: 시카 진정 앰플)"><input id="pRef" placeholder="틱톡샵 상품 ID·URL (선택)"><input id="pPct" placeholder="커미션 % (기본 10, 소수 가능)"><button class="btn" onclick="prodCreate()">제품 등록</button></div>';
     h+='<label>후보 타깃 국가<select id="candidateCountry" onchange="candidateCountryChanged(this.value)">'+[['','전체'],['KR','한국'],['TH','태국'],['US','미국'],['VN','베트남'],['JP','일본']].map(function(c){return '<option value="'+c[0]+'"'+(candidateCountry===c[0]?' selected':'')+'>'+c[1]+'</option>';}).join('')+'</select></label>';
     (productsData||[]).forEach(function(pd){
-      h+='<div class="cc"><h2>'+mailEscape(pd.name)+' <span style="font-size:12px;font-weight:400">커미션 '+pd.commissionPct+'% · 프로필 v'+pd.profileVersion+'</span></h2>';
+      h+='<div class="cc"><h2>'+mailEscape(pd.name)+' <span style="font-size:12px;font-weight:400;color:var(--ink-2,#566274)">커미션 '+pd.commissionPct+'% · 프로필 v'+pd.profileVersion+'</span></h2>';
       var f=pd.fields||{};
+      var oneLiner=f.product_one_liner&&(f.product_one_liner.value||'')||'';
+      // 요약 먼저, 긴 편집 폼은 접어서 — 필요할 때만 펼쳐 수정한다.
+      h+='<p style="margin:4px 0 10px;color:var(--ink-2,#566274)">'+(oneLiner?mailEscape(oneLiner):(pd.profileVersion>0?'요약 문구가 비어 있습니다.':'프로필 미작성 — 저장하면 후보 추천·초안이 이 근거를 사용합니다.'))+'</p>';
+      h+='<details'+(prodEditOpen[pd.productId]?' open':'')+' ontoggle="prodEditToggle(\''+pd.productId+'\',this.open)"><summary style="cursor:pointer;font-weight:700">제품 프로필 '+(pd.profileVersion>0?'보기·편집':'작성')+' <small style="font-weight:400">(저장 시 v'+(pd.profileVersion+1)+')</small></summary><div style="margin-top:10px">';
       h+=['product_one_liner','usp','ingredients','price_range'].map(function(k){
         var v=f[k]&&(f[k].value||'')||'';
         var label={product_one_liner:'제품 한 줄',usp:'차별점(USP)',ingredients:'성분·특징',price_range:'가격대'}[k];
         return '<label>'+label+'<textarea id="pf_'+k+'_'+pd.productId+'" maxlength="2000">'+mailEscape(v)+'</textarea></label>';
       }).join('');
-      h+='<button class="btn" onclick="prodSaveProfile(\''+pd.productId+'\')">프로필 저장 (v'+(pd.profileVersion+1)+')</button> ';
+      h+='<button class="btn" onclick="prodSaveProfile(\''+pd.productId+'\')">프로필 저장 (v'+(pd.profileVersion+1)+')</button></div></details><div style="margin-top:12px"></div>';
       h+='<input id="pc_'+pd.productId+'" placeholder="모집 이름 (예: 9월 태국 어필리에이트)" style="display:inline-block;width:280px"> ';
       h+='<button class="btn line" onclick="prodCampaign(\''+pd.productId+'\')">캠페인 개설</button> ';
       h+='<button class="btn line" onclick="prodShowCandidates(\''+pd.productId+'\')">후보 보기</button> ';
@@ -1367,7 +1372,17 @@
     window.render=function(){
       var stage=document.getElementById('stage');if(!stage)return;
       document.querySelector('.svcbar').style.display='none';
-      var nav='<header class="live-head"><a href="https://theprlist.net">theprlist<span> / brand console</span></a><nav>'+[['home','홈'],['learn','브랜드 학습'],['products','제품·캠페인'],['community','커뮤니티·DM'],['mail','아웃리치·인박스'],['billing','월별 청구']].map(function(x){return '<button class="btn '+(livePage===x[0]?'':'line')+'" onclick="liveNav(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+(window.__ME&&window.__ME.kind==='admin'&&BRAND()?'<span style="font-size:12px;color:#5a6560">관리자 · <b>'+mailEscape(BRAND())+'</b> <button class="btn line" onclick="adminSwitchBrand()">전환</button></span>':'')+'</nav></header>';
+      // 브랜드 칩 — 모든 페이지 동일 위치에 현재 브랜드(로고+이름)와
+      // 관리자 전환 상태를 상시 노출한다.
+      var chip='';
+      if(window.__ME&&BRAND()){
+        var bid=window.__BID||{};
+        chip='<span class="brandchip" title="현재 브랜드">'+
+          (bid.logoUrl?'<img src="'+String(bid.logoUrl).replace(/"/g,'')+'" alt="">':'')+
+          '<span>'+mailEscape(bid.name||BRAND())+'</span>'+
+          (window.__ME.kind==='admin'?'<small>관리자</small>':'')+'</span>';
+      }
+      var nav='<header class="live-head"><a href="https://theprlist.net">theprlist<span> / brand console</span></a>'+chip+'<nav>'+[['home','홈'],['learn','브랜드 학습'],['products','제품·캠페인'],['community','커뮤니티·DM'],['mail','아웃리치·인박스'],['billing','월별 청구']].map(function(x){return '<button class="btn '+(livePage===x[0]?'':'line')+'" onclick="liveNav(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+(window.__ME&&window.__ME.kind==='admin'&&BRAND()?'<span style="font-size:12px;color:var(--ink-2,#566274)">관리자 · <b>'+mailEscape(BRAND())+'</b> <button class="btn line" onclick="adminSwitchBrand()">전환</button></span>':'')+'</nav></header>';
       var preserved={};['outRecipients','outSubject','outBody','outBrief','outProduct','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)preserved[id]=el.value;});
       var body='';
       if(!window.__ME){body='<h1>브랜드와 크리에이터,<br>함께 시작할 준비.</h1><p>승인된 브랜드 계정으로 로그인해 주세요.</p><button class="btn" onclick="document.getElementById(\'authChip\').click()">로그인</button> <a class="btn line" href="https://theprlist.net/signup">가입 신청</a>';}
@@ -1376,16 +1391,47 @@
       else if(livePage==='learn')body=liveLearningCard();
       else if(livePage==='products')body=productsCard();
       else if(livePage==='community')body=brandCommunityCard();
-      else if(livePage==='mail')body='<h1>브랜드 메일링</h1>'+identityCard()+gmailCard()+outreachCard()+inboxCard();
+      else if(livePage==='mail')body='<h1>아웃리치·인박스</h1><p>연결 확인 → 초안 작성 → 검토·발송 → 받은 답장 순서로 진행합니다. 발송은 항상 사람이 검토한 뒤 실행됩니다.</p>'+'<div class="sect"><span class="k">STEP 1 · 연결</span><h2>발신 브랜드와 Gmail</h2><p>보내는 주소·권한·점진 발송 한도를 먼저 확인하세요.</p></div>'+identityCard()+gmailCard()+'<div class="sect"><span class="k">STEP 2–3 · 작성과 발송</span><h2>아웃리치 초안과 발송 내역</h2><p><b>초안 저장은 발송이 아닙니다</b> — 내역에서 내용을 승인해야 실제 발송됩니다.</p></div>'+outreachCard()+'<div class="sect"><span class="k">STEP 4 · 답장</span><h2>받은 답장(인박스)</h2><p>동기화된 답장을 확인하고 회신 초안을 검토해 발송합니다.</p></div>'+inboxCard();
       else if(livePage==='billing')body='<h1>월별 청구</h1><p>검증 가입 1명당 5,000원 · 부가세 포함 · 월 단위 합산</p><p>현재는 월별 합산 금액을 계산서(수기 청구) 방식으로 안내하는 운영입니다 — <b>카드 등록은 필수가 아닙니다.</b> 계산서 발행 여부·시점은 별도 이메일로 안내됩니다(이 화면은 발행 여부를 표시하지 않습니다).</p><p>카드 결제 최소금액은 1,000원입니다. 미만 청구서도 보관되며 자동 결제되지 않습니다.</p><button class="btn line" onclick="refreshBilling()">새로고침</button>'+window.billingCardHtml()+window.billingInvoicesHtml();
       else if(livePage==='status')body='<h1>서비스 상태</h1><div class="cc"><h2>이용 가능한 흐름</h2><p>브랜드 신청 → 운영자 승인 → 계정 생성 → 홈페이지 분석·프로필 저장 → 제품별 후보 추천 → Gmail 연결 → 아웃리치 초안 검토·발송 → 답장 수신(인박스 동기화) → 크리에이터 커뮤니티·캠페인 협업 → 월별 청구 확인</p></div><div class="cc"><h2>준비 중</h2><p>틱톡·인스타 계정 자동 검증과 자동 후보 수집(현재는 운영자 등록 후보 기준), 크리에이터 대금 지급 화면은 아직 공개 운영 대상이 아닙니다.</p><p>가입 과금은 실제 검증 가입이 기록될 때만 발생합니다.</p></div>';
-      else body='<p class="live-eyebrow">YOUR BRAND, IN GOOD COMPANY</p><h1>브랜드의 다음 연결을<br>만들어 보세요.</h1><p>'+(window.__ME.kind==='admin'?'관리자 ':'')+mailEscape(window.__ME.email)+' · 브랜드 <b>'+mailEscape(BRAND()||'')+'</b>'+(window.__ME.kind==='admin'?' <span class="cbt no" onclick="adminSwitchBrand()">브랜드 전환</span>':'')+'</p><div class="live-grid"><button class="cc" onclick="liveNav(\'learn\')"><h2>01. 브랜드 학습</h2><p>홈페이지 분석과 근거를 확인하고 저장하세요.</p></button><button class="cc" onclick="liveNav(\'mail\')"><h2>02. 메일링</h2><p>Gmail을 연결하고 초안을 검토한 뒤 발송하세요.</p></button></div><h2>theprlist에게 물어보세요</h2><p>저장된 브랜드 프로필을 참고해 답합니다. 대화로 메일을 발송하거나 결제를 실행하지 않습니다.</p>'+chatMessages.map(function(m){return '<div class="cc"><b>'+(m.role==='user'?'나':'theprlist')+'</b><p>'+mailEscape(m.content)+'</p></div>';}).join('')+'<form onsubmit="event.preventDefault();liveChat()"><input id="liveQuestion" maxlength="2000" placeholder="우리 브랜드를 소개하는 문구를 제안해 줘" required '+(chatBusy?'disabled':'')+'><button class="btn" '+(chatBusy?'disabled':'')+'>'+(chatBusy?'답변 중…':'질문하기')+'</button></form>';
+      else body=(function(){
+        var me=window.__ME;
+        var h='<p class="live-eyebrow">PR WORKSPACE</p><h1>다음 할 일</h1><p>'+(me.kind==='admin'?'관리자 ':'')+mailEscape(me.email)+' · 브랜드 <b>'+mailEscape(BRAND()||'')+'</b>'+(me.kind==='admin'?' <span class="cbt no" onclick="adminSwitchBrand()">브랜드 전환</span>':'')+'</p>';
+        // 실제 저장 데이터 기반 상태만 표시 — 로딩/0건/실패를 구분한다.
+        var pv=profileData?(profileData.version||0):null;
+        var pn=productsData?productsData.length:null;
+        var steps=[
+          {done:pv>0,label:'브랜드 학습 저장',
+           note:(profileError&&!profileData)?'× 프로필 상태를 불러오지 못했습니다 — 브랜드 학습에서 다시 시도하세요.'
+             :pv===null?'저장 상태 확인 중…'
+             :pv>0?'✓ 프로필 v'+pv+' 저장됨 — 초안·추천이 이 근거를 사용합니다.'
+             :'저장된 프로필 0건 — 홈페이지 분석 또는 직접 입력으로 저장하세요.',
+           act:'learn',cta:'브랜드 학습'},
+          {done:pn>0,label:'제품 등록과 제품 프로필',
+           note:pn===null?'제품 목록 불러오는 중…'
+             :pn>0?'✓ 제품 '+pn+'개 등록됨':'제품 0개 — 제품별 후보 추천의 출발점입니다.',
+           act:'products',cta:'제품·캠페인'},
+          {done:false,label:'후보 추천 → 선택 → 아웃리치 초안',
+           note:'제품 화면에서 후보를 선택하면 수신자·추천 근거·합류 링크가 초안에 담깁니다. 자동 발송은 없습니다.',
+           act:'products',cta:'후보 보기'},
+          {done:false,label:'Gmail 연결과 발송 검토',
+           note:'연결 상태·발신 주소·점진 발송 한도는 아웃리치·인박스 상단에서 확인합니다.',
+           act:'mail',cta:'아웃리치·인박스'},
+          {done:false,label:'월별 청구 확인',
+           note:'검증 가입 1명당 5,000원(부가세 포함) 월 합산 · 계산서 안내 운영 — 카드 등록은 필수가 아닙니다.',
+           act:'billing',cta:'월별 청구'}];
+        h+='<div class="cc">'+steps.map(function(s,i){return '<div class="todo'+(s.done?' done':'')+'"><span class="n">'+(s.done?'✓':(i+1))+'</span><div class="b"><b>'+s.label+'</b><small>'+s.note+'</small></div><button class="cbt" onclick="liveNav(\''+s.act+'\')">'+s.cta+'</button></div>';}).join('')+'</div>';
+        h+='<h2>theprlist에게 물어보세요</h2><p>저장된 브랜드 프로필을 참고해 답합니다. 대화로 메일을 발송하거나 결제를 실행하지 않습니다.</p>'+chatMessages.map(function(m){return '<div class="cc"><b>'+(m.role==='user'?'나':'theprlist')+'</b><p>'+mailEscape(m.content)+'</p></div>';}).join('')+'<form onsubmit="event.preventDefault();liveChat()"><input id="liveQuestion" maxlength="2000" placeholder="우리 브랜드를 소개하는 문구를 제안해 줘" required '+(chatBusy?'disabled':'')+'><button class="btn" '+(chatBusy?'disabled':'')+'>'+(chatBusy?'답변 중…':'질문하기')+'</button></form>';
+        return h;})();
       stage.innerHTML=nav+'<main class="live-main">'+body+'</main><footer class="live-footer"><a href="https://theprlist.net/privacy">개인정보처리방침</a> · <a href="https://theprlist.net/terms">이용약관</a> · <a href="mailto:chief@dinostudio.kr">문의</a></footer>';
       Object.keys(preserved).forEach(function(id){var el=document.getElementById(id);if(el)el.value=preserved[id];});
     };
     var previousReload=reloadBrand;
-    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';productsData=null;prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;candSelected={};brandCampaigns=null;collabOpen=null;window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;inboxShowAll=false;previousReload();if(window.__ME&&BRAND()){loadProfile();loadProducts();loadIdentity();}};
-    var style=document.createElement('style');style.textContent='body{background:#f5f4ef}.stage{display:block!important;overflow:auto!important;height:calc(100vh - 1px)!important}.live-head{padding:24px 5%;display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid #dadbd2;background:#fafbf5}.live-head>a{font-size:25px;font-weight:800;color:#163f35;text-decoration:none}.live-head span{font-size:12px;font-weight:400}.live-head nav{display:flex;gap:8px;flex-wrap:wrap}.live-main{max-width:1050px;margin:0 auto;padding:55px 24px 95px;font-size:15px;line-height:1.8}.live-main h1{font-size:40px;line-height:1.25;margin:0 0 25px}.live-main h2{font-size:21px;margin:18px 0 10px}.live-main p{margin:12px 0}.live-main .cc{background:#fff;border:1px solid #dadbd2;border-radius:12px;padding:24px;margin:15px 0;text-align:left}.live-main input,.live-main textarea{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid #aebcb1;border-radius:6px;margin:8px 0 14px;font:inherit}.live-main .btn,.live-main .cbt{font-size:14px;padding:10px 16px;cursor:pointer}.live-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.live-eyebrow{letter-spacing:.1em;color:#41684c}.live-footer{padding:20px 24px 75px;text-align:center}.live-main blockquote{padding:12px;border-left:3px solid #5e8c6a;color:#526157;overflow-wrap:anywhere}@media(max-width:700px){.live-head{display:block}.live-head nav{margin-top:15px}.live-main{padding-top:30px}.live-main h1{font-size:30px}.live-grid{grid-template-columns:1fr}}';document.head.appendChild(style);render();
+    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';productsData=null;prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;candSelected={};prodEditOpen={};brandCampaigns=null;collabOpen=null;window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;inboxShowAll=false;previousReload();if(window.__ME&&BRAND()){loadProfile();loadProducts();loadIdentity();}};
+    // 시각 정본은 live-theme.css(docs/UI_DESIGN_GUIDE.md) — 여기서는 표면
+    // 활성 클래스만 부여한다.
+    document.body.classList.add('live-surface');
+    render();
   }
 
   if(window.__SURFACE==='bjoin'){
@@ -1400,19 +1446,11 @@
     // 안 보이던 문제 — 크리에이터 표면 전용으로 밝은 배경·본문/제목/링크
     // 색을 명시한다(로그인 전후 공통, 이 표면에서만 주입되어 콘솔 등
     // 다른 표면에는 영향 없음).
+    // 시각 정본은 live-theme.css — 크리에이터 표면은 모바일 우선 폭만 보정.
+    document.body.classList.add('live-surface');
     var crStyle=document.createElement('style');
-    crStyle.textContent='body{background:#f7f6f1!important;color:#22261f!important}'
-      +'.stage{display:block!important;overflow:auto!important;height:auto!important;min-height:calc(100vh - 1px)}'
-      +'#stage main{color:#22261f;line-height:1.8}'
-      +'#stage h1,#stage h2{color:#163f35}'
-      +'#stage a{color:#2f6b53}'
-      +'#stage p{color:#22261f}'
-      +'#stage .cc{background:#fff;border:1px solid #dadbd2;border-radius:12px;padding:16px;margin:12px 0;color:#22261f}'
-      +'#stage input{background:#fff;color:#22261f;border:1px solid #aebcb1;border-radius:6px;padding:8px;font:inherit}'
-      +'#stage .btn{background:#163f35;color:#fff;border:0;border-radius:8px;padding:10px 16px;cursor:pointer}'
-      +'#stage .cbt{background:#e8ece5;color:#163f35;border-radius:8px;padding:8px 12px;cursor:pointer;display:inline-block}'
-      +'#stage .cbt.no{background:transparent;color:#5a6560}'
-      +'@media(max-width:420px){#stage main{padding:16px!important;margin-top:24px!important}}';
+    crStyle.textContent='.stage{height:auto!important;min-height:calc(100vh - 1px)}'
+      +'#stage main.live-main{max-width:640px;padding-top:20px}';
     document.head.appendChild(crStyle);
     var joinTarget=null, joinBrandInfo=null, myMemberships=null, magicSent=false;
     var commCells=null, commOpen=null;   // {cellId, name, msgs}
@@ -1593,28 +1631,48 @@
       return '<div class="cc">'+logo+'<b style="font-size:17px">'+mailEscape(b.name||b.brandId)+'</b>'+(b.tagline?'<p>'+mailEscape(b.tagline)+'</p>':'')+
         (membershipState!=='ready'?'<p>가입 여부는 가입 목록 조회가 끝나면 표시됩니다.</p>':joined?'<p>✓ 이미 이 브랜드의 PR 리스트 멤버입니다.</p>':'<button class="btn" onclick="creatorJoin(\''+b.brandId+'\')">이 브랜드 PR 리스트에 합류</button>')+'</div>';
     }
+    var creatorTab='brand';
+    window.crTab=function(t){creatorTab=t;render();};
+    function creatorHeadHtml(){
+      // 참여(또는 초대) 브랜드가 정체성의 중심 — 로고·이름 + 작은 theprlist.
+      var b=(joinTarget&&joinBrandInfo&&!joinBrandInfo.missing)?joinBrandInfo
+            :(myMemberships&&myMemberships[0])||null;
+      if(!b)return '<div class="crhead"><div><div class="bn">theprlist</div><div class="svc">CREATOR</div></div></div>';
+      var lg=b.logoUrl?'<img src="'+String(b.logoUrl).replace(/"/g,'')+'" alt="">':'';
+      return '<div class="crhead">'+lg+'<div><div class="bn">'+mailEscape(b.name||b.brandId||'')+'</div><div class="svc">with theprlist</div></div></div>';
+    }
     window.render=function(){
       document.querySelector('.svcbar').style.display='none';
       var body='';
       if(!window.__ME){
-        body='<h2>크리에이터 로그인</h2><p>비밀번호 없이 이메일 링크로 로그인해요.</p>'+
+        body=creatorHeadHtml()+
+          (joinBrandInfo&&!joinBrandInfo.missing?'<p>'+mailEscape(joinBrandInfo.name||'브랜드')+'의 PR 리스트 초대를 받으셨나요? 먼저 로그인해 주세요.</p>':'')+
+          '<h2>크리에이터 로그인</h2><p>비밀번호 없이 이메일 링크로 로그인해요.</p>'+
           (magicSent?'<div class="cc"><p>메일함의 로그인 링크를 확인하세요 (15분 유효).</p></div>':'')+
           '<div class="cc"><input id="crEmail" type="email" placeholder="you@email.com" style="width:100%;box-sizing:border-box;padding:12px;margin-bottom:10px"><button id="crLoginButton" class="btn" onclick="creatorMagic()">로그인 링크 받기</button><p id="crLoginStatus" role="status" aria-live="polite"></p></div>';
-        if(joinBrandInfo&&!joinBrandInfo.missing)body='<p>'+mailEscape(joinBrandInfo.name||'브랜드')+'의 PR 리스트 초대를 받으셨나요? 먼저 로그인해 주세요.</p>'+body;
       }else{
         var joinedIds=(myMemberships||[]).map(function(m){return m.brandId;});
-        body='<h2>'+mailEscape(window.__ME.email)+'</h2>'+conversationLanguageHtml()+
-          (joinTarget?brandCardHtml(joinBrandInfo,joinedIds.indexOf(joinTarget)>=0):'')+
-          '<h2 style="margin-top:26px">내 브랜드 멤버십</h2>'+
-          membershipNoticeHtml()+
-          ((myMemberships&&myMemberships.length)?myMemberships.map(function(m){
-            var lg=m.logoUrl?'<img src="'+m.logoUrl.replace(/"/g,'')+'" alt="" style="width:26px;height:26px;border-radius:6px;object-fit:cover;vertical-align:-7px;margin-right:8px">':'';
-            return '<div class="cc">'+lg+'<b>'+mailEscape(m.name||m.brandId)+'</b>'+(m.tagline?' · '+mailEscape(m.tagline):'')+' <span class="cbt line" onclick="crDm(\''+esc(m.brandId)+'\')">담당자 DM</span></div>';}).join('')
-           :membershipState==='ready'?'<div class="cc"><p>아직 가입한 브랜드가 없어요. 브랜드의 초대 링크로 합류할 수 있습니다.</p></div>':'')+
-          campHtml()+offersHtml()+commHtml()+
-          '<div class="cc"><p style="font-size:12px">지원→선정→수수료 합의→샘플→Spark 코드·콘텐츠 제출까지 여기서 진행돼요. 대금 지급(정산 송금) 화면은 공개 준비 중입니다.</p></div>';
+        var tabs=[['brand','브랜드'],['campaigns','캠페인'],['collabs','내 협업'],['community','커뮤니티·메시지']];
+        var tabNav='<div class="crtabs" role="tablist">'+tabs.map(function(t){return '<button role="tab" aria-selected="'+(creatorTab===t[0])+'" class="'+(creatorTab===t[0]?'on':'')+'" onclick="crTab(\''+t[0]+'\')">'+t[1]+'</button>';}).join('')+'</div>';
+        var content='';
+        if(creatorTab==='brand'){
+          content=(joinTarget?brandCardHtml(joinBrandInfo,joinedIds.indexOf(joinTarget)>=0):'')+
+            '<h2>내 브랜드 멤버십</h2>'+membershipNoticeHtml()+
+            ((myMemberships&&myMemberships.length)?myMemberships.map(function(m){
+              var lg=m.logoUrl?'<img src="'+m.logoUrl.replace(/"/g,'')+'" alt="" style="width:26px;height:26px;border-radius:6px;object-fit:cover;vertical-align:-7px;margin-right:8px">':'';
+              return '<div class="cc">'+lg+'<b>'+mailEscape(m.name||m.brandId)+'</b>'+(m.tagline?' · '+mailEscape(m.tagline):'')+' <span class="cbt" onclick="crDm(\''+esc(m.brandId)+'\')">담당자 DM</span></div>';}).join('')
+             :membershipState==='ready'?'<div class="cc"><p>아직 가입한 브랜드가 없어요. 브랜드의 초대 링크로 합류할 수 있습니다.</p></div>':'');
+        }else if(creatorTab==='campaigns'){
+          content=(joinTarget?brandCardHtml(joinBrandInfo,joinedIds.indexOf(joinTarget)>=0):'')+campHtml();
+        }else if(creatorTab==='collabs'){
+          content='<p style="font-size:13px;color:var(--ink-2,#566274)">진행 순서: 지원 → 선정 → 조건 확인(수수료 합의) → 샘플 배송 → 콘텐츠·Spark 코드 제출 → 완료. 각 협업 카드에 지금 할 다음 행동이 표시됩니다.</p>'+offersHtml()+
+            '<div class="cc"><p style="font-size:12px">대금 지급(정산 송금) 화면은 공개 준비 중입니다.</p></div>';
+        }else{
+          content='<p style="font-size:13px;color:var(--ink-2,#566274)">커뮤니티(라운지)는 브랜드 멤버가 함께 보는 공간, 담당자 DM은 1:1 대화입니다. 메시지는 원문과 함께 내 언어 번역이 표시됩니다.</p>'+commHtml();
+        }
+        body=creatorHeadHtml()+'<p style="margin:0 0 4px;font-size:13px;color:var(--ink-2,#566274)">'+mailEscape(window.__ME.email)+'</p>'+conversationLanguageHtml()+tabNav+content;
       }
-      document.getElementById('stage').innerHTML='<main style="max-width:650px;margin:60px auto;padding:24px;line-height:1.8"><h1>theprlist <span style="font-size:12px;font-weight:400">/ creator</span></h1>'+body+'<p style="margin-top:34px"><a href="https://theprlist.net">서비스 소개</a> · <a href="https://theprlist.net/privacy">개인정보처리방침</a></p></main>';
+      document.getElementById('stage').innerHTML='<main class="live-main">'+body+'<p style="margin-top:34px"><a href="https://theprlist.net">서비스 소개</a> · <a href="https://theprlist.net/privacy">개인정보처리방침</a></p></main>';
     };
     render();loadCreatorData();
   }

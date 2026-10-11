@@ -892,20 +892,36 @@
   window.dispRefresh = function (id) {
     req("GET", "/dispatch-batches/" + id).then(function () { loadDispatch(); }).catch(function () {});
   };
+  function dispatchHeaders() {
+    var h = {}, token = jwtGet();
+    if (token) h.Authorization = 'Bearer ' + token;
+    return h;
+  }
+  window.dispExport = function(id) {
+    var brand = BRAND(), token = jwtGet();
+    return fetch(API+'/dispatch-batches/'+encodeURIComponent(id)+'/export.csv', {headers:dispatchHeaders()})
+      .then(function(r){if(!r.ok)throw new Error('CSV 내보내기 실패 ('+r.status+')');return r.blob();})
+      .then(function(blob){
+        if(BRAND()!==brand || jwtGet()!==token)return;
+        var url=URL.createObjectURL(blob), a=document.createElement('a');
+        a.href=url;a.download=id+'.csv';a.click();setTimeout(function(){URL.revokeObjectURL(url);},1000);
+      }).catch(function(e){if(BRAND()===brand && jwtGet()===token)toast('내보내기 실패',mailEscape(e.message));});
+  };
   window.dispImport = function (input, id) {
-    if (!input.files || !input.files[0]) return;
-    var fd = new FormData();
-    fd.append("file", input.files[0]);
-    fetch(API + "/dispatch-batches/" + id + "/import", { method: "POST", body: fd })
-      .then(function (r) { return r.json(); })
-      .then(function (r) {
+    if (!input.files || !input.files[0]) return Promise.resolve();
+    if(input.files[0].size>262144){toast('업로드 실패','CSV는 256KB 이하만 허용합니다.');return Promise.resolve();}
+    var fd = new FormData(), brand=BRAND(), token=jwtGet();
+    fd.append('file', input.files[0]);
+    return fetch(API + '/dispatch-batches/' + encodeURIComponent(id) + '/import', { method:'POST', headers:dispatchHeaders(), body:fd })
+      .then(function(r){return r.json().then(function(data){if(!r.ok)throw new Error(typeof data.detail==='string'?data.detail:'결과 반영 실패');return data;});})
+      .then(function(r){
+        if(BRAND()!==brand || jwtGet()!==token)return;
         loadDispatch();
-        toast("결과 반영", "업데이트 <b>" + r.updated + "건</b>" +
-          (r.skipped.length ? " · 매칭 안 됨 " + r.skipped.length + "건" : ""));
-      }).catch(function () { toast("업로드 실패", "CSV 형식(handle,status,…)을 확인해 주세요."); });
+        toast('결과 반영','업데이트 '+r.updated+'건 · 이미 반영 '+(r.unchanged||0)+'건');
+      }).catch(function(e){if(BRAND()===brand && jwtGet()===token)toast('업로드 실패',mailEscape(e.message));});
   };
   function funnelBar(f) {
-    var steps = [["초대", f.invited], ["수락", f.accepted], ["배송", f.shipped],
+    var steps = [["대상", f.targeted], ["초대 확인", f.invited], ["수락", f.accepted], ["배송", f.shipped],
                  ["도착", f.delivered], ["게시", f.posted]];
     return '<div style="display:flex;gap:10px;margin-top:6px">' + steps.map(function (s) {
       return "<span style='font-size:10.2px'><b>" + s[1] + "</b> " + s[0] + "</span>";
@@ -915,32 +931,33 @@
   function dispatchCard() {
     var L = window.__DISPATCH, inner;
     if (L === null) {
-      inner = '<p style="font-size:10.6px;color:var(--n600)">서버 연결 시 셀 멤버에게 틱톡샵 무료 샘플 협업을 대량 발송할 수 있어요.</p>';
+      inner = '<p style="font-size:10.6px;color:var(--n600)">서버 연결 시 셀 멤버에게 틱톡샵 협업 대상 CSV와 결과를 관리할 수 있어요.</p>';
     } else {
       var items = L.slice(0, 3).map(function (b) {
         var act = "";
         if (b.state === "PENDING_GATE")
           act = ' <span class="cbt no" onclick="dispRefresh(\'' + b.batchId + '\')">승인 확인</span>' +
                 ' <span style="font-size:10px;color:var(--n600)">— 승인함에서 결정하세요</span>';
-        else if (b.state === "SENDING" || b.state === "DONE")
-          act = ' <a class="cbt" style="text-decoration:none" href="' + API + "/dispatch-batches/" + b.batchId + '/export.csv" target="_blank">셀러센터 CSV</a>' +
+        else if (b.state === "READY" || b.state === "SENDING" || b.state === "DONE")
+          act = ' <button class="cbt" onclick="dispExport(\'' + b.batchId + '\')">셀러센터 CSV</button>'  +
                 ' <label class="cbt no" style="cursor:pointer">결과 업로드<input type="file" accept=".csv" style="display:none" onchange="dispImport(this,\'' + b.batchId + '\')"></label>';
         else if (b.state === "HELD")
           act = ' <span style="font-size:10px;color:var(--n600)">보류됨 — 외부 무통지</span>';
         return "<div style='margin-top:9px;padding-top:9px;border-top:1px solid var(--n100,#eee)'>" +
-          "<b>" + b.product + "</b> · " + b.commissionPct + "% · " +
+          "<b>" + mailEscape(b.product) + "</b> · " + b.commissionPct + "% · " +
           "<span class='mono' style='font-size:10px'>" + b.state + "</span>" + act +
           funnelBar(b.funnel) +
-          (b.gmv ? "<div style='font-size:10.2px;margin-top:3px'>판매 <b>₩" + b.gmv.toLocaleString() + "</b> · 커미션 ₩" + b.commission.toLocaleString() + "</div>" : "") +
+          "<div style='font-size:10px'>CSV 증빙별 집계 · 미기록 단계와 과거 자료는 누락될 수 있음 · 플랫폼 검증 아님</div>" +
+          (b.gmv ? "<div style='font-size:10.2px;margin-top:3px'>보고 GMV <b>" + b.gmv.toLocaleString() + "</b> · 커미션 " + b.commission.toLocaleString() + " · 통화·반품 대사 별도</div>" : "") +
           "</div>";
       }).join("");
-      inner = "<p>셀 멤버를 선정해 <b>무료 샘플 + 커미션 협업</b>을 셀러센터로 대량 발송합니다. " +
-        "발송은 항상 <b>승인함</b>을 거치고, 90일 내 재발송은 자동 제외돼요.</p>" +
+      inner = "<p>셀 멤버를 선정해 <b>무료 샘플 + 커미션 협업</b>의 대상 CSV를 준비합니다. 실제 초대는 셀러센터에서 별도로 진행합니다. " +
+        "CSV 준비는 <b>승인함</b>을 거칩니다. 승인·다운로드는 초대 완료가 아닙니다.</p>" +
         '<div style="display:flex;gap:6px;margin-top:9px"><input id="dspProd" placeholder="틱톡샵 상품명 또는 ID" style="flex:2">' +
         '<input id="dspCap" placeholder="정원" value="30" style="width:64px">' +
         '<span class="cbt" onclick="dispCreate()">배치 만들기</span></div>' + items;
     }
-    return '<div class="cc" style="margin-bottom:12px"><div class="t">샘플 대량 발송 — 틱톡샵 타겟 협업</div>' + inner + "</div>";
+    return '<div class="cc" style="margin-bottom:12px"><div class="t">틱톡샵 협업 — CSV 준비·결과 관리</div>' + inner + "</div>";
   }
 
   try {

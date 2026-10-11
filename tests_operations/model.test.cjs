@@ -1,0 +1,14 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const M=require('../tools/operations-review/model.js');
+const p={target:30000,retained:9000,conversion:5,available:'',billable:45000,unit:5000,vatIncluded:true,costPerContact:20,sampleCount:1000,sampleCost:10000,hours:500,hourly:20000,fixed:1000000,replyRate:3,replyCapacity:10000,shipCapacity:1000,reviewCapacity:2000,contentCount:2000};
+test('대표: 3만 고유 목표와 과금 가입 건수는 독립',()=>{const r=M.forecast(p);assert.equal(r.needed,21000);assert.equal(r.contacts,420000);assert.equal(r.billable,45000);assert.equal(r.target,30000);assert(r.blockers.includes('연락 가능한 고유 공급량 미확인'));});
+test('재무: 부가세 포함 청구액은 수익·현금수납과 다름',()=>{const r=M.forecast(p);assert.equal(r.gross,225000000);assert.equal(r.net,r.gross/1.1);assert.equal(r.contribution,r.net-r.cost);});
+test('실무: 0전환·빈값·음수·과도한 유지 인원을 조용히 0으로 처리하지 않음',()=>{assert.equal(M.forecast({...p,conversion:0}).contacts,null);for(const patch of [{unit:''},{retained:30001},{hours:-1},{target:NaN},{sampleCount:1.5}])assert.throws(()=>M.forecast({...p,...patch}));});
+test('물류·검수: 병목을 이메일 처리량으로 숨기지 않음',()=>{const r=M.forecast({...p,shipCapacity:999,reviewCapacity:1999});assert(r.blockers.includes('출고 용량 부족'));assert(r.blockers.includes('검수 용량 부족'));assert(r.blockers.includes('회신 처리 용량 부족'));});
+test('브랜드: 준비되지 않은 항목은 미확인, 공개 준비 완료 아님',()=>{assert.equal(M.readiness({}).ready,false);assert.equal(M.readiness({contract:true,product:true,offer:true,stock:true,guide:true,owner:true,basis:true}).ready,true);});
+test('크리에이터: 다른 브랜드 동의·부하·거부를 존중',()=>{const c={country:'US',categories:['beauty'],capacity:2,active:1,crossBrandPermission:true};const b={country:'US',category:'beauty'};assert(M.match(c,b).eligible);for(const patch of [{optout:true},{crossBrandPermission:false},{active:2},{country:'TH'}])assert(!M.match({...c,...patch},b).eligible);});
+const a={id:'1',creator:'same',brand:'a',campaign:'a1',stage:'confirmed',at:'2026-10-01T00:00:00+09:00'};
+test('데이터: 한국시간 월 경계·중복 이벤트·브랜드별 참가와 전체 고유 분리',()=>{const events=[a,a,{...a,id:'2',brand:'b',campaign:'b1'},{...a,id:'3',creator:'old',at:'2026-09-30T23:59:59+09:00'}];const r=M.metrics(events,'2026-10-01T00:00:00+09:00','2026-11-01T00:00:00+09:00');assert.equal(r.confirmed.unique,1);assert.equal(r.confirmed.memberships,2);assert.equal(r.confirmed.events,2);assert.equal(r.posted.unique,0);assert.equal(M.metrics(events,'2026-10-01T00:00:00+09:00','2026-11-01T00:00:00+09:00','a').confirmed.memberships,1);});
+test('데이터: 식별자 충돌·시간대 누락은 오류',()=>{assert.throws(()=>M.metrics([a,{...a,brand:'b'}],'2026-10-01','2026-11-01'));assert.throws(()=>M.metrics([{...a,at:'2026-10-02'}],'2026-10-01','2026-11-01'));});
+
+test('크리에이터: 참여 용량·관심정보 미확인은 자동 추천 제외',()=>{assert.equal(M.match({country:'US',crossBrandPermission:true},{country:'US',category:'beauty'}).eligible,false);});

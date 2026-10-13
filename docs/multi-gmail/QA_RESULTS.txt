@@ -1,0 +1,19 @@
+Theprlist multi-Gmail review — local only
+Rollback tag: mail-multi-account-base-20261014
+API: 178 passed (isolated PostgreSQL database).
+UI: 46 passed (Node VM).
+Console build: TypeScript check + Vite build passed.
+External email calls: mocked only; no real email sent.
+
+Five perspectives:
+Owner — five account visibility, explicit sender selection.
+Brand — other brand mailbox assignment rejected.
+Operator — missing/revoked sender blocked; queue keeps pinned sender; no rotation.
+Creator — opt-out prevents provider call; reply keeps mailbox, subject, Gmail thread.
+Security — OAuth allows additional dedicated mailbox; cross-brand mailbox conflict preserved; repeated reply sends rejected.
+
+Production blockers:
+Release approval; production OAuth configuration and encrypted-token key check;
+user first login and each account Google consent. No production migration/deployment performed.
+Existing unassigned approved batches remain stopped; manual review required.
+Application warmup and recipient caps unchanged. 10,000 new recipients/day is not enabled.

@@ -605,8 +605,10 @@
     var subject=document.getElementById('outSubject').value.trim();
     var body=document.getElementById('outBody').value.trim();
     if(!recipients.length || recipients.length>20 || !subject || !body) return toast('입력 확인','수신자는 한 번에 최대 20명이며, 제목과 본문을 입력해 주세요.');
+    var sender=document.getElementById('outSender');
+    if(!sender || !sender.value)return toast('발신 계정 선택','연결된 Gmail 발신 계정을 선택하세요.');
     outreachBusy=true;
-    req('POST','/brands/'+BRAND()+'/outreach',{recipients:recipients,subject:subject,body:body}).then(function(){
+    req('POST','/brands/'+BRAND()+'/outreach',{recipients:recipients,subject:subject,body:body,gmail_account_id:sender.value}).then(function(){
       ['outRecipients','outSubject','outBody'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
       loadOutreach(); toast('초안 저장','수신자와 내용을 확인한 뒤 발송해 주세요.');
     }).catch(function(){toast('저장 실패','로그인 상태와 이메일 형식을 확인해 주세요.');}).finally(function(){outreachBusy=false;});
@@ -636,13 +638,14 @@
     var rows=(outreachData && outreachData.batches || []).filter(function(b){return /^[a-f0-9-]{36}$/.test(b.id);}).map(function(b){
       var pending=b.recipients.some(function(r){return r.state==='pending';});
       return '<details style="margin-top:12px;border-top:1px solid #ddd;padding-top:12px"><summary>'+mailEscape(b.subject)+' · '+b.recipients.length+'명 · '+({draft:'초안',approved:'발송 승인됨',cancelled:'취소됨'}[b.state]||'')+'</summary>'+
-        '<p>'+b.recipients.map(function(r){return mailEscape(r.email)+' — '+(states[r.state]||'확인 필요');}).join('<br>')+'</p><pre style="white-space:pre-wrap;font:inherit">'+mailEscape(b.body)+'</pre><p style="font-size:12px">수신 거부 링크가 본문 끝에 자동으로 추가됩니다.</p>'+
+        '<p>발신 계정: '+mailEscape(((window.__GMAIL&&window.__GMAIL.accounts||[]).find(function(a){return a.accountId===b.gmailAccountId;})||{}).email||'연결 상태 확인 필요')+'</p>'+'<p>'+b.recipients.map(function(r){return mailEscape(r.email)+' — '+(states[r.state]||'확인 필요');}).join('<br>')+'</p><pre style="white-space:pre-wrap;font:inherit">'+mailEscape(b.body)+'</pre><p style="font-size:12px">수신 거부 링크가 본문 끝에 자동으로 추가됩니다.</p>'+
         (pending && b.state!=='cancelled'?'<button class="btn" onclick="outreachSend(\''+b.id+'\')">'+(b.state==='draft'?'내용 승인하고 발송':'남은 수신자 발송')+'</button> ':'')+
         (b.state==='draft'?'<button class="cbt no" onclick="outreachCancel(\''+b.id+'\')">초안 취소</button>':'')+'</details>';
     }).join('');
     return '<div class="cc"><div class="t">아웃리치 메일</div><p>수신자와 내용을 저장한 뒤 확인하고 발송합니다. 발송 한도를 넘긴 수신자는 대기하며, 수신 거부·90일 내 중복 발송은 제외합니다.</p>'+
       '<label>초안에 사용할 제품<select id="outProduct"><option value="">브랜드 공통 제안</option>'+(productsData||[]).map(function(p){return '<option value="'+mailEscape(p.productId)+'">'+mailEscape(p.name)+'</option>';}).join('')+'</select></label><p>제품을 선택하면 저장된 제품 프로필도 AI 초안에 반영합니다.</p>'+
       '<label>협업 제안 내용<textarea id="outBrief" maxlength="2000" placeholder="제안할 제품, 협업 방식, 언어를 적어 주세요."></textarea></label><button id="outComposeBtn" class="cbt no" onclick="outreachCompose()" '+(composeBusy?'disabled':'')+'>'+(composeBusy?'AI 작성 중…':'AI로 제안 메일 작성')+'</button><p>AI는 저장한 브랜드 정보로 초안만 작성합니다. 내용을 확인하고 저장한 뒤 발송하세요.</p>'+
+      '<label>발신 Gmail<select id="outSender"><option value="">발신 계정 선택</option>'+(window.__GMAIL&&window.__GMAIL.accounts||[]).map(function(a){return '<option value="'+mailEscape(a.accountId)+'" '+(a.sendingPaused?'disabled':'')+'>'+mailEscape(a.email)+(a.sendingPaused?' · 발송 중지':' · 잔여 '+a.remainingToday+'통')+'</option>';}).join('')+'</select></label>'+
       '<label>수신자 이메일 · 최대 20명<textarea id="outRecipients" rows="3" style="width:100%;box-sizing:border-box" placeholder="이메일을 줄바꿈 또는 쉼표로 구분"></textarea></label>'+
       '<label>제목<input id="outSubject" maxlength="150" style="width:100%;box-sizing:border-box"></label>'+
       '<label>본문<textarea id="outBody" rows="6" style="width:100%;box-sizing:border-box"></textarea></label>'+
@@ -711,7 +714,7 @@
       gmailSyncNotice=r.imported+'통 가져왔습니다.'+(r.hasMore?' 이전 메일이 더 있습니다. 다시 동기화하면 이어서 가져옵니다.':'');loadInbox();loadGmail();
     }catch(e){if(jwtGet()===current)gmailSyncNotice=e.message;}finally{gmailSyncBusy=false;render();}
   };
-  setInterval(function(){if(window.__ME&&BRAND()&&livePage==='mail'&&window.__GMAIL&&window.__GMAIL.accounts[0]&&window.__GMAIL.accounts[0].canRead)window.gmailSync();},60000);
+  setInterval(function(){if(window.__ME&&BRAND()&&livePage==='mail'&&window.__GMAIL&&window.__GMAIL.accounts.some(function(a){return a.canRead;}))window.gmailSync();},60000);
   window.gmailRefresh=loadGmail;
   window.gmailSending=function(id,paused){req('POST','/gmail/accounts/'+id+'/sending',{paused:paused}).then(loadGmail).catch(function(e){toast('변경 실패',mailEscape(e.message));});};
   window.gmailDisconnect = function (id) {
@@ -808,8 +811,7 @@
           : '<div style="margin-top:9px"><span class="cbt" onclick="gmailConnect()">🔐 구글로 연결</span>' +
             ' <span class="cbt no" onclick="location.reload()">새로고침</span></div>');
     } else {
-      var a = g.accounts[0];
-      inner = '<p><b>실제 발신 주소: '+mailEscape(a.email)+'</b></p><p>Google Workspace 회사 도메인 또는 연결된 Gmail 계정으로 발송합니다.</p>'+
+      inner = g.accounts.map(function(a){return '<p><b>실제 발신 주소: '+mailEscape(a.email)+'</b></p><p>Google Workspace 회사 도메인 또는 연결된 Gmail 계정으로 발송합니다.</p>'+
         '<p>오늘 Gmail 접수 '+a.sentToday+' / '+a.todayCap+'통 · 남은 한도 '+(a.remainingToday==null?'확인 중':a.remainingToday)+'통</p>'+
         '<p>점진 발송 한도 '+(a.warmupDay==null?'확인 중':a.warmupDay)+'단계 — 새 계정 보호를 위해 실제 발송한 날에만 하루 한도가 2 → 4 → 6 → 8 → 12 → 16 → 20통으로 늘어납니다.</p>'+
         '<p>전달률·스팸함 도착률·반송률: 아직 측정되지 않았습니다. 한도 단계 완료나 수신함 도착을 보장하지 않습니다.</p>'+
@@ -819,7 +821,7 @@
         '<button class="cbt" onclick="gmailSending(\''+a.accountId+'\','+(!a.sendingPaused)+')">'+(a.sendingPaused?'확인 후 발송 재개':'발송 일시 중지')+'</button> '+
         '<button class="cbt no" onclick="gmailRefresh()">연결·한도 새로고침</button> '+
         '<button class="cbt no" onclick="gmailDisconnect(\''+a.accountId+'\')">연결 해제</button>'+
-        (g.accounts.length>1?'<p>여러 계정 중 위 주소를 발신자로 사용합니다. 변경하려면 현재 발신 계정을 해제하세요.</p>':'');
+        '<hr>';}).join('')+'<button class="cbt" onclick="gmailConnect()">Google 계정 추가 연결</button><p>초안별로 발신 계정을 선택합니다. 한도 소진 시 다른 계정으로 자동 변경하지 않습니다.</p>';
     }
     return '<div class="cc" style="margin-bottom:12px"><div class="t">지메일 연동 — 구글 로그인으로 브랜드 명의 발송</div>' +
       '<div class="gmail-disclosure"><p><b>연결 전 확인</b> · 이 브랜드가 승인한 메일을 선택한 Google 계정으로 발송합니다. 받은편지함의 최근 30일 메일은 발신자·수신자·제목·본문·시각·대화 식별자를 theprlist 서버에 저장해 이 브랜드의 인박스에 표시합니다. 업무용 계정을 연결해 주세요.</p>'+
@@ -846,7 +848,7 @@
           return "<div style='margin:5px 0;text-align:" + (mine ? "right" : "left") + "'>" +
             "<span style='display:inline-block;max-width:82%;padding:6px 9px;border-radius:9px;font-size:10.6px;" +
             (mine ? "background:var(--n100,#eee)" : "background:var(--sand,#F4EDE3)") + "'>" +
-            mailEscape(m.body) + "<span style='font-size:9px;color:var(--n600)'>" + st + "</span></span>" + (m.state === "pending_gate" ? ' <button class="cbt" onclick="inboxSend(\'' + t.threadId + '\',' + Number(m.msgId) + ')">승인하고 발송</button>' : '') + "</div>";
+            "<small>"+mailEscape(mine?(m.fromEmail||((window.__GMAIL&&window.__GMAIL.accounts||[]).find(function(a){return a.accountId===m.gmailAccountId;})||{}).email||"발신 계정 확인 필요"):(m.toEmail||"수신 계정 확인 필요"))+"</small><br>"+mailEscape(m.body) + "<span style='font-size:9px;color:var(--n600)'>" + st + "</span></span>" + (m.state === "pending_gate" ? ' <button class="cbt" onclick="inboxSend(\'' + t.threadId + '\',' + Number(m.msgId) + ')">승인하고 발송</button>' : '') + "</div>";
         }).join("");
         row += "<div style='margin-top:6px'>" + msgs +
           '<div style="display:flex;gap:6px;margin-top:7px"><input id="ibxBody" placeholder="답장 쓰기 — 승인함을 거쳐 발송됩니다" style="flex:1">' +

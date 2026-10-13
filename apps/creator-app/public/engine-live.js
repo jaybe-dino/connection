@@ -813,7 +813,7 @@
     } else {
       inner = g.accounts.map(function(a){return '<p><b>실제 발신 주소: '+mailEscape(a.email)+'</b></p><p>Google Workspace 회사 도메인 또는 연결된 Gmail 계정으로 발송합니다.</p>'+
         '<p>오늘 Gmail 접수 '+a.sentToday+' / '+a.todayCap+'통 · 남은 한도 '+(a.remainingToday==null?'확인 중':a.remainingToday)+'통</p>'+
-        '<p>점진 발송 한도 '+(a.warmupDay==null?'확인 중':a.warmupDay)+'단계 — 새 계정 보호를 위해 실제 발송한 날에만 하루 한도가 2 → 4 → 6 → 8 → 12 → 16 → 20통으로 늘어납니다.</p>'+
+        '<p>계정당 시스템 일일 상한 '+a.todayCap+'통입니다. Google 계정의 실제 남은 한도는 별도로 적용되며, 위 수치는 Theprlist 발송 기록 기준입니다.</p>'+
         '<p>전달률·스팸함 도착률·반송률: 아직 측정되지 않았습니다. 한도 단계 완료나 수신함 도착을 보장하지 않습니다.</p>'+
         (a.sendingPaused?'<p role="alert">발송 일시 중지: '+mailEscape(a.pauseReason)+'</p>':'')+
         (a.canRead?'<p>최근 30일 중 최신 10통을 먼저 확인하고, 이전 메일이 있으면 10통을 추가 확인합니다. 이 화면을 열어 두면 1분마다 동기화합니다. 첨부파일·읽음 표시·삭제는 Gmail에서 관리하세요.</p><p>마지막 동기화: '+mailEscape(a.syncedAt?new Date(a.syncedAt).toLocaleString():'아직 없음')+'</p><button class="cbt" onclick="gmailSync()" '+(gmailSyncBusy?'disabled':'')+'>받은 메일 동기화</button>':'<p>수신 권한이 없습니다. 받은 메일도 관리하려면 Google 계정을 다시 연결하고 읽기 권한을 허용하세요.</p>')+

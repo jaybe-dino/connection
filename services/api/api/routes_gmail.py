@@ -106,7 +106,12 @@ def _dec(v: str) -> str:
 def _acct_out(r: dict) -> dict:
     today = datetime.now(UTC).date()
     completed_days = max(0, r.get('warmup_days', 0) - int(r.get('warmup_last_date') == today))
-    cap = WARMUP_PLAN[min(completed_days, len(WARMUP_PLAN)-1)]
+    # Explicit operating limit approved by the owner: 200/account/day.
+    # Lower overrides are allowed; higher values require a separate reviewed change.
+    try:
+        cap = max(0, min(200, int(os.environ.get('GMAIL_DAILY_CAP', '200'))))
+    except ValueError:
+        cap = 0  # Invalid configuration must never grant capacity.
     sent = r["sent_today"] if r["sent_date"] == datetime.now(UTC).date() else 0
     return {"accountId": str(r["account_id"]), "brandId": r["brand_id"],
             "email": r["email"], "state": r["state"],
@@ -117,7 +122,8 @@ def _acct_out(r: dict) -> dict:
             "syncError": r.get("sync_error", ""),
             "remainingToday": max(0, cap-sent) if not r.get('sending_paused') else 0,
             "sendingPaused": r.get('sending_paused',False), "pauseReason": r.get('pause_reason',''),
-            "warmupDay": completed_days+1, "warmupPlan": list(WARMUP_PLAN),
+            "warmupDay": completed_days+1, "warmupPlan": [cap],
+            "capacitySource": "application_limit_not_provider_remaining",
             "deliveryVerified": False, "healthStatus": "unverified",
             "replyTo": (f"reply+{r['brand_id']}@{REPLY_DOMAIN}"
                         if _inbound_ready() else r["email"])}

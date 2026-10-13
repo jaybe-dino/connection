@@ -1,6 +1,6 @@
 Theprlist multi-Gmail review — local only
 Rollback tag: mail-multi-account-base-20261014
-API: 178 passed (isolated PostgreSQL database).
+API: 180 passed (isolated PostgreSQL database).
 UI: 46 passed (Node VM).
 Console build: TypeScript check + Vite build passed.
 External email calls: mocked only; no real email sent.
@@ -16,4 +16,4 @@ Production blockers:
 Release approval; production OAuth configuration and encrypted-token key check;
 user first login and each account Google consent. No production migration/deployment performed.
 Existing unassigned approved batches remain stopped; manual review required.
-Application warmup and recipient caps unchanged. 10,000 new recipients/day is not enabled.
+Owner-approved initial application daily cap: 200 per account. 200-used blocks provider calls; invalid configuration fails closed; higher overrides clamp to 200. Recipient cap remains 20 per reviewed draft. 10,000 new recipients/day is not enabled.

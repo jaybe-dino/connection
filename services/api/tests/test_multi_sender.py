@@ -121,3 +121,19 @@ def test_transport_returns_selected_mailbox_and_provider_thread(client,setup,mon
     assert result['fromEmail']=='qa4@sender.example'
     assert result['accountId']==setup[4] and result['threadId']=='mock-thread'
     assert len(calls)==1
+
+def test_200_daily_limit_enforced_without_rotating(client,setup,monkeypatch):
+    from datetime import datetime, UTC
+    with connect() as c:
+        c.execute("UPDATE gmail_accounts SET sent_today=200,sent_date=%s WHERE account_id=%s",(datetime.now(UTC).date(),setup[0]))
+    calls=[]
+    monkeypatch.setattr(httpx,'post',lambda *a,**k:calls.append(a))
+    with connect() as c:
+        assert g.send_via_brand_gmail(c,'sender-qa','quota@qa.example','QA','Mock',account_id=setup[0]) is None
+    assert calls==[]
+
+def test_invalid_or_higher_daily_cap_fails_closed_or_clamps(client,setup,monkeypatch):
+    with connect() as c: row=c.execute('SELECT * FROM gmail_accounts WHERE account_id=%s',(setup[1],)).fetchone()
+    monkeypatch.setenv('GMAIL_DAILY_CAP','invalid');assert g._acct_out(row)['todayCap']==0
+    monkeypatch.setenv('GMAIL_DAILY_CAP','2000');assert g._acct_out(row)['todayCap']==200
+    monkeypatch.setenv('GMAIL_DAILY_CAP','100');assert g._acct_out(row)['todayCap']==100

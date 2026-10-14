@@ -16,7 +16,7 @@ test('draft requires sender and transmits selected account without sending',asyn
  assert.equal(calls.length,1);assert.equal(calls[0].p.gmail_account_id,'chosen');assert.ok(!calls[0].path.endsWith('/send'));
 });
 test('200-recipient review and batch pause controls are visible',()=>{
- const c={window:{__ME:{kind:'admin'},__GMAIL:{accounts:[{accountId:'a',email:'qa@example.com',remainingToday:200}]}},outreachData:{batches:[{id:'00000000-0000-0000-0000-000000000001',subject:'QA',body:'Review',state:'approved',paused:true,recipients:[{email:'c@example.com',state:'pending'}]}]},BRAND:()=> 'qa',outreachTargetBrand:'',outreachTargetProducts:[],outreachTargets:[],mailEscape:x=>String(x),productsData:[],composeBusy:false,outreachError:'',outreachLoading:false};
+ const c={window:{__ME:{kind:'admin'},__GMAIL:{accounts:[{accountId:'a',email:'qa@example.com',remainingToday:200}]}},outreachData:{batches:[{id:'00000000-0000-0000-0000-000000000001',subject:'QA',body:'Review',state:'approved',paused:true,recipients:[{email:'c@example.com',state:'pending'}]}]},BRAND:()=> 'qa',outreachTargetBrand:'',outreachTargetProducts:[],outreachTargets:[],mailEscape:x=>String(x),productsData:[],bulkCard:()=>'',composeBusy:false,outreachError:'',outreachLoading:false};
  vm.createContext(c);vm.runInContext(source.slice(source.indexOf('  function outreachCard()'),source.indexOf('  var gmailLoadState=')),c);
  const html=c.outreachCard();assert.ok(html.includes('최대 200명'));assert.ok(html.includes('수신자 사전 검수'));assert.ok(html.includes('검토 후 재개'));assert.ok(!html.includes('남은 수신자 발송'));
 });

@@ -24,6 +24,7 @@ def guard(brand, authorization):
 
 class Draft(BaseModel):
     target_brand_id: str | None = Field(default=None,max_length=40)
+    product_id: UUID | None = None
     gmail_account_id: UUID | None = None
     recipients: list[str] = Field(min_length=1, max_length=200)
     subject: str = Field(min_length=1, max_length=150)
@@ -109,17 +110,21 @@ def compose(brand: str, body: AIDraft, authorization: str = Header(default='')):
 def batch_out(conn, row):
     recipients = conn.execute('SELECT recipient_id,email,state,sent_at FROM outreach_recipients WHERE batch_id=%s ORDER BY email', (row['batch_id'],)).fetchall()
     return {'id': str(row['batch_id']), 'subject': row['subject'], 'body': row['body'],
-            'state': row['state'], 'targetBrandId': row['target_brand_id'] or row['brand_id'], 'gmailAccountId': str(row['gmail_account_id']) if row['gmail_account_id'] else None, 'paused': row['sending_paused'], 'recipients': [{'id': str(r['recipient_id']), 'email': r['email'], 'state': r['state']} for r in recipients]}
+            'state': row['state'], 'productId': str(row['product_id']) if row.get('product_id') else None, 'productName':row.get('product_name'), 'mappingKey':row.get('mapping_key'), 'targetBrandId': row['target_brand_id'] or row['brand_id'], 'gmailAccountId': str(row['gmail_account_id']) if row['gmail_account_id'] else None, 'paused': row['sending_paused'], 'recipients': [{'id': str(r['recipient_id']), 'email': r['email'], 'state': r['state']} for r in recipients]}
 
 
 @router.get('/brands/{brand}/outreach')
-def list_batches(brand: str, authorization: str = Header(default='')):
+def list_batches(brand: str, before: UUID | None = None, authorization: str = Header(default='')):
     guard(brand, authorization)
     with connect() as conn:
-        rows = conn.execute('SELECT * FROM outreach_batches WHERE brand_id=%s ORDER BY created_at DESC LIMIT 30', (brand,)).fetchall()
+        cursor=conn.execute('SELECT created_at,batch_id FROM outreach_batches WHERE brand_id=%s AND batch_id=%s',(brand,before)).fetchone() if before else None
+        if before and not cursor:raise HTTPException(404,'이 모집 공간의 페이지 기준을 찾을 수 없습니다')
+        rows = conn.execute('SELECT * FROM outreach_batches WHERE brand_id=%s'+(' AND (created_at,batch_id)<(%s,%s)' if cursor else '')+' ORDER BY created_at DESC,batch_id DESC LIMIT 31', ((brand,cursor['created_at'],cursor['batch_id']) if cursor else (brand,))).fetchall()
+        next_cursor=str(rows[29]['batch_id']) if len(rows)>30 else None
+        rows=rows[:30]
         from . import runner_daemon
         resume=runner_daemon.status().get('jobs',{}).get('sendResume',{}).get('enabled',False)
-        return {'batches': [batch_out(conn, r) for r in rows], 'inboundReady': gmail._inbound_ready(), 'autoResumeEnabled':bool(resume)}
+        return {'batches': [batch_out(conn, r) for r in rows], 'nextCursor':next_cursor, 'inboundReady': gmail._inbound_ready(), 'autoResumeEnabled':bool(resume)}
 
 
 class PreviewRecipients(BaseModel):
@@ -141,8 +146,8 @@ def preview_recipients(brand: str, body: PreviewRecipients, authorization: str =
         target=proposal_brand(conn,brand,body.target_brand_id,authorization)
         scope=[brand,target]
         suppressed={r['email'] for r in conn.execute("SELECT email FROM outreach_optouts WHERE brand_id=ANY(%s) AND email=ANY(%s) AND opted_out_at IS NOT NULL",(scope,emails)).fetchall()}
-        previous={r['email'] for r in conn.execute("SELECT DISTINCT r.email FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE b.brand_id=ANY(%s) AND r.email=ANY(%s) AND r.state IN ('sent','review','sending') AND b.created_at>now()-interval '90 days'",(scope,emails)).fetchall()}
-        reserved={r['email'] for r in conn.execute("SELECT DISTINCT r.email FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE b.brand_id=ANY(%s) AND r.email=ANY(%s) AND r.state='pending' AND b.state='approved'",(scope,emails)).fetchall()}
+        previous={r['email'] for r in conn.execute("SELECT DISTINCT r.email FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE (b.brand_id=ANY(%s) OR b.target_brand_id=ANY(%s)) AND r.email=ANY(%s) AND r.state IN ('sent','review','sending') AND b.created_at>now()-interval '90 days'",(scope,scope,emails)).fetchall()}
+        reserved={r['email'] for r in conn.execute("SELECT DISTINCT r.email FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE (b.brand_id=ANY(%s) OR b.target_brand_id=ANY(%s)) AND r.email=ANY(%s) AND r.state='pending' AND b.state='approved'",(scope,scope,emails)).fetchall()}
         quota=gmail._acct_out(gmail._with_delivery_usage(conn,account))
     excluded=[{'email':e,'reason':'opted_out' if e in suppressed else 'recent_contact' if e in previous else 'approved_queue'} for e in emails if e in suppressed|previous|reserved]
     eligible=[e for e in emails if e not in suppressed|previous|reserved]
@@ -161,6 +166,10 @@ def create_batch(brand: str, body: Draft, authorization: str = Header(default=''
         b = conn.execute('SELECT brand_id FROM brands WHERE brand_id=%s', (brand,)).fetchone()
         if not b: raise HTTPException(404, '브랜드 없음')
         target=proposal_brand(conn,brand,body.target_brand_id,authorization)
+        product=None
+        if body.product_id:
+            product=conn.execute("SELECT name FROM brand_products WHERE product_id=%s AND brand_id=%s AND state='active'",(body.product_id,target)).fetchone()
+            if not product:raise HTTPException(409,'제안 브랜드의 활성 제품을 선택하세요')
         import os
         join_url=os.environ.get('CREATOR_APP_URL','https://app.theprlist.net').rstrip('/')+'/?brand='+target
         proposal_text=body.body.strip()
@@ -170,7 +179,7 @@ def create_batch(brand: str, body: Draft, authorization: str = Header(default=''
         account_id = body.gmail_account_id
         if account_id and not conn.execute("SELECT 1 FROM gmail_accounts WHERE account_id=%s AND brand_id=%s AND state='connected'", (account_id,brand)).fetchone():
             raise HTTPException(409, '이 브랜드에 연결된 발신 계정을 선택하세요')
-        r = conn.execute('INSERT INTO outreach_batches(brand_id,subject,body,created_by,gmail_account_id,target_brand_id) VALUES(%s,%s,%s,%s,%s,%s) RETURNING *', (brand,body.subject.strip(),proposal_text,actor,account_id,target)).fetchone()
+        r = conn.execute('INSERT INTO outreach_batches(brand_id,subject,body,created_by,gmail_account_id,target_brand_id,product_id,product_name) VALUES(%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *', (brand,body.subject.strip(),proposal_text,actor,account_id,target,body.product_id,product['name'] if product else None)).fetchone()
         for e in emails:
             conn.execute('INSERT INTO outreach_optouts(brand_id,email) VALUES(%s,%s) ON CONFLICT DO NOTHING',(brand,e))
             conn.execute('INSERT INTO outreach_recipients(batch_id,email) VALUES(%s,%s)',(r['batch_id'],e))
@@ -247,19 +256,20 @@ def deliver_pending(brand: str, batch_id) -> int:
             conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('outreach-contact:'+target+':'+r['email'],))
             target_optout=conn.execute('SELECT 1 FROM outreach_optouts WHERE brand_id=%s AND email=%s AND opted_out_at IS NOT NULL',(target,r['email'])).fetchone()
             opt=conn.execute('SELECT * FROM outreach_optouts WHERE brand_id=%s AND email=%s',(brand,r['email'])).fetchone()
-            duplicate=conn.execute("SELECT 1 FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE b.brand_id=ANY(%s) AND r.email=%s AND r.recipient_id<>%s AND r.state IN ('sending','sent','review') AND b.created_at>now()-interval '90 days' LIMIT 1",([brand,target],r['email'],r['recipient_id'])).fetchone()
+            duplicate=conn.execute("SELECT 1 FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE (b.brand_id=ANY(%s) OR b.target_brand_id=ANY(%s)) AND r.email=%s AND r.recipient_id<>%s AND r.state IN ('sending','sent','review') AND b.created_at>now()-interval '90 days' LIMIT 1",([brand,target],[brand,target],r['email'],r['recipient_id'])).fetchone()
             if opt['opted_out_at'] or target_optout or duplicate:
                 conn.execute("UPDATE outreach_recipients SET state='blocked' WHERE recipient_id=%s",(r['recipient_id'],));continue
             conn.execute("UPDATE outreach_recipients SET state='sending' WHERE recipient_id=%s",(r['recipient_id'],))
         try:
-            message=b['body']+'\n\n수신 거부 / Unsubscribe: https://api.theprlist.net/outreach/unsubscribe/'+str(opt['token'])
+            subject=r['personalized_subject'] or b['subject']
+            message=(r['personalized_body'] or b['body'])+'\n\n수신 거부 / Unsubscribe: https://api.theprlist.net/outreach/unsubscribe/'+str(opt['token'])
             with connect() as conn:
-                sent=gmail.send_via_brand_gmail(conn,brand,r['email'],b['subject'],message,account_id=b['gmail_account_id'])
+                sent=gmail.send_via_brand_gmail(conn,brand,r['email'],subject,message,account_id=b['gmail_account_id'])
                 if sent and sent['via']=='gmail':
                     delivered+=1
                     conn.execute("UPDATE outreach_recipients SET state='sent',sent_at=now(),provider_id=%s WHERE recipient_id=%s",(sent.get('messageId'),r['recipient_id']))
-                    thread=conn.execute("INSERT INTO mail_threads(brand_id,creator_email,subject) VALUES(%s,%s,%s) ON CONFLICT(brand_id,creator_email) DO UPDATE SET subject=EXCLUDED.subject,last_direction='out',last_message_at=now() RETURNING thread_id",(brand,r['email'],b['subject'])).fetchone()
-                    conn.execute("INSERT INTO mail_messages(thread_id,direction,from_email,to_email,subject,body,state,sent_via,gmail_account_id,gmail_message_id,gmail_thread_id) VALUES(%s,'out',%s,%s,%s,%s,'sent','gmail',%s,%s,%s)",(thread['thread_id'],sent['fromEmail'],r['email'],b['subject'],message,b['gmail_account_id'],sent.get('messageId'),sent.get('threadId')))
+                    thread=conn.execute("INSERT INTO mail_threads(brand_id,creator_email,subject) VALUES(%s,%s,%s) ON CONFLICT(brand_id,creator_email) DO UPDATE SET subject=EXCLUDED.subject,last_direction='out',last_message_at=now() RETURNING thread_id",(brand,r['email'],subject)).fetchone()
+                    conn.execute("INSERT INTO mail_messages(thread_id,direction,from_email,to_email,subject,body,state,sent_via,gmail_account_id,gmail_message_id,gmail_thread_id) VALUES(%s,'out',%s,%s,%s,%s,'sent','gmail',%s,%s,%s)",(thread['thread_id'],sent['fromEmail'],r['email'],subject,message,b['gmail_account_id'],sent.get('messageId'),sent.get('threadId')))
                 else:
                     # No network call was made: safe to resume after reconnect/quota reset.
                     conn.execute("UPDATE outreach_recipients SET state='pending' WHERE recipient_id=%s",(r['recipient_id'],))

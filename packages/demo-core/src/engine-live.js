@@ -628,7 +628,7 @@
     var sender=document.getElementById('outSender');
     if(!sender || !sender.value)return toast('발신 계정 선택','연결된 Gmail 발신 계정을 선택하세요.');
     outreachBusy=true;
-    req('POST','/brands/'+BRAND()+'/outreach',{recipients:recipients,subject:subject,body:body,gmail_account_id:sender.value,target_brand_id:(document.getElementById('outTarget')||{}).value||null}).then(function(){
+    req('POST','/brands/'+BRAND()+'/outreach',{recipients:recipients,subject:subject,body:body,gmail_account_id:sender.value,product_id:(document.getElementById('outProduct')||{}).value||null,target_brand_id:(document.getElementById('outTarget')||{}).value||null}).then(function(){
       ['outRecipients','outSubject','outBody'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
       loadOutreach(); toast('초안 저장','수신자와 내용을 확인한 뒤 발송해 주세요.');
     }).catch(function(){toast('저장 실패','로그인 상태와 이메일 형식을 확인해 주세요.');}).finally(function(){outreachBusy=false;});
@@ -647,6 +647,81 @@
     req('POST','/brands/'+BRAND()+'/outreach/'+id+'/cancel',{}).then(loadOutreach).catch(function(){toast('취소 실패','새로고침 후 상태를 확인해 주세요.');});
   };
   window.outreachRefresh=loadOutreach;
+  window.outreachMore=async function(){
+    if(outreachLoading||!outreachData||!outreachData.nextCursor)return;
+    var brand=BRAND(),version=outreachVersion,cursor=outreachData.nextCursor;outreachLoading=true;
+    try{var r=await req('GET','/brands/'+brand+'/outreach?before='+encodeURIComponent(cursor));
+      if(BRAND()!==brand||version!==outreachVersion)return;
+      outreachData.batches=outreachData.batches.concat(r.batches);outreachData.nextCursor=r.nextCursor;
+    }catch(e){if(BRAND()===brand)toast('내역 확인 실패',mailEscape(e.message));}
+    finally{if(version===outreachVersion){outreachLoading=false;render();}}
+  };
+  var bulkMappings=[],bulkReview=null,bulkBusy=false,bulkRequestId=null,bulkVersion=0;
+  function bulkInvalidate(){bulkReview=null;bulkRequestId=null;bulkVersion++;}
+  window.bulkChanged=function(){bulkInvalidate();};
+  window.bulkAddMapping=function(){
+    if(bulkBusy)return;
+    var key=(document.getElementById('bulkKey')||{}).value||'';
+    var product=(document.getElementById('outProduct')||{}).value||'';
+    var sender=(document.getElementById('outSender')||{}).value||'';
+    var subject=(document.getElementById('outSubject')||{}).value||'';
+    var body=(document.getElementById('outBody')||{}).value||'';
+    var target=(document.getElementById('outTarget')||{}).value||BRAND();
+    if(!/^[A-Za-z0-9_-]{1,60}$/.test(key)||!product||!sender||!subject.trim()||!body.trim())return toast('매핑 입력','매핑 키와 위쪽 브랜드·제품·발신 계정·제목·본문을 입력하세요.');
+    if(bulkMappings.length>=50)return toast('매핑 개수','한 번에 최대 50개 매핑을 검토합니다.');
+    if(bulkMappings.some(function(m){return m.key===key;}))return toast('매핑 키 중복','다른 키를 사용하거나 기존 매핑을 제거하세요.');
+    bulkMappings.push({key:key,target_brand_id:target,product_id:product,gmail_account_id:sender,subject:subject,body:body});
+    bulkInvalidate();render();
+  };
+  window.bulkRemoveMapping=function(index){if(bulkBusy)return;bulkMappings.splice(index,1);bulkInvalidate();render();};
+  function bulkPayload(){
+    var text=(document.getElementById('bulkRows')||{}).value||'';
+    var lines=text.split(/\r?\n/).filter(function(line){return line.trim();});
+    if(lines.length&&/^email\tmapping_key(?:\t|$)/i.test(lines[0]))lines.shift();
+    if(!lines.length||lines.length>10000||!bulkMappings.length)throw new Error('매핑과 최대 10,000행 명단을 입력하세요.');
+    return {mappings:bulkMappings.map(function(m){return Object.assign({},m);}),rows:lines.map(function(line,index){
+      var cells=line.split('\t');if(cells.length<2||cells.length>4)throw new Error((index+1)+'행: 이메일·매핑 키·이름·선정 이유를 탭으로 구분하세요.');
+      return {email:cells[0].trim(),mapping_key:cells[1].trim(),name:cells[2]||'',reason:cells[3]||''};
+    })};
+  }
+  window.bulkPreview=async function(){
+    if(bulkBusy)return;
+    var payload;try{payload=bulkPayload();}catch(e){return toast('입력 확인',mailEscape(e.message));}
+    var brand=BRAND(),token=jwtGet(),version=++bulkVersion;bulkBusy=true;bulkReview=null;bulkRequestId=null;
+    try{var r=await req('POST','/brands/'+brand+'/outreach/bulk/preview',payload);
+      if(BRAND()!==brand||jwtGet()!==token||bulkVersion!==version)return;
+      if(JSON.stringify(bulkPayload())!==JSON.stringify(payload))return toast('입력 변경','명단이 바뀌었습니다. 다시 검수하세요.');
+      bulkReview={payload:payload,result:r};bulkRequestId=window.crypto.randomUUID();render();
+    }catch(e){toast('매핑 검수 실패',mailEscape(e.message));}finally{bulkBusy=false;}
+  };
+  window.bulkSave=async function(){
+    if(bulkBusy)return;
+    if(!bulkReview)return toast('사전 검수 필요','매핑 결과를 먼저 확인하세요.');
+    var payload;try{payload=bulkPayload();}catch(e){return toast('입력 확인',mailEscape(e.message));}
+    if(JSON.stringify(payload)!==JSON.stringify(bulkReview.payload)){bulkInvalidate();return toast('입력 변경','내용이 바뀌었습니다. 다시 검수하세요.');}
+    var brand=BRAND(),token=jwtGet();bulkBusy=true;
+    try{var r=await req('POST','/brands/'+brand+'/outreach/bulk/drafts',Object.assign({},payload,{request_id:bulkRequestId,review_hash:bulkReview.result.reviewHash}));
+      if(BRAND()!==brand||jwtGet()!==token)return;
+      bulkInvalidate();var rows=document.getElementById('bulkRows');if(rows)rows.value='';bulkMappings=[];
+      loadOutreach();toast('초안 저장 완료',r.batchIds.length+'개 배치를 저장했습니다. 발송하지 않았습니다. 각 배치의 개인별 문구를 검토한 뒤 승인하세요.');
+    }catch(e){toast('초안 저장 실패',mailEscape(e.message));}finally{bulkBusy=false;}
+  };
+  window.outreachReview=async function(id){
+    var brand=BRAND(),token=jwtGet();
+    try{var r=await req('GET','/brands/'+brand+'/outreach/'+id+'/review');
+      if(BRAND()!==brand||jwtGet()!==token)return;
+      var el=document.getElementById('batchReview-'+id);if(el)el.innerHTML=r.messages.map(function(m){return '<details><summary>'+mailEscape(m.email)+' · '+mailEscape(m.subject)+'</summary><pre style="white-space:pre-wrap;font:inherit">'+mailEscape(m.body)+'</pre></details>';}).join('');
+    }catch(e){toast('문구 확인 실패',mailEscape(e.message));}
+  };
+  function bulkCard(){
+    var review=bulkReview&&bulkReview.result;
+    return '<div class="cc"><div class="t">브랜드·제품 대량 매핑</div><p>① 위에서 브랜드·제품·발신 계정·제목·본문 선택 → 매핑 등록 ② 시트 명단 붙여넣기 ③ 검수 → 초안 저장 → 배치별 승인.</p><p>맞춤 필드: {{name}}, {{reason}}, {{brand}}, {{product}}. 선정 이유는 입력한 근거만 사용합니다.</p>'+
+      '<label>매핑 키<input id="bulkKey" maxlength="60" placeholder="returnu-us-balm"></label> <button class="cbt no" onclick="bulkAddMapping()">현재 제안을 매핑에 추가</button>'+
+      bulkMappings.map(function(m,i){var a=(window.__GMAIL&&window.__GMAIL.accounts||[]).find(function(x){return x.accountId===m.gmail_account_id;});var t=outreachTargets.find(function(x){return x.brandId===m.target_brand_id;});return '<details><summary>'+mailEscape(m.key)+' · '+mailEscape(t?t.name:m.target_brand_id)+' · '+mailEscape(a?a.email:m.gmail_account_id)+'</summary><p>제품 ID: '+mailEscape(m.product_id)+'</p><pre style="white-space:pre-wrap">'+mailEscape(m.subject+'\n'+m.body)+'</pre><button class="cbt no" onclick="bulkRemoveMapping('+i+')">이 매핑 제거</button></details>';}).join('')+
+      '<label>시트 명단 · 최대 10,000행<textarea id="bulkRows" rows="6" oninput="bulkChanged()" placeholder="email&#9;mapping_key&#9;name&#9;reason"></textarea></label><p>열 순서: 이메일 / 매핑 키 / 이름(선택) / 선정 이유(선택). 시트에서 복사한 탭 구분 형식을 사용하세요. 이메일 수는 고유 인원 수가 아닙니다.</p>'+
+      '<button class="cbt no" onclick="bulkPreview()">전체 매핑 사전 검수</button> <button class="cbt" onclick="bulkSave()" '+(!review||!review.eligibleCount?'disabled':'')+'>검수한 전체 초안 저장 · 발송 안 함</button>'+
+      (review?'<div role="status"><p>입력 '+review.inputCount+'행 / 고유 이메일 '+review.uniqueEmailCount+'개 / 검토 가능 '+review.eligibleCount+'개 / 제외 '+review.excluded.length+'행 / 초안 '+review.batchCount+'개</p>'+review.senders.map(function(s){return '<p>'+mailEscape(s.email)+' · 계획 '+s.plannedRecipients+'건 / 시스템 잔여 '+s.remainingSystemCapacity+'건 / 현재 잔여 초과 '+s.overCurrentCapacity+'건. Google 직접 발송량은 별도 확인.</p>';}).join('')+review.groups.map(function(g){return '<details><summary>'+mailEscape(g.key)+' · '+mailEscape(g.brandName)+' / '+mailEscape(g.productName)+' · '+g.eligibleCount+'개</summary>'+g.samples.map(function(m){return '<p>'+mailEscape(m.email)+' · '+mailEscape(m.subject)+'</p><pre style="white-space:pre-wrap">'+mailEscape(m.body)+'</pre>';}).join('')+'</details>';}).join('')+'<details><summary>제외 사유 확인</summary>'+review.excluded.map(function(x){return '<p>'+x.row+'행 · '+mailEscape(x.email)+' · '+mailEscape(x.reason)+'</p>';}).join('')+'</details></div>':'')+'</div>';
+  }
   window.inboxSend = function(thread,id) {
     req('POST','/inbox/threads/'+thread+'/messages/'+id+'/send',{}).then(function(r){
       window.__INBOX_OPEN=null;window.inboxOpen(thread);loadInbox();loadGmail();
@@ -659,7 +734,7 @@
     var rows=(outreachData && outreachData.batches || []).filter(function(b){return /^[a-f0-9-]{36}$/.test(b.id);}).map(function(b){
       var pending=b.recipients.some(function(r){return r.state==='pending';});
       return '<details style="margin-top:12px;border-top:1px solid #ddd;padding-top:12px"><summary>'+mailEscape(b.subject)+' · '+b.recipients.length+'명 · '+({draft:'초안',approved:'발송 승인됨',cancelled:'취소됨'}[b.state]||'')+(b.paused?' · 발송 중지':'')+'</summary>'+
-        '<p>제안 브랜드: '+mailEscape(b.targetBrandId||BRAND())+'</p>'+'<p>발신 계정: '+mailEscape(((window.__GMAIL&&window.__GMAIL.accounts||[]).find(function(a){return a.accountId===b.gmailAccountId;})||{}).email||'연결 상태 확인 필요')+'</p>'+'<p>'+b.recipients.map(function(r){return mailEscape(r.email)+' — '+(states[r.state]||'확인 필요');}).join('<br>')+'</p><pre style="white-space:pre-wrap;font:inherit">'+mailEscape(b.body)+'</pre><p style="font-size:12px">수신 거부 링크가 본문 끝에 자동으로 추가됩니다.</p>'+
+        '<p>제안 브랜드: '+mailEscape(b.targetBrandId||BRAND())+' · 제품: '+mailEscape(b.productName||'브랜드 공통')+' · 매핑: '+mailEscape(b.mappingKey||'단일 제안')+'</p>'+'<p>발신 계정: '+mailEscape(((window.__GMAIL&&window.__GMAIL.accounts||[]).find(function(a){return a.accountId===b.gmailAccountId;})||{}).email||'연결 상태 확인 필요')+'</p>'+'<p>'+b.recipients.map(function(r){return mailEscape(r.email)+' — '+(states[r.state]||'확인 필요');}).join('<br>')+'</p><pre style="white-space:pre-wrap;font:inherit">'+mailEscape(b.body)+'</pre><p style="font-size:12px">수신 거부 링크가 본문 끝에 자동으로 추가됩니다.</p>'+ (b.mappingKey?'<button class="cbt no" onclick="outreachReview(\''+b.id+'\')">개인별 실제 문구 확인</button><div id="batchReview-'+b.id+'"></div>':'')+
         (pending && !b.paused && b.state!=='cancelled'?'<button class="btn" onclick="outreachSend(\''+b.id+'\')">'+(b.state==='draft'?'내용 승인하고 순차 발송':'남은 수신자 발송')+'</button> ':'')+
         (b.state==='approved'?'<button class="cbt no" onclick="outreachControl(\''+b.id+'\','+(!b.paused)+')">'+(b.paused?'검토 후 재개':'배치 일시 중지')+'</button> ':'')+
         (b.state==='draft'?'<button class="cbt no" onclick="outreachCancel(\''+b.id+'\')">초안 취소</button>':'')+'</details>';
@@ -673,7 +748,7 @@
       '<label>제목<input id="outSubject" maxlength="150" style="width:100%;box-sizing:border-box"></label>'+
       '<label>본문<textarea id="outBody" rows="6" style="width:100%;box-sizing:border-box"></textarea></label>'+
       '<p>'+(outreachData&&outreachData.autoResumeEnabled?'승인한 배치는 서버가 간격·한도 안에서 순차 재개합니다.':'서버 자동 재개가 꺼져 있습니다. 승인 후 대기한 수신자는 자동 발송되지 않습니다.')+'</p>'+
-      '<button class="cbt no" onclick="outreachPreview()">수신자 사전 검수</button> <button class="cbt" onclick="outreachDraft()">초안 저장</button> <button class="cbt no" onclick="outreachRefresh()">내역 새로고침</button>'+(outreachError?'<p role="alert">'+mailEscape(outreachError)+'</p>':outreachLoading?'<p role="status">발송 내역을 불러오는 중입니다.</p>':!rows?'<p>저장된 초안과 발송 내역이 없습니다.</p>':'')+rows+'</div>';
+      '<button class="cbt no" onclick="outreachPreview()">수신자 사전 검수</button> <button class="cbt" onclick="outreachDraft()">초안 저장</button> <button class="cbt no" onclick="outreachRefresh()">내역 새로고침</button>'+(outreachError?'<p role="alert">'+mailEscape(outreachError)+'</p>':outreachLoading?'<p role="status">발송 내역을 불러오는 중입니다.</p>':!rows?'<p>저장된 초안과 발송 내역이 없습니다.</p>':'')+rows+(outreachData&&outreachData.nextCursor?'<button class="cbt no" onclick="outreachMore()">이전 배치 더 보기</button>':'')+'</div>'+bulkCard();
   }
 
   /* ── 지메일 연동 — 브랜드 명의 발송(구글 OAuth) + 답장 인박스 ── */
@@ -1442,7 +1517,7 @@
           (window.__ME.kind==='admin'?'<small>관리자</small>':'')+'</span>';
       }
       var nav='<header class="live-head"><a href="https://theprlist.net">theprlist<span> / brand console</span></a>'+chip+'<nav>'+[['home','홈'],['learn','브랜드 학습'],['products','제품·캠페인'],['community','커뮤니티·DM'],['mail','아웃리치·인박스'],['billing','월별 청구']].map(function(x){return '<button class="btn '+(livePage===x[0]?'':'line')+'" onclick="liveNav(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+(window.__ME&&window.__ME.kind==='admin'&&BRAND()?'<span style="font-size:12px;color:var(--ink-2,#566274)">관리자 · <b>'+mailEscape(BRAND())+'</b> <button class="btn line" onclick="adminSwitchBrand()">전환</button></span>':'')+'</nav></header>';
-      var preserved={};['outRecipients','outSubject','outBody','outBrief','outProduct','outSender','outTarget','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)preserved[id]=el.value;});
+      var preserved={};['outRecipients','outSubject','outBody','outBrief','outProduct','outSender','outTarget','bulkRows','bulkKey','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)preserved[id]=el.value;});
       var body='';
       if(!window.__ME){body='<h1>브랜드와 크리에이터,<br>함께 시작할 준비.</h1><p>승인된 브랜드 계정으로 로그인해 주세요.</p><button class="btn" onclick="document.getElementById(\'authChip\').click()">로그인</button> <a class="btn line" href="https://theprlist.net/signup">가입 신청</a>';}
       else if(window.__ME.kind==='creator'){body='<h1>크리에이터 계정입니다</h1><p>브랜드 콘솔은 브랜드·운영 계정 전용이에요. 캠페인 지원·커뮤니티·DM은 크리에이터 앱에서 이용하세요.</p><a class="btn" href="https://app.theprlist.net">크리에이터 앱 열기</a> <span class="cbt no" onclick="authLogout()">로그아웃</span>';}
@@ -1486,7 +1561,7 @@
       Object.keys(preserved).forEach(function(id){var el=document.getElementById(id);if(el)el.value=preserved[id];});
     };
     var previousReload=reloadBrand;
-    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','outSender','outTarget','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';outreachTargets=[];outreachTargetProducts=[];outreachTargetBrand='';outreachTargetVersion++;productsData=null;productsLoadError='';prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;candSelected={};prodEditOpen={};brandCampaigns=null;collabOpen=null;window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;inboxShowAll=false;previousReload();if(window.__ME&&BRAND()){loadProfile();loadProducts();loadIdentity();}};
+    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','outSender','outTarget','bulkRows','bulkKey','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';bulkMappings=[];bulkInvalidate();outreachTargets=[];outreachTargetProducts=[];outreachTargetBrand='';outreachTargetVersion++;productsData=null;productsLoadError='';prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;candSelected={};prodEditOpen={};brandCampaigns=null;collabOpen=null;window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;inboxShowAll=false;previousReload();if(window.__ME&&BRAND()){loadProfile();loadProducts();loadIdentity();}};
     // 시각 정본은 live-theme.css(docs/UI_DESIGN_GUIDE.md) — 여기서는 표면
     // 활성 클래스만 부여한다.
     document.body.classList.add('live-surface');

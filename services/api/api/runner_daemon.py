@@ -296,7 +296,7 @@ def _billing_tick() -> list[str]:
         from .routes_payments import close_months
         with connect() as conn:
             brands = [r["brand_id"] for r in conn.execute(
-                "SELECT brand_id FROM brands WHERE NOT is_demo").fetchall()]
+                "SELECT brand_id FROM brands WHERE NOT is_demo AND NOT is_internal").fetchall()]
         for brand in brands:
             with connect() as conn:
                 before = conn.execute(

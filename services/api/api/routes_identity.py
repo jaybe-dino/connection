@@ -30,13 +30,13 @@ def get_identity(brand_id: str) -> dict:
     """공개 표시 정보 — 가입/커뮤니티 화면이 브랜드명·로고를 그릴 때 사용."""
     with connect() as conn:
         b = conn.execute(
-            "SELECT brand_id, name, category, logo_url, tagline, is_demo"
+            "SELECT brand_id, name, category, logo_url, tagline, is_demo,is_internal"
             " FROM brands WHERE brand_id=%s", (brand_id,)).fetchone()
     if not b:
         raise HTTPException(404, "brand not found")
     return {"brandId": b["brand_id"], "name": b["name"],
             "category": b["category"], "logoUrl": b["logo_url"],
-            "tagline": b["tagline"], "isDemo": b["is_demo"]}
+            "tagline": b["tagline"], "isDemo": b["is_demo"], "isInternal": b["is_internal"]}
 
 
 class IdentityIn(BaseModel):
@@ -108,7 +108,7 @@ def join_brand(body: JoinIn,
                authorization: str = Header(default="")) -> dict:
     claims = _require_creator(authorization)
     with connect() as conn:
-        b = conn.execute("SELECT brand_id, name, is_demo FROM brands"
+        b = conn.execute("SELECT brand_id, name, is_demo,is_internal FROM brands"
                          " WHERE brand_id=%s", (body.brand_id,)).fetchone()
         if not b:
             raise HTTPException(404, "brand not found")
@@ -129,7 +129,7 @@ def join_brand(body: JoinIn,
     return {"creatorId": cid, "brandId": body.brand_id,
             "joined": bool(ins), "alreadyMember": not bool(ins),
             "verified": c["verified"], "billable": bool(billed),
-            "note": ("검증 완료 후 과금 대상이 됩니다" if not c["verified"]
+            "note": ("공용 모집 공간 가입 · 고객 가입 과금 제외" if b["is_internal"] else "검증 완료 후 과금 대상이 됩니다" if not c["verified"]
                      else "중복 가입은 재과금되지 않습니다" if not ins else "")}
 
 

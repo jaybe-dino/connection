@@ -41,7 +41,8 @@ def dbname():
               'db/migrations/024_signup_usage_audit.sql',
               'db/migrations/029_invoice_supplements.sql',
               'db/migrations/033_invoice_cancel_marker.sql',
-              'db/migrations/034_brand_billing_keys.sql']:
+              'db/migrations/034_brand_billing_keys.sql',
+              'db/migrations/038_internal_recruitment.sql']:
         subprocess.run(['psql', '-v', 'ON_ERROR_STOP=1', '-d', name, '-f',
                         str(ROOT / f)], check=True, stdout=subprocess.DEVNULL)
     subprocess.run(['psql', '-v', 'ON_ERROR_STOP=1', '-d', name, '-c',
@@ -64,7 +65,7 @@ def setup(dbname, monkeypatch):
         conn.execute('TRUNCATE invoice_charge_attempts, brand_billing_keys,'
                      ' signup_usage, signup_invoices, memberships, creators,'
                      ' brands CASCADE')
-        conn.execute("INSERT INTO brands VALUES ('real',false,'per_signup'),"
+        conn.execute("INSERT INTO brands(brand_id,is_demo,plan) VALUES ('real',false,'per_signup'),"
                      "('other',false,'per_signup'),('demo1',true,'per_signup')")
         conn.execute("INSERT INTO creators VALUES ('c1',true),('c2',true)")
         conn.execute("UPDATE signup_billing_policy SET effective_at='2020-01-01'")
@@ -452,3 +453,11 @@ def test_expire_stops_charging_immediately_and_retries_safely(setup, monkeypatch
     monkeypatch.setattr(nicepay_billing, 'regist', regist_ok)
     assert client.post('/brands/real/billing/card', json=CARD,
                        headers=h).status_code == 200
+
+
+def test_internal_workspace_blocks_new_billing_key_before_provider(setup,monkeypatch):
+    client,db,h,*_=setup
+    with db() as c:c.execute("UPDATE brands SET is_internal=true WHERE brand_id='real'")
+    calls=[];monkeypatch.setattr(nicepay_billing,'regist',lambda *a:calls.append(a))
+    r=client.post('/brands/real/billing/card',json=CARD,headers=h)
+    assert r.status_code==409 and calls==[]

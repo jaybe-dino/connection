@@ -58,7 +58,7 @@ export default function GmailOps() {
     <div style={{ maxWidth: 940 }}>
       <h1 style={{ fontSize: 20, fontWeight: 900, margin: "0 0 4px" }}>Gmail 운영</h1>
       <div style={{ fontSize: 12, color: "var(--n500)", marginBottom: 12 }}>
-        읽기 전용 상태 화면 — 발송은 브랜드가 승인한 배치만 러너가 웜업 한도 안에서 재개합니다.
+        읽기 전용 상태 화면 — 발송은 브랜드가 승인한 배치만 러너가 계정별 운영 한도 안에서 재개합니다.
         {data?.demoMode ? " (현재 데모 모드: 실제 Google 연동 키 없음)" : ""}
         <button onClick={load} style={{ marginLeft: 10, fontSize: 11, cursor: "pointer" }}>새로고침</button>
       </div>

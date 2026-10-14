@@ -556,6 +556,7 @@
   function mailEscape(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
   }
+  var outreachTargets=[],outreachTargetProducts=[],outreachTargetBrand='',outreachTargetVersion=0;
   var outreachData = null;
   var outreachError = '';
   var outreachLoading = false;
@@ -565,9 +566,10 @@
     var brand=BRAND(), version=++outreachVersion;
     if(!brand)return;
     outreachLoading=true;outreachError='';
-    req('GET','/brands/'+brand+'/outreach').then(function(r){
+    Promise.all([req('GET','/brands/'+brand+'/outreach'),req('GET','/brands/'+brand+'/outreach/targets')]).then(function(results){
+      var r=results[0];
       if(version!==outreachVersion || BRAND()!==brand) return;
-      outreachData=r;outreachLoading=false;
+      outreachData=r;outreachTargets=results[1]||[];outreachLoading=false;
       if(typeof ST!=='undefined' && ST.b==='src' && window.render) render();
     }).catch(function(){
       if(version!==outreachVersion || BRAND()!==brand)return;
@@ -575,6 +577,15 @@
       if(typeof ST!=='undefined' && ST.b==='src' && window.render)render();
     });
   }
+  window.outreachTargetChanged=async function(value){
+    var subject=document.getElementById('outSubject'),body=document.getElementById('outBody');
+    if((subject&&subject.value)||(body&&body.value)){var select=document.getElementById('outTarget');if(select)select.value=outreachTargetBrand;return toast('제안 브랜드 변경','작성 중인 제목·본문을 먼저 검토하고 비운 뒤 브랜드를 변경하세요.');}
+    outreachTargetBrand=value;outreachTargetProducts=[];var version=++outreachTargetVersion,brand=BRAND();
+    var product=document.getElementById('outProduct');if(product)product.value='';
+    if(!value){render();return;}
+    try{var products=await req('GET','/brands/'+value+'/products');if(BRAND()===brand&&version===outreachTargetVersion){outreachTargetProducts=products;render();}}
+    catch(e){if(version===outreachTargetVersion)toast('제품 확인',e.message);}
+  };
   var composeBusy=false;
   window.outreachCompose=async function(){
     if(composeBusy)return;
@@ -582,15 +593,17 @@
     if(brief.length<5)return toast('내용 입력','협업 제안 내용을 5자 이상 입력하세요.');
     if(document.getElementById('outSubject').value||document.getElementById('outBody').value)return toast('기존 초안 확인','입력한 제목과 본문을 비운 뒤 AI 작성을 실행하세요.');
     var productId=(document.getElementById('outProduct')||{}).value||'';
-    if(productId&&!(productsData||[]).some(function(p){return p.productId===productId;}))return toast('제품 확인','제품 목록을 다시 불러온 뒤 선택해 주세요.');
-    var payload={brief:brief};if(productId)payload.product_id=productId;
+    var targetId=(document.getElementById('outTarget')||{}).value||'';
+    var proposalProducts=targetId?outreachTargetProducts:productsData;
+    if(productId&&!(proposalProducts||[]).some(function(p){return p.productId===productId;}))return toast('제품 확인','제품 목록을 다시 불러온 뒤 선택해 주세요.');
+    var payload={brief:brief};if(productId)payload.product_id=productId;if(targetId)payload.target_brand_id=targetId;
     var current=jwtGet(),brand=BRAND();composeBusy=true;
     // 재렌더는 작성 중 입력값을 지우므로 버튼만 직접 갱신해 로딩을 표시한다
     var composeBtn=document.getElementById('outComposeBtn');
     if(composeBtn){composeBtn.disabled=true;composeBtn.textContent='AI 작성 중…';}
     toast('AI 작성 중','브랜드 정보를 참고해 제안 메일을 작성하고 있습니다.');
     try{var r=await req('POST','/brands/'+brand+'/outreach/compose',payload);
-      if(jwtGet()!==current||BRAND()!==brand)return;
+      if(jwtGet()!==current||BRAND()!==brand||((document.getElementById('outTarget')||{}).value||'')!==targetId)return;
       var subject=document.getElementById('outSubject'),body=document.getElementById('outBody');
       if(subject&&body&&!subject.value&&!body.value&&((document.getElementById('outProduct')||{}).value||'')===productId){subject.value=r.subject;body.value=r.body;toast('초안 작성 완료','아직 저장·발송되지 않았습니다. 내용을 확인해 주세요.');}
       else toast('다시 시도','화면이나 작성 내용이 바뀌어 AI 결과를 덮어쓰지 않았습니다.');
@@ -599,16 +612,23 @@
       var btn=document.getElementById('outComposeBtn');
       if(btn){btn.disabled=false;btn.textContent='AI로 제안 메일 작성';}}
   };
+  window.outreachPreview=async function(){
+    var sender=document.getElementById('outSender'),list=document.getElementById('outRecipients');
+    var recipients=list?list.value.split(/[\s,;]+/).filter(Boolean):[];
+    if(!sender||!sender.value||!recipients.length||recipients.length>200)return toast('입력 확인','발신 계정과 최대 200개 이메일을 입력하세요.');
+    try{var r=await req('POST','/brands/'+BRAND()+'/outreach/preview',{gmail_account_id:sender.value,recipients:recipients,target_brand_id:(document.getElementById('outTarget')||{}).value||null});toast('읽기 전용 사전 검수','입력 '+r.inputCount+'개 / 고유 이메일 '+r.uniqueEmailCount+'개 / 검토 가능 '+r.eligibleCount+'개 / 제외 '+r.excluded.length+'개 / 시스템 잔여 '+r.remainingSystemCapacity+'건'+(r.sendingPaused?' · 계정 발송 중지':'')+'. 이메일 수는 고유 인원이 아닙니다. 저장·발송하지 않았습니다.');}
+    catch(e){toast('검수 실패',e.message);}
+  };
   window.outreachDraft = function() {
     if(outreachBusy)return;
     var recipients=document.getElementById('outRecipients').value.split(/[\s,;]+/).filter(Boolean);
     var subject=document.getElementById('outSubject').value.trim();
     var body=document.getElementById('outBody').value.trim();
-    if(!recipients.length || recipients.length>20 || !subject || !body) return toast('입력 확인','수신자는 한 번에 최대 20명이며, 제목과 본문을 입력해 주세요.');
+    if(!recipients.length || recipients.length>200 || !subject || !body) return toast('입력 확인','수신자는 한 번에 최대 200명이며, 제목과 본문을 입력해 주세요.');
     var sender=document.getElementById('outSender');
     if(!sender || !sender.value)return toast('발신 계정 선택','연결된 Gmail 발신 계정을 선택하세요.');
     outreachBusy=true;
-    req('POST','/brands/'+BRAND()+'/outreach',{recipients:recipients,subject:subject,body:body,gmail_account_id:sender.value}).then(function(){
+    req('POST','/brands/'+BRAND()+'/outreach',{recipients:recipients,subject:subject,body:body,gmail_account_id:sender.value,target_brand_id:(document.getElementById('outTarget')||{}).value||null}).then(function(){
       ['outRecipients','outSubject','outBody'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
       loadOutreach(); toast('초안 저장','수신자와 내용을 확인한 뒤 발송해 주세요.');
     }).catch(function(){toast('저장 실패','로그인 상태와 이메일 형식을 확인해 주세요.');}).finally(function(){outreachBusy=false;});
@@ -619,9 +639,10 @@
     req('POST','/brands/'+BRAND()+'/outreach/'+id+'/send',{}).then(function(r){
       loadOutreach();loadGmail();loadInbox();
       var n=r.recipients.filter(function(x){return x.state==='sent';}).length;
-      toast('발송 결과','발송 완료 '+n+'명. 수신자별 상태를 확인해 주세요.');
+      toast('발송 결과','Gmail 접수 '+n+'건. 배달 여부는 별도 확인해야 합니다.');
     }).catch(function(){loadOutreach();toast('발송 확인','Gmail 연결과 발송 내역을 확인해 주세요.');}).finally(function(){outreachBusy=false;});
   };
+  window.outreachControl=function(id,paused){req('POST','/brands/'+BRAND()+'/outreach/'+id+'/control',{paused:paused}).then(loadOutreach).catch(function(e){toast('변경 실패',e.message);});};
   window.outreachCancel = function(id) {
     req('POST','/brands/'+BRAND()+'/outreach/'+id+'/cancel',{}).then(loadOutreach).catch(function(){toast('취소 실패','새로고침 후 상태를 확인해 주세요.');});
   };
@@ -634,22 +655,25 @@
   };
   function outreachCard() {
     if(!window.__ME) return '<div class="cc"><div class="t">아웃리치</div><p>로그인 후 메일 초안과 발송 내역을 확인할 수 있습니다.</p></div>';
-    var states={pending:'대기 · 연결/한도 확인',sending:'발송 시도 중 · 재발송 금지',sent:'발송 완료',review:'Gmail에서 발송 여부 확인',blocked:'수신 거부 또는 90일 내 중복'};
+    var states={pending:'대기 · 연결/한도 확인',sending:'발송 시도 중 · 재발송 금지',sent:'Gmail 접수 · 배달 미확인',review:'Gmail에서 발송 여부 확인',blocked:'수신 거부 또는 90일 내 중복'};
     var rows=(outreachData && outreachData.batches || []).filter(function(b){return /^[a-f0-9-]{36}$/.test(b.id);}).map(function(b){
       var pending=b.recipients.some(function(r){return r.state==='pending';});
-      return '<details style="margin-top:12px;border-top:1px solid #ddd;padding-top:12px"><summary>'+mailEscape(b.subject)+' · '+b.recipients.length+'명 · '+({draft:'초안',approved:'발송 승인됨',cancelled:'취소됨'}[b.state]||'')+'</summary>'+
-        '<p>발신 계정: '+mailEscape(((window.__GMAIL&&window.__GMAIL.accounts||[]).find(function(a){return a.accountId===b.gmailAccountId;})||{}).email||'연결 상태 확인 필요')+'</p>'+'<p>'+b.recipients.map(function(r){return mailEscape(r.email)+' — '+(states[r.state]||'확인 필요');}).join('<br>')+'</p><pre style="white-space:pre-wrap;font:inherit">'+mailEscape(b.body)+'</pre><p style="font-size:12px">수신 거부 링크가 본문 끝에 자동으로 추가됩니다.</p>'+
-        (pending && b.state!=='cancelled'?'<button class="btn" onclick="outreachSend(\''+b.id+'\')">'+(b.state==='draft'?'내용 승인하고 발송':'남은 수신자 발송')+'</button> ':'')+
+      return '<details style="margin-top:12px;border-top:1px solid #ddd;padding-top:12px"><summary>'+mailEscape(b.subject)+' · '+b.recipients.length+'명 · '+({draft:'초안',approved:'발송 승인됨',cancelled:'취소됨'}[b.state]||'')+(b.paused?' · 발송 중지':'')+'</summary>'+
+        '<p>제안 브랜드: '+mailEscape(b.targetBrandId||BRAND())+'</p>'+'<p>발신 계정: '+mailEscape(((window.__GMAIL&&window.__GMAIL.accounts||[]).find(function(a){return a.accountId===b.gmailAccountId;})||{}).email||'연결 상태 확인 필요')+'</p>'+'<p>'+b.recipients.map(function(r){return mailEscape(r.email)+' — '+(states[r.state]||'확인 필요');}).join('<br>')+'</p><pre style="white-space:pre-wrap;font:inherit">'+mailEscape(b.body)+'</pre><p style="font-size:12px">수신 거부 링크가 본문 끝에 자동으로 추가됩니다.</p>'+
+        (pending && !b.paused && b.state!=='cancelled'?'<button class="btn" onclick="outreachSend(\''+b.id+'\')">'+(b.state==='draft'?'내용 승인하고 순차 발송':'남은 수신자 발송')+'</button> ':'')+
+        (b.state==='approved'?'<button class="cbt no" onclick="outreachControl(\''+b.id+'\','+(!b.paused)+')">'+(b.paused?'검토 후 재개':'배치 일시 중지')+'</button> ':'')+
         (b.state==='draft'?'<button class="cbt no" onclick="outreachCancel(\''+b.id+'\')">초안 취소</button>':'')+'</details>';
     }).join('');
     return '<div class="cc"><div class="t">아웃리치 메일</div><p>수신자와 내용을 저장한 뒤 확인하고 발송합니다. 발송 한도를 넘긴 수신자는 대기하며, 수신 거부·90일 내 중복 발송은 제외합니다.</p>'+
-      '<label>초안에 사용할 제품<select id="outProduct"><option value="">브랜드 공통 제안</option>'+(productsData||[]).map(function(p){return '<option value="'+mailEscape(p.productId)+'">'+mailEscape(p.name)+'</option>';}).join('')+'</select></label><p>제품을 선택하면 저장된 제품 프로필도 AI 초안에 반영합니다.</p>'+
+      (window.__BID&&window.__BID.isInternal?'<label>제안 브랜드<select id="outTarget" onchange="outreachTargetChanged(this.value)"><option value="">디노 공용 모집</option>'+outreachTargets.filter(function(t){return t.brandId!==BRAND();}).map(function(t){return '<option value="'+mailEscape(t.brandId)+'" '+(outreachTargetBrand===t.brandId?'selected':'')+'>'+mailEscape(t.name)+'</option>';}).join('')+'</select></label><p>발신 계정은 회사 공간에 남고, 고객 브랜드 프로필·상품·가입 링크를 제안에 사용합니다.</p>':'')+
+      '<label>초안에 사용할 제품<select id="outProduct"><option value="">브랜드 공통 제안</option>'+(outreachTargetBrand?outreachTargetProducts:productsData||[]).map(function(p){return '<option value="'+mailEscape(p.productId)+'">'+mailEscape(p.name)+'</option>';}).join('')+'</select></label><p>제품을 선택하면 저장된 제품 프로필도 AI 초안에 반영합니다.</p>'+
       '<label>협업 제안 내용<textarea id="outBrief" maxlength="2000" placeholder="제안할 제품, 협업 방식, 언어를 적어 주세요."></textarea></label><button id="outComposeBtn" class="cbt no" onclick="outreachCompose()" '+(composeBusy?'disabled':'')+'>'+(composeBusy?'AI 작성 중…':'AI로 제안 메일 작성')+'</button><p>AI는 저장한 브랜드 정보로 초안만 작성합니다. 내용을 확인하고 저장한 뒤 발송하세요.</p>'+
       '<label>발신 Gmail<select id="outSender"><option value="">발신 계정 선택</option>'+(window.__GMAIL&&window.__GMAIL.accounts||[]).map(function(a){return '<option value="'+mailEscape(a.accountId)+'" '+(a.sendingPaused?'disabled':'')+'>'+mailEscape(a.email)+(a.sendingPaused?' · 발송 중지':' · 잔여 '+a.remainingToday+'통')+'</option>';}).join('')+'</select></label>'+
-      '<label>수신자 이메일 · 최대 20명<textarea id="outRecipients" rows="3" style="width:100%;box-sizing:border-box" placeholder="이메일을 줄바꿈 또는 쉼표로 구분"></textarea></label>'+
+      '<label>수신자 이메일 · 최대 200명<textarea id="outRecipients" rows="3" style="width:100%;box-sizing:border-box" placeholder="이메일을 줄바꿈 또는 쉼표로 구분"></textarea></label>'+
       '<label>제목<input id="outSubject" maxlength="150" style="width:100%;box-sizing:border-box"></label>'+
       '<label>본문<textarea id="outBody" rows="6" style="width:100%;box-sizing:border-box"></textarea></label>'+
-      '<button class="cbt" onclick="outreachDraft()">초안 저장</button> <button class="cbt no" onclick="outreachRefresh()">내역 새로고침</button>'+(outreachError?'<p role="alert">'+mailEscape(outreachError)+'</p>':outreachLoading?'<p role="status">발송 내역을 불러오는 중입니다.</p>':!rows?'<p>저장된 초안과 발송 내역이 없습니다.</p>':'')+rows+'</div>';
+      '<p>'+(outreachData&&outreachData.autoResumeEnabled?'승인한 배치는 서버가 간격·한도 안에서 순차 재개합니다.':'서버 자동 재개가 꺼져 있습니다. 승인 후 대기한 수신자는 자동 발송되지 않습니다.')+'</p>'+
+      '<button class="cbt no" onclick="outreachPreview()">수신자 사전 검수</button> <button class="cbt" onclick="outreachDraft()">초안 저장</button> <button class="cbt no" onclick="outreachRefresh()">내역 새로고침</button>'+(outreachError?'<p role="alert">'+mailEscape(outreachError)+'</p>':outreachLoading?'<p role="status">발송 내역을 불러오는 중입니다.</p>':!rows?'<p>저장된 초안과 발송 내역이 없습니다.</p>':'')+rows+'</div>';
   }
 
   /* ── 지메일 연동 — 브랜드 명의 발송(구글 OAuth) + 답장 인박스 ── */
@@ -812,7 +836,8 @@
             ' <span class="cbt no" onclick="location.reload()">새로고침</span></div>');
     } else {
       inner = g.accounts.map(function(a){return '<p><b>실제 발신 주소: '+mailEscape(a.email)+'</b></p><p>Google Workspace 회사 도메인 또는 연결된 Gmail 계정으로 발송합니다.</p>'+
-        '<p>오늘 Gmail 접수 '+a.sentToday+' / '+a.todayCap+'통 · 남은 한도 '+(a.remainingToday==null?'확인 중':a.remainingToday)+'통</p>'+
+        '<p>최근 24시간 시스템 접수 '+(a.sentLast24Hours==null?a.sentToday:a.sentLast24Hours)+' / '+a.todayCap+'통 · 시스템 잔여 '+(a.remainingToday==null?'확인 중':a.remainingToday)+'통</p>'+
+        '<p>계정당 최소 60초 간격으로 발송합니다. '+(a.nextSendAt?'다음 가능 시각: '+mailEscape(new Date(a.nextSendAt).toLocaleString()):'')+'</p>'+
         '<p>계정당 시스템 일일 상한 '+a.todayCap+'통입니다. Google 계정의 실제 남은 한도는 별도로 적용되며, 위 수치는 Theprlist 발송 기록 기준입니다.</p>'+
         '<p>전달률·스팸함 도착률·반송률: 아직 측정되지 않았습니다. 한도 단계 완료나 수신함 도착을 보장하지 않습니다.</p>'+
         (a.sendingPaused?'<p role="alert">발송 일시 중지: '+mailEscape(a.pauseReason)+'</p>':'')+
@@ -1417,7 +1442,7 @@
           (window.__ME.kind==='admin'?'<small>관리자</small>':'')+'</span>';
       }
       var nav='<header class="live-head"><a href="https://theprlist.net">theprlist<span> / brand console</span></a>'+chip+'<nav>'+[['home','홈'],['learn','브랜드 학습'],['products','제품·캠페인'],['community','커뮤니티·DM'],['mail','아웃리치·인박스'],['billing','월별 청구']].map(function(x){return '<button class="btn '+(livePage===x[0]?'':'line')+'" onclick="liveNav(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+(window.__ME&&window.__ME.kind==='admin'&&BRAND()?'<span style="font-size:12px;color:var(--ink-2,#566274)">관리자 · <b>'+mailEscape(BRAND())+'</b> <button class="btn line" onclick="adminSwitchBrand()">전환</button></span>':'')+'</nav></header>';
-      var preserved={};['outRecipients','outSubject','outBody','outBrief','outProduct','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)preserved[id]=el.value;});
+      var preserved={};['outRecipients','outSubject','outBody','outBrief','outProduct','outSender','outTarget','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)preserved[id]=el.value;});
       var body='';
       if(!window.__ME){body='<h1>브랜드와 크리에이터,<br>함께 시작할 준비.</h1><p>승인된 브랜드 계정으로 로그인해 주세요.</p><button class="btn" onclick="document.getElementById(\'authChip\').click()">로그인</button> <a class="btn line" href="https://theprlist.net/signup">가입 신청</a>';}
       else if(window.__ME.kind==='creator'){body='<h1>크리에이터 계정입니다</h1><p>브랜드 콘솔은 브랜드·운영 계정 전용이에요. 캠페인 지원·커뮤니티·DM은 크리에이터 앱에서 이용하세요.</p><a class="btn" href="https://app.theprlist.net">크리에이터 앱 열기</a> <span class="cbt no" onclick="authLogout()">로그아웃</span>';}
@@ -1425,7 +1450,7 @@
       else if(livePage==='learn')body=liveLearningCard();
       else if(livePage==='products')body=productsCard();
       else if(livePage==='community')body=brandCommunityCard();
-      else if(livePage==='mail')body='<h1>아웃리치·인박스</h1><p>연결 확인 → 초안 작성 → 검토·발송 → 받은 답장 순서로 진행합니다. 발송은 항상 사람이 검토한 뒤 실행됩니다.</p>'+'<div class="sect"><span class="k">STEP 1 · 연결</span><h2>발신 브랜드와 Gmail</h2><p>보내는 주소·권한·점진 발송 한도를 먼저 확인하세요.</p></div>'+identityCard()+gmailCard()+'<div class="sect"><span class="k">STEP 2–3 · 작성과 발송</span><h2>아웃리치 초안과 발송 내역</h2><p><b>초안 저장은 발송이 아닙니다</b> — 내역에서 내용을 승인해야 실제 발송됩니다.</p></div>'+outreachCard()+'<div class="sect"><span class="k">STEP 4 · 답장</span><h2>받은 답장(인박스)</h2><p>동기화된 답장을 확인하고 회신 초안을 검토해 발송합니다.</p></div>'+inboxCard();
+      else if(livePage==='mail')body='<h1>아웃리치·인박스</h1><p>연결 확인 → 초안 작성 → 검토·발송 → 받은 답장 순서로 진행합니다. 발송은 항상 사람이 검토한 뒤 실행됩니다.</p>'+'<div class="sect"><span class="k">STEP 1 · 연결</span><h2>발신 브랜드와 Gmail</h2><p>보내는 주소·권한·발송 상한·간격를 먼저 확인하세요.</p></div>'+identityCard()+gmailCard()+'<div class="sect"><span class="k">STEP 2–3 · 작성과 발송</span><h2>아웃리치 초안과 발송 내역</h2><p><b>초안 저장은 발송이 아닙니다</b> — 내역에서 내용을 승인해야 실제 발송됩니다.</p></div>'+outreachCard()+'<div class="sect"><span class="k">STEP 4 · 답장</span><h2>받은 답장(인박스)</h2><p>동기화된 답장을 확인하고 회신 초안을 검토해 발송합니다.</p></div>'+inboxCard();
       else if(livePage==='billing')body='<h1>월별 청구</h1><p>검증 가입 1명당 5,000원 · 부가세 포함 · 월 단위 합산</p><p>현재는 월별 합산 금액을 계산서(수기 청구) 방식으로 안내하는 운영입니다 — <b>카드 등록은 필수가 아닙니다.</b> 계산서 발행 여부·시점은 별도 이메일로 안내됩니다(이 화면은 발행 여부를 표시하지 않습니다).</p><p>카드 결제 최소금액은 1,000원입니다. 미만 청구서도 보관되며 자동 결제되지 않습니다.</p><button class="btn line" onclick="refreshBilling()">새로고침</button>'+window.billingCardHtml()+window.billingInvoicesHtml();
       else if(livePage==='status')body='<h1>서비스 상태</h1><div class="cc"><h2>이용 가능한 흐름</h2><p>브랜드 신청 → 운영자 승인 → 계정 생성 → 홈페이지 분석·프로필 저장 → 제품별 후보 추천 → Gmail 연결 → 아웃리치 초안 검토·발송 → 답장 수신(인박스 동기화) → 크리에이터 커뮤니티·캠페인 협업 → 월별 청구 확인</p></div><div class="cc"><h2>준비 중</h2><p>틱톡·인스타 계정 자동 검증과 자동 후보 수집(현재는 운영자 등록 후보 기준), 크리에이터 대금 지급 화면은 아직 공개 운영 대상이 아닙니다.</p><p>가입 과금은 실제 검증 가입이 기록될 때만 발생합니다.</p></div>';
       else body=(function(){
@@ -1449,7 +1474,7 @@
            note:'제품 화면에서 후보를 선택하면 수신자·추천 근거·합류 링크가 초안에 담깁니다. 자동 발송은 없습니다.',
            act:'products',cta:'후보 보기'},
           {done:false,label:'Gmail 연결과 발송 검토',
-           note:'연결 상태·발신 주소·점진 발송 한도는 아웃리치·인박스 상단에서 확인합니다.',
+           note:'연결 상태·발신 주소·발송 상한·간격는 아웃리치·인박스 상단에서 확인합니다.',
            act:'mail',cta:'아웃리치·인박스'},
           {done:false,label:'월별 청구 확인',
            note:'검증 가입 1명당 5,000원(부가세 포함) 월 합산 · 계산서 안내 운영 — 카드 등록은 필수가 아닙니다.',
@@ -1461,7 +1486,7 @@
       Object.keys(preserved).forEach(function(id){var el=document.getElementById(id);if(el)el.value=preserved[id];});
     };
     var previousReload=reloadBrand;
-    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';productsData=null;productsLoadError='';prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;candSelected={};prodEditOpen={};brandCampaigns=null;collabOpen=null;window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;inboxShowAll=false;previousReload();if(window.__ME&&BRAND()){loadProfile();loadProducts();loadIdentity();}};
+    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','outSender','outTarget','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';outreachTargets=[];outreachTargetProducts=[];outreachTargetBrand='';outreachTargetVersion++;productsData=null;productsLoadError='';prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;candSelected={};prodEditOpen={};brandCampaigns=null;collabOpen=null;window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;inboxShowAll=false;previousReload();if(window.__ME&&BRAND()){loadProfile();loadProducts();loadIdentity();}};
     // 시각 정본은 live-theme.css(docs/UI_DESIGN_GUIDE.md) — 여기서는 표면
     // 활성 클래스만 부여한다.
     document.body.classList.add('live-surface');

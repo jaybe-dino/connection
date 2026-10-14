@@ -37,7 +37,7 @@ def setup(outreach_db,monkeypatch):
     app=FastAPI();app.include_router(routes.router);app.include_router(gmail.router)
     h={'Authorization':'Bearer '+issue_jwt({'kind':'brand','brand_id':'real','sub':'u1'})}
     calls=[]
-    def send(*args):calls.append(args[2]);return {'via':'gmail','fromEmail':'sender@example.com','messageId':'provider-id'}
+    def send(*args, **kwargs):calls.append(args[2]);return {'via':'gmail','fromEmail':'sender@example.com','messageId':'provider-id'}
     monkeypatch.setattr(gmail,'send_via_brand_gmail',send)
     return TestClient(app),db,h,calls
 
@@ -71,16 +71,21 @@ def test_explicit_send_idempotency_and_persistence(setup):
 
 def test_uncertain_delivery_never_replays(setup,monkeypatch):
     c,db,h,calls=setup;i=draft(c,h)
-    def timeout(*args):calls.append(args[2]);raise TimeoutError()
+    def timeout(*args, **kwargs):calls.append(args[2]);raise TimeoutError()
     monkeypatch.setattr(gmail,'send_via_brand_gmail',timeout)
     for _ in range(2):
         r=c.post('/brands/real/outreach/'+i+'/send',headers=h)
-        assert r.json()['recipients'][0]['state']=='review'
+        if r.status_code==200:
+            assert r.json()['recipients'][0]['state']=='review'
+        else:
+            assert r.status_code==409
+            batches=c.get('/brands/real/outreach',headers=h).json()['batches']
+            assert next(b for b in batches if b['id']==i)['recipients'][0]['state']=='review'
     assert len(calls)==1
 
 def test_quota_is_pending_not_fake_success(setup,monkeypatch):
     c,db,h,calls=setup;i=draft(c,h)
-    monkeypatch.setattr(gmail,'send_via_brand_gmail',lambda *args:None)
+    monkeypatch.setattr(gmail,'send_via_brand_gmail',lambda *args, **kwargs:None)
     r=c.post('/brands/real/outreach/'+i+'/send',headers=h)
     assert r.json()['recipients'][0]['state']=='pending'
     with db() as conn:assert conn.execute('SELECT count(*) AS n FROM mail_messages').fetchone()['n']==0
@@ -107,21 +112,23 @@ def test_inbox_read_does_not_send_and_inbound_requires_secret(setup):
     c.get('/brands/real/inbox',headers=h);c.get('/inbox/threads/'+str(t),headers=h)
     assert calls==[]
     assert c.post('/inbound/reply',json={'from_email':'fake@example.com','brand_id':'real','text':'yes'}).status_code==401
+    with db() as conn:
+        conn.execute("UPDATE mail_messages SET gmail_account_id=(SELECT account_id FROM gmail_accounts WHERE brand_id='real' LIMIT 1) WHERE msg_id=%s",(m,))
     assert c.post(f'/inbox/threads/{t}/messages/{m}/send',headers=h).json()['state']=='sent'
     assert c.post(f'/inbox/threads/{t}/messages/{m}/send',headers=h).status_code==409
     assert len(calls)==1
 
 
-def test_warmup_ignores_account_age_and_counts_sending_days():
+def test_approved_initial_cap_is_independent_of_account_age():
     from datetime import datetime,UTC,timedelta
     now=datetime.now(UTC)
     row={'account_id':'test','brand_id':'real','email':'sender@example.com','state':'connected','connected_at':now-timedelta(days=300),'sent_date':now.date(),'sent_today':0,'warmup_days':0}
-    assert gmail._acct_out(row)['todayCap']==2
+    assert gmail._acct_out(row)['todayCap']==200
     row.update(warmup_days=1,warmup_last_date=now.date(),sent_today=1)
-    assert gmail._acct_out(row)['todayCap']==2
-    assert gmail._acct_out(row)['remainingToday']==1
+    assert gmail._acct_out(row)['todayCap']==200
+    assert gmail._acct_out(row)['remainingToday']==199
     row['warmup_last_date']=(now-timedelta(days=1)).date()
-    assert gmail._acct_out(row)['todayCap']==4
+    assert gmail._acct_out(row)['todayCap']==200
     row.update(sending_paused=True)
     assert gmail._acct_out(row)['remainingToday']==0
     assert gmail._acct_out(row)['deliveryVerified'] is False
@@ -146,12 +153,14 @@ def test_actual_sender_headers_and_daily_quota(setup,monkeypatch):
     observed=[]
     monkeypatch.setattr(gmail,'_refresh_if_needed',lambda *a:'test-token')
     monkeypatch.setenv('INBOUND_REPLY','0')
+    monkeypatch.setenv('GMAIL_DAILY_CAP','2')
     def post(url,**kw):
         observed.append(message_from_bytes(base64.urlsafe_b64decode(kw['json']['raw'])))
-        return SimpleNamespace(status_code=200,json=lambda:{'id':'accepted-id'})
+        return SimpleNamespace(status_code=200,json=lambda:{'id':'accepted-'+str(len(observed))})
     monkeypatch.setattr(httpx,'post',post)
     for i in range(3):
         with db() as conn:
+            conn.execute("UPDATE gmail_accounts SET last_send_at=now()-interval '61 seconds' WHERE brand_id='real'")
             result=REAL_GMAIL_SEND(conn,'real','recipient@example.test','QA','Test message')
         assert bool(result)==(i<2)
     assert len(observed)==2

@@ -108,6 +108,8 @@ export interface Submission {
 export const adminApi = {
   base: BASE,
   summary: () => req<Summary>("/admin/summary"),
+  recruitmentWorkspace: () => req<{workspace: {brandId:string;name:string;internal:boolean}|null}>("/admin/recruitment/workspace"),
+  createRecruitmentWorkspace: () => req<{brandId:string;internal:boolean;created:boolean}>("/admin/recruitment/workspace", {method:"POST"}),
   gmailStatus: () => req<any>("/admin/gmail/status"),
   applications: (status = "pending") =>
     req<Application[]>(`/admin/applications?status=${status}`),

@@ -510,3 +510,28 @@ def admin_summary(_admin: dict = Depends(require_admin)) -> dict:
                 "SELECT count(*) n FROM gate_requests WHERE state IN ('PENDING','HELD')"),
             "ledgerEvents": count("SELECT count(*) n FROM ledger"),
         }
+
+
+@admin.get('/recruitment/workspace')
+def recruitment_workspace(_admin: dict = Depends(require_admin)):
+    with connect() as conn:
+        row = conn.execute("SELECT brand_id,name,is_internal FROM brands WHERE brand_id='dino-recruitment'").fetchone()
+    return {'workspace': ({'brandId':row['brand_id'],'name':row['name'],'internal':row['is_internal']} if row else None)}
+
+
+@admin.post('/recruitment/workspace')
+def create_recruitment_workspace(_admin: dict = Depends(require_admin)):
+    """Explicit administrator action. No invite, credential, import, or email side effect."""
+    with connect() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('workspace:dino-recruitment',0))")
+        row=conn.execute("SELECT is_internal FROM brands WHERE brand_id='dino-recruitment'").fetchone()
+        if row and not row['is_internal']:
+            raise HTTPException(409,'동일 주소의 고객 브랜드가 있습니다. 운영팀에서 확인하세요.')
+        created=not bool(row)
+        if created:
+            conn.execute("INSERT INTO brands(brand_id,name,category,plan,is_internal) VALUES('dino-recruitment','DINOSTUDIO 공용 모집','creator recruitment','internal',true)")
+            from .routes_community import ensure_default_cell
+            ensure_default_cell(conn,'dino-recruitment','DINOSTUDIO 공용 모집')
+            conn.execute("INSERT INTO brand_profile_versions(brand_id,version,fields,note) VALUES('dino-recruitment',1,%s,'internal workspace')",(_j({'brand_one_liner':{'value':'디노스튜디오 공용 크리에이터 모집','source':'administrator','confirmed':True}}),))
+            ledger_append(conn,str(_admin['admin_id']),'RECRUITMENT_WORKSPACE_CREATED','dino-recruitment',{'internal':True})
+    return {'brandId':'dino-recruitment','internal':True,'created':created,'emailSent':False}

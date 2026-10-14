@@ -52,6 +52,7 @@ def _import_account(conn, brand, account, token):
             sender=parseaddr(headers.get('from',''))[1].lower()
             if '@' not in sender:continue
             content=text_body(payload) or '(본문이 없거나 지원하지 않는 형식입니다. Gmail에서 확인하세요.)'
+            gmail.record_explicit_optout(conn,brand,sender,content)
             at=datetime.fromtimestamp(int(message['internalDate'])/1000,UTC)
             subject=headers.get('subject','').replace('\r',' ').replace('\n',' ')[:500]
             thread=conn.execute("INSERT INTO mail_threads(brand_id,creator_email,subject,ari_label,last_direction,last_message_at) VALUES(%s,%s,%s,%s,'in',%s) ON CONFLICT(brand_id,creator_email) DO UPDATE SET subject=CASE WHEN EXCLUDED.last_message_at>=mail_threads.last_message_at THEN EXCLUDED.subject ELSE mail_threads.subject END,ari_label=CASE WHEN EXCLUDED.last_message_at>=mail_threads.last_message_at THEN EXCLUDED.ari_label ELSE mail_threads.ari_label END,last_direction=CASE WHEN EXCLUDED.last_message_at>=mail_threads.last_message_at THEN 'in' ELSE mail_threads.last_direction END,last_message_at=GREATEST(mail_threads.last_message_at,EXCLUDED.last_message_at) RETURNING thread_id",(brand,sender,subject,gmail._ari_label(content),at)).fetchone()

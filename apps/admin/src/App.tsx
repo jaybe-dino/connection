@@ -7,6 +7,7 @@ import Reports from "./screens/Reports";
 import Disputes from "./screens/Disputes";
 import Submissions from "./screens/Submissions";
 import GmailOps from "./screens/GmailOps";
+import Recruitment from "./screens/Recruitment";
 import Pool from "./screens/Pool";
 
 const RAIL = [
@@ -15,6 +16,7 @@ const RAIL = [
   { to: "/reports", label: "신고 처리함", icon: "⚑", badge: "openReports" },
   { to: "/disputes", label: "분쟁 심판", icon: "⚖", badge: "openDisputes" },
   { to: "/submissions", label: "검수 현황", icon: "◑", badge: "inReviewSubmissions" },
+  { to: "/recruitment", label: "디노 공용 모집", icon: "◈" },
   { to: "/gmail", label: "Gmail 운영", icon: "✉" },
   { to: "/pool", label: "후보 풀", icon: "◎" },
 ] as const;
@@ -276,6 +278,7 @@ export default function App() {
           <Route path="/reports" element={<Reports onChange={refresh} />} />
           <Route path="/disputes" element={<Disputes onChange={refresh} />} />
           <Route path="/submissions" element={<Submissions onChange={refresh} />} />
+          <Route path="/recruitment" element={<Recruitment />} />
           <Route path="/gmail" element={<GmailOps />} />
           <Route path="/pool" element={<Pool />} />
         </Routes>

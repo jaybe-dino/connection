@@ -33,6 +33,7 @@ def dbname():
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/029_invoice_supplements.sql')],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/033_invoice_cancel_marker.sql')],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/034_brand_billing_keys.sql')],check=True,stdout=subprocess.DEVNULL)
+    subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/038_internal_recruitment.sql')],check=True,stdout=subprocess.DEVNULL)
     yield name
     subprocess.run(['dropdb',name],check=True)
 
@@ -48,7 +49,7 @@ def setup(dbname, monkeypatch):
             yield conn
     with db() as conn:
         conn.execute('TRUNCATE signup_usage,signup_invoices,memberships,creators,brands CASCADE')
-        conn.execute("INSERT INTO brands VALUES ('real',false,'per_signup'),('other',false,'per_signup')")
+        conn.execute("INSERT INTO brands(brand_id,is_demo,plan) VALUES ('real',false,'per_signup'),('other',false,'per_signup')")
         conn.execute("INSERT INTO creators VALUES ('c1',true),('c2',true),('c3',true)")
         conn.execute("UPDATE signup_billing_policy SET effective_at='2020-01-01'")
         conn.execute("INSERT INTO memberships VALUES ('c1','real',now()),('c2','real',now()),('c3','real',now())")

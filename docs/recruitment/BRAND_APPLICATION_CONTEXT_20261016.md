@@ -69,3 +69,12 @@ flowchart LR
 5. 코드 복귀는 작업 전 `848e086`, 콘솔 디자인 기준은 `dpl_CSJyTZrt44pBJ5pM7uZMxEYwCSTT`. 043의 새 테이블/신청 이력을 DROP하지 않는다. 배포 후 이전 프론트로 돌아가면 새 링크 신청 UI가 사라지므로 발송은 중지하고, 이미 배포된 신청 링크 처리 API/데이터는 유지하는 호환 복구가 필요하다.
 
 월 3만 고유 운영 인원과 하루 신규 1만 제안은 목표다. 이번 검증은 처리량 달성·전달률·실제 운영 전환율 검증이 아니다. 다계정 자동 분산·AI 집군 추천·발신자 관계 고정·독립 제안 코드 버전 체계의 전체 구현은 별도 범위로 남아 있다.
+
+## 커뮤니티 복원 통합 및 운영 경로 재확인 · 2026-10-16
+
+- 커뮤니티 담당의 `76f002b`를 이 작업 브랜치에 fast-forward로 반영했다. 기존 `8932c20` 신청 컨텍스트 구현을 포함한다. 중복 작성한 미커밋 UI 초안은 git stash로 보존했고 적용하지 않았다.
+- `app.theprlist.net/engine-live.js` 공개 응답이 해당 커밋의 creator 정본과 바이트 단위로 일치했다. 담당이 보고한 creator 운영 배포는 `dpl_7B8fNqaYWpKvmYF9qMsVtMoaWcRr`다.
+- 통합 소스의 Node UI 검사 63개가 모두 통과했다. 실제 사용자 로그인 후 대화 전송 검증은 이번 확인에 포함하지 않았다.
+- 운영 API `/health`와 `/openapi.json`은 200이었으나 OpenAPI에 `/recruitment-links` 경로가 없었다. 잘못된 토큰 경로도 404였다. 따라서 새 신청 API는 아직 운영에서 제공되지 않는 것으로 판단한다. DB 043 적용 여부는 이 공개 조회로 확인할 수 없다.
+- API/043 및 필요한 운영 화면의 배포와 운영 신청 검수는 여전히 남아 있다. 이번에는 운영 DB·API 배포·메일 발송을 수행하지 않았다. 새 application 토큰 링크를 실제 모집에 사용하기 전에 위 배포 순서와 검수를 완료해야 한다.
+- 증빙: `evidence-20261016/community-integration-status.json`, `integrated-community-ui-tests.log`.

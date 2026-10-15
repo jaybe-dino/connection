@@ -1,0 +1,13 @@
+{
+  "date": "2026-10-16",
+  "integrated_commit": "76f002b",
+  "preserved_application_commit": "8932c20",
+  "production_creator_engine_matches": true,
+  "production_creator_engine_sha256": "0de1e412f3ae3aead8449777c6a689ec947212dcdd575c84657d484c793dbb53",
+  "production_health": 200,
+  "production_openapi_recruitment_link_paths": [],
+  "production_invalid_application_token_status": 404,
+  "ui_tests_passed": 63,
+  "superseded_local_ui_draft": "git stash: Preserve superseded community UI draft before integrating deployed 76f002b",
+  "external_mail_sent": false
+}

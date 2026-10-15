@@ -1,0 +1,13 @@
+.recruitment h1 {font-size:25px;letter-spacing:-.04em;margin:0 0 8px}
+.recruitment h2 {font-size:18px;letter-spacing:-.03em;margin:0 0 14px}
+.recruitment h3 {font-size:15px;overflow-wrap:anywhere}
+.recruitment p {font-size:13px;color:var(--n600);margin:10px 0 14px}
+.recruitment label {display:block;font-size:12px;font-weight:700;margin-bottom:12px}
+.recruitment label input,.recruitment label select,.recruitment label textarea {margin-top:5px;font:inherit;font-weight:400;background:#fff;color:var(--n800)}
+.recruitment button {padding:8px 12px;border:1px solid var(--n300);border-radius:7px;background:var(--n50);color:var(--n800);font:inherit;font-size:12px;font-weight:700;cursor:pointer;margin:4px 4px 4px 0;white-space:normal;overflow-wrap:anywhere}
+.recruitment button:disabled {opacity:.5;cursor:not-allowed}
+.recruitment input:focus,.recruitment select:focus,.recruitment textarea:focus,.recruitment button:focus-visible {outline:2px solid #946146;outline-offset:2px}
+.recruitment details {font-size:13px;padding:10px 0;border-bottom:1px solid var(--n200);overflow-wrap:anywhere}
+.recruitment summary {cursor:pointer;font-weight:700}
+.recruitment small {color:var(--n600)}
+@media(max-width:760px){.recruitment h1{font-size:22px}.recruitment button{min-height:40px}}

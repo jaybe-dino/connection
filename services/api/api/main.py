@@ -653,3 +653,6 @@ def ari_chat(body: AriChat, authorization: str = Header(default="")) -> dict:
         log.exception("assistant request failed")
         raise HTTPException(502,"답변 서비스가 응답하지 않았습니다. 잠시 후 다시 시도하세요.")
     return {"reply": reply, "ai": ai.ai_available()}
+
+from .routes_recruitment import router as _recruitment_router
+app.include_router(_recruitment_router)

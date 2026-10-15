@@ -58,6 +58,7 @@ class MappingIn(BaseModel):
     product_id: UUID
     gmail_account_id: UUID | None = None
     owner_name: str = Field(default='',max_length=100)
+    campaign_id: str | None = Field(default=None,max_length=100)
     country: str = Field(default='',max_length=80)
     language: str = Field(default='',max_length=80)
     state: Literal['draft','active','paused','archived'] = 'draft'
@@ -90,6 +91,8 @@ def output(r):
 def validate(conn,b):
     workspace(conn)
     if not b.name.strip():raise HTTPException(400,'매핑 이름을 입력하세요')
+    from .routes_recruitment_links import validate_campaign
+    validate_campaign(conn,b.target_brand_id,b.campaign_id,b.product_id)
     target=conn.execute("SELECT 1 FROM brands WHERE brand_id=%s AND NOT is_internal AND NOT is_demo AND brand_id NOT LIKE 'qa-%%'",(b.target_brand_id,)).fetchone()
     if not target:raise HTTPException(409,'실제 고객 브랜드를 선택하세요')
     if not conn.execute("SELECT 1 FROM brand_products WHERE product_id=%s AND brand_id=%s AND state='active'",(b.product_id,b.target_brand_id)).fetchone():
@@ -112,7 +115,8 @@ def options(_admin:dict=Depends(require_admin)):
         brands=c.execute("SELECT brand_id,name FROM brands WHERE NOT is_internal AND NOT is_demo AND brand_id NOT LIKE 'qa-%%' ORDER BY name").fetchall()
         products=c.execute("SELECT p.product_id,p.brand_id,p.name FROM brand_products p JOIN brands b USING(brand_id) WHERE p.state='active' AND NOT b.is_internal AND NOT b.is_demo AND b.brand_id NOT LIKE 'qa-%%' ORDER BY b.name,p.name").fetchall()
         accounts=c.execute('SELECT account_id,email,state,sending_paused FROM gmail_accounts WHERE brand_id=%s ORDER BY email',(WORKSPACE,)).fetchall()
-    return {'brands':[output(r) for r in brands],'products':[output(r) for r in products],'accounts':[output(r) for r in accounts]}
+        campaigns=c.execute("SELECT campaign_id,brand_id,product_id,name FROM campaigns WHERE status='open' AND product_id IS NOT NULL ORDER BY name").fetchall()
+    return {'campaigns':[output(r) for r in campaigns],'brands':[output(r) for r in brands],'products':[output(r) for r in products],'accounts':[output(r) for r in accounts]}
 
 
 @router.get('/mappings')
@@ -157,7 +161,7 @@ def saved_plan(c,mapping_id,body):
     if not r:raise HTTPException(404,'매핑을 찾을 수 없습니다')
     if r['revision']!=body.revision:raise HTTPException(409,'매핑이 변경되었습니다. 다시 미리보기 하세요')
     if r['state']!='active':raise HTTPException(409,'활성 매핑에서만 초안을 만들 수 있습니다')
-    definition=bulk.Mapping(key=str(mapping_id),target_brand_id=r['target_brand_id'],product_id=r['product_id'],gmail_account_id=r['gmail_account_id'],subject=r['subject'],body=r['body'])
+    definition=bulk.Mapping(key=str(mapping_id),target_brand_id=r['target_brand_id'],product_id=r['product_id'],gmail_account_id=r['gmail_account_id'],subject=r['subject'],body=r['body'],campaign_id=r['campaign_id'])
     rows=[bulk.Candidate(email=x.email,name=x.name,reason=x.reason,mapping_key=str(mapping_id)) for x in body.rows]
     return bulk.Plan(mappings=[definition],rows=rows)
 

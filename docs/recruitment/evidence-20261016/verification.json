@@ -1,0 +1,13 @@
+{
+  "restored_console_render_block_byte_identical": true,
+  "production_restored_baseline_matches": true,
+  "restored_baseline_sha256": "30d679d464aef736b69486a68a588fa9c63e63f84cb87779280ad7e38a641063",
+  "api_billing_tests": "306 passed",
+  "ui_behavior_tests": "57 passed",
+  "web_build": "pnpm build passed",
+  "new_migration": "043_recruitment_application_context.sql",
+  "external_mail_sent": false,
+  "production_database_changed": false,
+  "production_deployed": false,
+  "browser_qa": "Blocked: browser request-header policy load failure (tool-side networking)"
+}

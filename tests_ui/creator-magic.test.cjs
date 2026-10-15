@@ -6,7 +6,7 @@ const source=fs.readFileSync('packages/demo-core/src/engine-live.js','utf8');
 const code=source.slice(source.indexOf('    var creatorMagicBusy=false;'),source.indexOf('    window.creatorJoin='));
 function harness(req){
  const fields={crEmail:{value:'qa@example.com'},crLoginStatus:{textContent:''},crLoginButton:{disabled:false}};
- const ctx={window:{},document:{getElementById:id=>fields[id]},req,magicSent:false,renderCount:0,render(){ctx.renderCount++},toast(){},location:{origin:'https://app.theprlist.net'}};
+ const ctx={window:{},document:{getElementById:id=>fields[id]},req,magicSent:false,applicationToken:'',renderCount:0,render(){ctx.renderCount++},toast(){},location:{origin:'https://app.theprlist.net'}};
  vm.createContext(ctx);vm.runInContext(code,ctx);return {ctx,fields};
 }
 test('failed delivery remains visible and never claims a sent email',async()=>{

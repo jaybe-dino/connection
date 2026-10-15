@@ -656,3 +656,6 @@ def ari_chat(body: AriChat, authorization: str = Header(default="")) -> dict:
 
 from .routes_recruitment import router as _recruitment_router
 app.include_router(_recruitment_router)
+
+from .routes_recruitment_links import router as _recruitment_links_router
+app.include_router(_recruitment_links_router)

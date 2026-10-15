@@ -22,6 +22,7 @@ class Mapping(BaseModel):
     target_brand_id: str = Field(min_length=1, max_length=40)
     product_id: UUID
     gmail_account_id: UUID
+    campaign_id: str | None = Field(default=None,max_length=100)
     subject: str = Field(min_length=1, max_length=150)
     body: str = Field(min_length=1, max_length=10000)
 
@@ -77,6 +78,8 @@ def prepare(conn, brand, body, authorization):
             raise HTTPException(409, mapping.key+': 모집 공간에 연결된 발신 계정을 선택하세요')
         if account['sending_paused']:
             raise HTTPException(409, mapping.key+': 발송 중지된 계정입니다')
+        from .routes_recruitment_links import validate_campaign
+        validate_campaign(conn,target,mapping.campaign_id,mapping.product_id)
         definitions[mapping.key] = {'mapping':mapping, 'target':target, 'product':product,
                                     'account':gmail._acct_out(gmail._with_delivery_usage(conn,account))}
 
@@ -117,6 +120,8 @@ def prepare(conn, brand, body, authorization):
         mapping = definition['mapping']
         subject = render_text(mapping.subject,values).strip()
         text = render_text(mapping.body,values).strip()
+        from .routes_recruitment_links import validate_ctas
+        validate_ctas(text,definition['target'])
         join_url = os.environ.get('CREATOR_APP_URL','https://app.theprlist.net').rstrip('/')+'/?brand='+definition['target']
         if join_url not in text:
             text += '\n\n▶ 브랜드 PR 리스트 합류(무료): '+join_url
@@ -131,7 +136,7 @@ def prepare(conn, brand, body, authorization):
         planned[account['accountId']] += len(records)
         mapping = definition['mapping']
         groups.append({'key':key,'targetBrandId':definition['target'],'brandName':definition['product']['brand_name'],
-                       'productId':str(mapping.product_id),'productName':definition['product']['name'],
+                       'productId':str(mapping.product_id),'productName':definition['product']['name'],'campaignId':mapping.campaign_id,
                        'gmailAccountId':str(mapping.gmail_account_id),'senderEmail':account['email'],
                        'eligibleCount':len(records),'batchCount':(len(records)+199)//200,
                        'samples':records[:3]})
@@ -176,11 +181,14 @@ def save(brand: str, body: SavePlan, authorization: str = Header(default='')):
             records = eligible[key]
             for start in range(0,len(records),200):
                 chunk = records[start:start+200]
-                batch = conn.execute('INSERT INTO outreach_batches(brand_id,subject,body,created_by,gmail_account_id,target_brand_id,product_id,product_name,mapping_key) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING batch_id',(brand,mapping.subject,mapping.body,actor,mapping.gmail_account_id,definition['target'],mapping.product_id,definition['product']['name'],key)).fetchone()
+                batch = conn.execute('INSERT INTO outreach_batches(brand_id,subject,body,created_by,gmail_account_id,target_brand_id,product_id,product_name,mapping_key,campaign_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING batch_id',(brand,mapping.subject,mapping.body,actor,mapping.gmail_account_id,definition['target'],mapping.product_id,definition['product']['name'],key,mapping.campaign_id)).fetchone()
                 bid = batch['batch_id']; ids.append(str(bid))
                 for record in chunk:
                     conn.execute('INSERT INTO outreach_optouts(brand_id,email) VALUES(%s,%s) ON CONFLICT DO NOTHING',(brand,record['email']))
-                    conn.execute('INSERT INTO outreach_recipients(batch_id,email,personalized_subject,personalized_body) VALUES(%s,%s,%s,%s)',(bid,record['email'],record['subject'],record['body']))
+                    recipient=conn.execute('INSERT INTO outreach_recipients(batch_id,email,personalized_subject,personalized_body) VALUES(%s,%s,%s,%s) RETURNING recipient_id',(bid,record['email'],record['subject'],record['body'])).fetchone()
+                    from .routes_recruitment_links import append_link
+                    personal=append_link(conn,bid,recipient['recipient_id'],record['body'])
+                    conn.execute('UPDATE outreach_recipients SET personalized_body=%s WHERE recipient_id=%s',(personal,recipient['recipient_id']))
         conn.execute('INSERT INTO outreach_bulk_saves(brand_id,request_id,input_hash,batch_ids) VALUES(%s,%s,%s,%s)',(brand,body.request_id,input_hash,json.dumps(ids)))
     return {'batchIds':ids,'replayed':False,'written':True,'sent':False,'eligibleCount':result['eligibleCount']}
 

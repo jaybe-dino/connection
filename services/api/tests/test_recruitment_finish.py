@@ -10,6 +10,7 @@ def internal(client):
     headers={'Authorization':'Bearer '+auth.issue_jwt({'sub':'qa-internal-admin','kind':'admin'})}
     r=client.post('/admin/recruitment/workspace',headers=headers)
     assert r.status_code==200,r.text
+    with connect() as c:c.execute("INSERT INTO brands(brand_id,name) VALUES('finish-customer','Dedicated customer') ON CONFLICT DO NOTHING")
     yield headers
     with connect() as c:
         c.execute("UPDATE outreach_batches SET state='cancelled' WHERE brand_id='dino-recruitment'")
@@ -44,7 +45,7 @@ def test_creator_company_membership_not_billed_customer_still_billed(client,inte
 def test_operator_200_recipient_batch_paused_queue_makes_no_provider_call(client,internal,monkeypatch):
     with connect() as c:
         account=str(c.execute("INSERT INTO gmail_accounts(brand_id,email) VALUES('dino-recruitment','batch@qa.example') RETURNING account_id").fetchone()['account_id'])
-    draft={'gmail_account_id':account,'recipients':[f'c{i}@qa.example' for i in range(200)],'subject':'Review','body':'Only synthetic QA'}
+    draft={'target_brand_id':'finish-customer','gmail_account_id':account,'recipients':[f'c{i}@qa.example' for i in range(200)],'subject':'Review','body':'Only synthetic QA'}
     r=client.post('/brands/dino-recruitment/outreach',headers=internal,json=draft)
     assert r.status_code==200,r.text
     bid=r.json()['id'];assert len(r.json()['recipients'])==200
@@ -74,7 +75,7 @@ def test_security_preview_is_readonly_and_distinguishes_email_count(client,inter
         aid=str(c.execute("INSERT INTO gmail_accounts(brand_id,email) VALUES('dino-recruitment','preview@qa.example') RETURNING account_id").fetchone()['account_id'])
         c.execute("INSERT INTO outreach_optouts(brand_id,email,opted_out_at) VALUES('dino-recruitment','no@qa.example',now()) ON CONFLICT(brand_id,email) DO UPDATE SET opted_out_at=now()")
         before=c.execute('SELECT count(*) n FROM outreach_batches').fetchone()['n']
-    r=client.post('/brands/dino-recruitment/outreach/preview',headers=internal,json={'gmail_account_id':aid,'recipients':[' Yes@qa.example ','yes@qa.example','no@qa.example']})
+    r=client.post('/brands/dino-recruitment/outreach/preview',headers=internal,json={'target_brand_id':'finish-customer','gmail_account_id':aid,'recipients':[' Yes@qa.example ','yes@qa.example','no@qa.example']})
     assert r.status_code==200,r.text
     result=r.json();assert result['uniqueEmailCount']==2 and result['eligibleCount']==1
     assert result['excluded']==[{'email':'no@qa.example','reason':'opted_out'}]
@@ -85,7 +86,7 @@ def test_security_preview_is_readonly_and_distinguishes_email_count(client,inter
 def test_operator_pause_between_recipients_stops_next_attempt(client,internal,monkeypatch):
     with connect() as c:
         aid=str(c.execute("INSERT INTO gmail_accounts(brand_id,email) VALUES('dino-recruitment','mid-pause@qa.example') RETURNING account_id").fetchone()['account_id'])
-    r=client.post('/brands/dino-recruitment/outreach',headers=internal,json={'gmail_account_id':aid,'recipients':['mid-a@qa.example','mid-b@qa.example'],'subject':'QA','body':'Synthetic'}).json()
+    r=client.post('/brands/dino-recruitment/outreach',headers=internal,json={'target_brand_id':'finish-customer','gmail_account_id':aid,'recipients':['mid-a@qa.example','mid-b@qa.example'],'subject':'QA','body':'Synthetic'}).json()
     with connect() as c:c.execute("UPDATE outreach_batches SET state='approved' WHERE batch_id=%s",(r['id'],))
     calls=[]
     def mocked_provider(*args,**kwargs):

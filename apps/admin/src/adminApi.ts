@@ -106,6 +106,7 @@ export interface Submission {
 }
 
 export const adminApi = {
+  recruitmentApplications: (brand:string) => req<any>('/recruitment-links/brands/'+encodeURIComponent(brand)+'/applications'),
   base: BASE,
   summary: () => req<Summary>("/admin/summary"),
   recruitmentWorkspace: () => req<{workspace: {brandId:string;name:string;internal:boolean}|null}>("/admin/recruitment/workspace"),

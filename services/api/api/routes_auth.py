@@ -8,7 +8,7 @@ import logging
 import os
 
 from fastapi import APIRouter, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import auth
 from .db import connect, ledger_append
@@ -258,6 +258,7 @@ def accept_invite(body: AcceptIn) -> dict:
 
 class MagicIn(BaseModel):
     email: str
+    application: str = Field(default="",max_length=60)
     brand: str = ""      # 초대 브랜드 slug(선택) — 로그인 후 합류 카드 유지용
 
 
@@ -277,6 +278,14 @@ def magic_request(body: MagicIn) -> dict:
     if brand and not _re.fullmatch(r"[a-z0-9][a-z0-9-]{2,39}", brand):
         brand = ""
     with connect() as conn:
+        if body.application:
+            from .routes_recruitment_links import resolve
+            context=resolve(conn,body.application)
+            if context['email'].strip().lower()!=email:
+                raise HTTPException(403,'이 제안을 받은 이메일로 로그인하세요')
+            if brand and brand!=context['target']:
+                raise HTTPException(409,'모집 링크와 브랜드가 다릅니다')
+            brand=context['target']
         u = conn.execute("SELECT * FROM users WHERE email=%s",
                          (email,)).fetchone()
         if u and u["kind"] != "creator":
@@ -289,7 +298,7 @@ def magic_request(body: MagicIn) -> dict:
                                       (brand,)).fetchone():
             brand = ""                      # 실존 브랜드만 보존
         raw = auth.one_time_token(conn, u["user_id"], "magic", MAGIC_TTL_MIN)
-    link = f"{APP_SITE}/?{('brand=' + _q(brand) + '&') if brand else ''}magic={raw}"
+    link = f"{APP_SITE}/?{('brand=' + _q(brand) + '&') if brand else ''}magic={raw}{('&application='+_q(body.application)) if body.application else ''}"
     out = {"ok": True, "sent": True}
     if _mail_demo_mode():
         out["demoLink"] = link

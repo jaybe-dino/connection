@@ -3,8 +3,8 @@ import { adminApi } from '../adminApi';
 import './Recruitment.css';
 
 type Workspace = {brandId:string;name:string;internal:boolean};
-type Form = {name:string;target_brand_id:string;product_id:string;gmail_account_id:string|null;owner_name:string;country:string;language:string;state:string;subject:string;body:string;note:string;revision:number};
-const empty:Form={name:'',target_brand_id:'',product_id:'',gmail_account_id:null,owner_name:'',country:'',language:'',state:'draft',subject:'{{name}}님, {{brand}}의 {{product}} 협업 제안',body:'{{reason}}\n\n제품과 협업 조건을 확인한 뒤 참여 의사를 알려주세요.',note:'',revision:1};
+type Form = {campaign_id:string|null;name:string;target_brand_id:string;product_id:string;gmail_account_id:string|null;owner_name:string;country:string;language:string;state:string;subject:string;body:string;note:string;revision:number};
+const empty:Form={campaign_id:null,name:'',target_brand_id:'',product_id:'',gmail_account_id:null,owner_name:'',country:'',language:'',state:'draft',subject:'{{name}}님, {{brand}}의 {{product}} 협업 제안',body:'{{reason}}\n\n제품과 협업 조건을 확인한 뒤 참여 의사를 알려주세요.',note:'',revision:1};
 const states:Record<string,string>={draft:'준비',active:'활성',paused:'새 초안 중지',archived:'보관'};
 const deliveryStates:Record<string,string>={draft:'초안',approved:'승인됨',cancelled:'취소됨',pending:'대기',sending:'전송 중',sent:'발송 성공',review:'결과 확인 필요',blocked:'제외'};
 const exclusions:Record<string,string>={duplicate_row:'명단 내 중복',mapping_conflict:'제품 배정 충돌',opted_out:'수신거부',recent_contact:'최근 연락 이력',reserved_draft_or_queue:'기존 초안·대기열에 포함'};
@@ -13,8 +13,9 @@ const input={width:'100%',padding:8,boxSizing:'border-box' as const,border:'1px 
 
 export default function Recruitment(){
  const [workspace,setWorkspace]=useState<Workspace|null>(null),[loaded,setLoaded]=useState(false);
- const [options,setOptions]=useState<any>({brands:[],products:[],accounts:[]}),[items,setItems]=useState<any[]>([]);
+ const [options,setOptions]=useState<any>({brands:[],products:[],accounts:[],campaigns:[]}),[items,setItems]=useState<any[]>([]);
  const [selected,setSelected]=useState<string>(''),[form,setForm]=useState<Form>({...empty}),[dirty,setDirty]=useState(false);
+ const [applications,setApplications]=useState<any[]>([]);
  const [filter,setFilter]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [rowsText,setRowsText]=useState(''),[preview,setPreview]=useState<any>(null),[batches,setBatches]=useState<any[]>([]),[review,setReview]=useState<any>(null);
  const [catalog,setCatalog]=useState({brand_id:'',brand_name:'',product_name:'',commission_pct:'',source_note:''}),[oauthUrl,setOauthUrl]=useState('');
@@ -22,8 +23,8 @@ export default function Recruitment(){
  async function load(){const w=await adminApi.recruitmentWorkspace();setWorkspace(w.workspace);if(w.workspace){const [o,m]=await Promise.all([adminApi.recruitmentOptions(),adminApi.recruitmentMappings()]);setOptions(o);setItems(m.mappings);}setLoaded(true);}
  useEffect(()=>{load().catch(e=>setError(String(e)));return()=>{generation.current++;};},[]);
  async function action(fn:()=>Promise<void>){setBusy(true);setError('');setNotice('');try{await fn();}catch(e){setError(String(e));}finally{setBusy(false);}}
- function change(key:keyof Form,value:any){setForm(f=>({...f,[key]:value,...(key==='target_brand_id'?{product_id:''}:{})}));setDirty(true);setPreview(null);requestId.current='';}
- async function select(item?:any){const seq=++generation.current;setSelected(item?.mapping_id||'');setForm(item?Object.fromEntries(Object.keys(empty).map(k=>[k,item[k]])) as Form:{...empty});setDirty(false);setRowsText('');setPreview(null);setReview(null);setBatches([]);setNotice('');requestId.current='';if(item){try{const r=await adminApi.recruitmentBatches(item.mapping_id);if(seq===generation.current)setBatches(r.batches);}catch(e){if(seq===generation.current)setError(String(e));}}}
+ function change(key:keyof Form,value:any){setForm(f=>({...f,[key]:value,...(key==='product_id'?{campaign_id:null}:{}),...(key==='target_brand_id'?{product_id:'',campaign_id:null}:{})}));setDirty(true);setPreview(null);requestId.current='';}
+ async function select(item?:any){const seq=++generation.current;setApplications([]);setSelected(item?.mapping_id||'');setForm(item?Object.fromEntries(Object.keys(empty).map(k=>[k,item[k]])) as Form:{...empty});setDirty(false);setRowsText('');setPreview(null);setReview(null);setBatches([]);setNotice('');requestId.current='';if(item){try{const r=await adminApi.recruitmentBatches(item.mapping_id);if(seq===generation.current)setBatches(r.batches);}catch(e){if(seq===generation.current)setError(String(e));}}}
  function rows(){return rowsText.split(/\r?\n/).filter(l=>l.trim()).map((line,i)=>{const [email,name='',reason='',...extra]=line.split('\t');if(extra.length)throw new Error(`${i+1}행: 이메일·이름·선정 이유 3개 열로 입력하세요`);return {email:email.trim(),name,reason,mapping_key:selected};});}
  const visible=items.filter(x=>!filter||[x.name,x.brand_name,x.product_name,x.sender_email,x.owner_name].some(v=>String(v||'').toLowerCase().includes(filter.toLowerCase())));
  return <section className="recruitment" style={{maxWidth:1200,lineHeight:1.6}}>
@@ -52,6 +53,7 @@ export default function Recruitment(){
     <label>고객 브랜드<select style={input} value={form.target_brand_id} onChange={e=>change('target_brand_id',e.target.value)}><option value="">브랜드 선택</option>{options.brands.map((x:any)=><option key={x.brand_id} value={x.brand_id}>{x.name}</option>)}</select></label>
     <label>제품<select style={input} value={form.product_id} onChange={e=>change('product_id',e.target.value)}><option value="">제품 선택</option>{options.products.filter((x:any)=>x.brand_id===form.target_brand_id).map((x:any)=><option key={x.product_id} value={x.product_id}>{x.name}</option>)}</select></label>
     <label>공용 발신 계정<select style={input} value={form.gmail_account_id||''} onChange={e=>change('gmail_account_id',e.target.value||null)}><option value="">연결 후 지정 (준비 상태 저장 가능)</option>{options.accounts.map((x:any)=><option key={x.account_id} value={x.account_id}>{x.email} · {x.state}{x.sending_paused?' · 발송 중지':''}</option>)}</select></label>
+    <label>제품 캠페인 (선택)<select style={input} value={form.campaign_id||''} onChange={e=>change('campaign_id',e.target.value||null)}><option value="">제품 모집만 · 캠페인 미지정</option>{(options.campaigns||[]).filter((c:any)=>c.brand_id===form.target_brand_id&&c.product_id===form.product_id).map((c:any)=><option key={c.campaign_id} value={c.campaign_id}>{c.name}</option>)}</select></label>
     {(['owner_name','country','language'] as const).map((k,i)=><label key={k}>{['담당자','국가','언어'][i]}<input style={input} value={form[k]} onChange={e=>change(k,e.target.value)}/></label>)}
     <label>상태<select style={input} value={form.state} onChange={e=>change('state',e.target.value)}>{Object.entries(states).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
     <p>상태 변경은 새 초안 생성만 제어합니다. 이미 승인된 배치는 별도로 중지해야 합니다.</p>
@@ -72,6 +74,7 @@ export default function Recruitment(){
     <button disabled={busy||dirty||!preview.eligibleCount} onClick={()=>action(async()=>{const r=await adminApi.draftRecruitment(selected,{rows:rows(),revision:form.revision,request_id:requestId.current,review_hash:preview.reviewHash});setPreview(null);setRowsText('');const b=await adminApi.recruitmentBatches(selected);setBatches(b.batches);await load();setNotice(`초안 ${r.batchIds.length}개 저장 완료. 발송 승인·실제 발송은 실행하지 않았습니다.`);})}>검수한 대상의 초안 저장 · 발송 없음</button>
    </>}
   </div>
+  <div style={box}><h2>고객 브랜드 신청 집계</h2><p>브랜드 {form.target_brand_id}의 모집 링크 신청입니다. 멤버십 합류·캠페인 참여 확정·검증 가입 청구와 구분합니다.</p><button disabled={busy} onClick={()=>action(async()=>{const r=await adminApi.recruitmentApplications(form.target_brand_id);setApplications(r.applications);})}>이 브랜드 신청 조회</button><p>조회된 신청 {applications.length}건 · 고유 크리에이터 {new Set(applications.map(a=>a.creator_id)).size}명 (최근 최대 200건)</p>{applications.map(a=><div key={a.application_id} style={{borderTop:'1px solid #ddd',padding:10}}>신청 {a.application_id} · {a.status}<br/>제품 {a.product_id||'브랜드 공통'} · 캠페인 {a.campaign_id||'미지정'}<br/>공용 운영 공간 {a.workspace_id} · 배치 {a.batch_id} · 매핑 {a.mapping_key||'직접 초안'} · 발신 계정 {a.gmail_account_id||'미지정'}</div>)}</div>
   <div style={box}><h2>이 매핑의 배치 개별 관리</h2><p>최근 100개 배치. 발송 성공은 배달·회신·신청·참여·배송·게시·판매를 의미하지 않습니다. 과거 배치는 생성 당시 브랜드·상품·발신자 정보를 유지합니다.</p>
    {batches.map(b=><div key={b.batch_id} style={{borderTop:'1px solid #ddd',padding:10}}><b>{b.product_name}</b> · {b.sender_email} · {deliveryStates[b.state]||b.state}{b.sending_paused?' · 중지':''}<br/>수신 주소 {b.recipient_count} · 발송 {b.sent_count} · 미발송 주소 {b.pending_count} · 확인 필요 {b.review_count} · 제외 {b.blocked_count}<br/><button disabled={busy} onClick={()=>action(async()=>{setReview(await adminApi.reviewRecruitmentBatch(b.batch_id));})}>개별 수신자·문안 확인</button> {b.state==='draft'&&<button disabled={busy} onClick={()=>action(async()=>{await adminApi.cancelRecruitmentBatch(b.batch_id);setBatches((await adminApi.recruitmentBatches(selected)).batches);setReview(null);setNotice('초안을 취소했습니다. 발송하지 않았습니다.');})}>초안 취소</button>} {b.state==='approved'&&!b.sending_paused&&<button disabled={busy} onClick={()=>action(async()=>{await adminApi.pauseRecruitmentBatch(b.batch_id);setBatches((await adminApi.recruitmentBatches(selected)).batches);setNotice('배치를 중지했습니다. 이미 전송 중인 메일은 되돌릴 수 없습니다.');})}>이 배치 중지</button>}</div>)}
    {!batches.length&&<p>생성된 배치가 없습니다.</p>}

@@ -24,6 +24,7 @@ def guard(brand, authorization):
 
 class Draft(BaseModel):
     target_brand_id: str | None = Field(default=None,max_length=40)
+    campaign_id: str | None = Field(default=None,max_length=100)
     product_id: UUID | None = None
     gmail_account_id: UUID | None = None
     recipients: list[str] = Field(min_length=1, max_length=200)
@@ -41,6 +42,8 @@ def proposal_brand(conn, source, target, authorization):
     target=(target or source).strip()
     row=conn.execute('SELECT is_internal FROM brands WHERE brand_id=%s',(source,)).fetchone()
     if not row:raise HTTPException(404,'모집 공간이 없습니다')
+    if row['is_internal'] and target==source:
+        raise HTTPException(409,'공용 모집은 신청을 받을 고객 브랜드를 지정해야 합니다')
     if target!=source:
         if not row['is_internal']:raise HTTPException(403,'고객 브랜드의 발신 계정은 다른 브랜드 제안에 사용할 수 없습니다')
         require_brand(target,authorization,'')
@@ -110,7 +113,7 @@ def compose(brand: str, body: AIDraft, authorization: str = Header(default='')):
 def batch_out(conn, row):
     recipients = conn.execute('SELECT recipient_id,email,state,sent_at FROM outreach_recipients WHERE batch_id=%s ORDER BY email', (row['batch_id'],)).fetchall()
     return {'id': str(row['batch_id']), 'subject': row['subject'], 'body': row['body'],
-            'state': row['state'], 'productId': str(row['product_id']) if row.get('product_id') else None, 'productName':row.get('product_name'), 'mappingKey':row.get('mapping_key'), 'targetBrandId': row['target_brand_id'] or row['brand_id'], 'gmailAccountId': str(row['gmail_account_id']) if row['gmail_account_id'] else None, 'paused': row['sending_paused'], 'recipients': [{'id': str(r['recipient_id']), 'email': r['email'], 'state': r['state']} for r in recipients]}
+            'state': row['state'], 'productId': str(row['product_id']) if row.get('product_id') else None, 'productName':row.get('product_name'), 'campaignId':row.get('campaign_id'), 'mappingKey':row.get('mapping_key'), 'targetBrandId': row['target_brand_id'] or row['brand_id'], 'gmailAccountId': str(row['gmail_account_id']) if row['gmail_account_id'] else None, 'paused': row['sending_paused'], 'recipients': [{'id': str(r['recipient_id']), 'email': r['email'], 'state': r['state']} for r in recipients]}
 
 
 @router.get('/brands/{brand}/outreach')
@@ -166,12 +169,15 @@ def create_batch(brand: str, body: Draft, authorization: str = Header(default=''
         b = conn.execute('SELECT brand_id FROM brands WHERE brand_id=%s', (brand,)).fetchone()
         if not b: raise HTTPException(404, '브랜드 없음')
         target=proposal_brand(conn,brand,body.target_brand_id,authorization)
+        from .routes_recruitment_links import validate_campaign,append_link,validate_ctas
+        validate_campaign(conn,target,body.campaign_id,body.product_id)
         product=None
         if body.product_id:
             product=conn.execute("SELECT name FROM brand_products WHERE product_id=%s AND brand_id=%s AND state='active'",(body.product_id,target)).fetchone()
             if not product:raise HTTPException(409,'제안 브랜드의 활성 제품을 선택하세요')
         import os
         join_url=os.environ.get('CREATOR_APP_URL','https://app.theprlist.net').rstrip('/')+'/?brand='+target
+        validate_ctas(body.body,target)
         proposal_text=body.body.strip()
         if join_url not in proposal_text:
             proposal_text+='\n\n▶ 브랜드 PR 리스트 합류(무료): '+join_url
@@ -179,10 +185,12 @@ def create_batch(brand: str, body: Draft, authorization: str = Header(default=''
         account_id = body.gmail_account_id
         if account_id and not conn.execute("SELECT 1 FROM gmail_accounts WHERE account_id=%s AND brand_id=%s AND state='connected'", (account_id,brand)).fetchone():
             raise HTTPException(409, '이 브랜드에 연결된 발신 계정을 선택하세요')
-        r = conn.execute('INSERT INTO outreach_batches(brand_id,subject,body,created_by,gmail_account_id,target_brand_id,product_id,product_name) VALUES(%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *', (brand,body.subject.strip(),proposal_text,actor,account_id,target,body.product_id,product['name'] if product else None)).fetchone()
+        r = conn.execute('INSERT INTO outreach_batches(brand_id,subject,body,created_by,gmail_account_id,target_brand_id,product_id,product_name,campaign_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *', (brand,body.subject.strip(),proposal_text,actor,account_id,target,body.product_id,product['name'] if product else None,body.campaign_id)).fetchone()
         for e in emails:
             conn.execute('INSERT INTO outreach_optouts(brand_id,email) VALUES(%s,%s) ON CONFLICT DO NOTHING',(brand,e))
-            conn.execute('INSERT INTO outreach_recipients(batch_id,email) VALUES(%s,%s)',(r['batch_id'],e))
+            recipient=conn.execute('INSERT INTO outreach_recipients(batch_id,email) VALUES(%s,%s) RETURNING recipient_id',(r['batch_id'],e)).fetchone()
+            personal=append_link(conn,r['batch_id'],recipient['recipient_id'],proposal_text)
+            conn.execute('UPDATE outreach_recipients SET personalized_body=%s WHERE recipient_id=%s',(personal,recipient['recipient_id']))
         return batch_out(conn,r)
 
 

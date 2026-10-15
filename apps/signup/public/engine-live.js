@@ -1556,7 +1556,7 @@
     document.body.classList.add('live-surface');
     var crStyle=document.createElement('style');
     crStyle.textContent='.stage{height:auto!important;min-height:calc(100vh - 1px)}'
-      +'#stage main.live-main{max-width:640px;padding-top:20px}';
+      +'#stage main.live-main{max-width:1180px;padding-top:20px}';
     document.head.appendChild(crStyle);
     var joinTarget=null, joinBrandInfo=null, myMemberships=null, magicSent=false;
     var applicationToken=new URLSearchParams(location.search).get('application')||'', applicationContext=null, applicationError='', applicationBusy=false, applicationDone=false;
@@ -1593,7 +1593,7 @@
       if(joinTarget)req('GET','/brands/'+joinTarget+'/identity').then(function(b){joinBrandInfo=b;render();}).catch(function(){joinBrandInfo={missing:true};render();});
       if(window.__ME&&window.__ME.kind==='creator'){
         window.creatorRetryMemberships();creatorLoadErrors={};
-        req('GET','/community/my-cells').then(function(c){commCells=c;creatorLoadErrors.community=false;render();}).catch(function(){creatorLoadErrors.community=true;render();});
+        req('GET','/community/my-cells').then(function(c){commCells=c;creatorLoadErrors.community=false;if(!commOpen&&creatorTab==='community'){var first=c.find(function(x){return x.kind!=='dm'&&(!joinTarget||x.brandId===joinTarget);});if(first){window.commOpenCell(first.cellId,first.name);return;}}render();}).catch(function(){creatorLoadErrors.community=true;render();});
         req('GET','/me/campaigns').then(function(c){myCampaigns=c;creatorLoadErrors.campaigns=false;render();}).catch(function(){creatorLoadErrors.campaigns=true;render();});
         req('GET','/me/campaign-offers').then(function(o){myOffers=o;creatorLoadErrors.offers=false;render();}).catch(function(){creatorLoadErrors.offers=true;render();});
       }
@@ -1627,6 +1627,7 @@
     window.crDm=function(b){
       req('POST','/community/dm/'+b,{}).then(function(r){
         creatorTab='community';
+        if(!(commCells||[]).some(function(c){return c.cellId===r.cellId;})){var member=(myMemberships||[]).find(function(m){return m.brandId===b;});commCells=(commCells||[]).concat([{cellId:r.cellId,name:'담당자 DM',brandId:b,brandName:member&&member.name||b,kind:'dm'}]);}
         window.commOpenCell(r.cellId,'담당자 DM');
       }).catch(function(){toast('DM 열기 실패','멤버십 가입 후 이용할 수 있어요.');});
     };
@@ -1678,49 +1679,63 @@
       });
       return h;
     }
-    window.commOpenCell=function(id,name){
-      req('GET','/community/cells/'+id+'/messages').then(function(m){
-        commOpen={cellId:id,name:name,msgs:m};render();
-      }).catch(function(e){toast('입장 불가',e===403?'이 브랜드 멤버십이 필요해요.':'잠시 후 다시.');});
+    var commChannel='chat', commVersion=0, commLoading=false, commError='', commSending=false, commDrafts={};
+    function commKey(){return commOpen?commOpen.cellId+':'+commChannel:'';}
+    function commRemember(){var el=document.getElementById('commText');if(el&&el.getAttribute('data-draft-key'))commDrafts[el.getAttribute('data-draft-key')]=el.value;}
+    function commSelected(){return (commCells||[]).find(function(c){return commOpen&&c.cellId===commOpen.cellId;});}
+    window.commDraft=function(v){if(commKey())commDrafts[commKey()]=v;};
+    window.commOpenCell=function(id,name,channel){
+      commRemember();
+      var cell=(commCells||[]).find(function(c){return c.cellId===id;});
+      commChannel=cell&&cell.kind==='dm'?'chat':(['chat','tips','notice'].indexOf(channel)>=0?channel:'chat');
+      var version=++commVersion,token=jwtGet(),selectedChannel=commChannel;
+      commOpen={cellId:id,name:name,msgs:[]};commLoading=true;commError='';render();
+      return req('GET','/community/cells/'+encodeURIComponent(id)+'/messages?channel='+selectedChannel+'&limit=200').then(function(m){
+        if(version!==commVersion||token!==jwtGet())return;
+        commOpen.msgs=m;commLoading=false;render();
+      }).catch(function(e){if(version!==commVersion||token!==jwtGet())return;commLoading=false;commError=(e&&e.message)||'대화를 불러오지 못했습니다. 멤버십과 연결 상태를 확인하세요.';render();});
     };
-    window.commClose=function(){commOpen=null;render();};
+    window.commChannelSelect=function(channel){if(commOpen)window.commOpenCell(commOpen.cellId,commOpen.name,channel);};
+    window.commClose=function(){commRemember();commVersion++;commOpen=null;commLoading=false;commError='';render();};
     window.commPost=function(){
       var v=((document.getElementById('commText')||{}).value||'').trim();
-      if(!v||!commOpen)return;
-      req('POST','/community/cells/'+commOpen.cellId+'/messages',
-          {text:v,locale:(window.__USER_LANG||'ko')})
-        .then(function(){window.commOpenCell(commOpen.cellId,commOpen.name);})
-        .catch(function(){toast('게시 실패','잠시 후 다시.');});
+      if(!v||!commOpen||commSending||commChannel==='notice'||v.length>2000)return;
+      var id=commOpen.cellId,name=commOpen.name,channel=commChannel,key=commKey(),token=jwtGet();
+      commRemember();commSending=true;render();
+      return req('POST','/community/cells/'+encodeURIComponent(id)+'/messages',{text:v,channel:channel,locale:(window.__USER_LANG||'ko')}).then(function(){
+        if(token!==jwtGet())return;
+        commDrafts[key]='';
+        if(commOpen&&commOpen.cellId===id&&commChannel===channel){var el=document.getElementById('commText');if(el)el.value='';return window.commOpenCell(id,name,channel);}
+      }).catch(function(e){toast('게시 실패',mailEscape((e&&e.message)||'내용을 보관했습니다. 다시 시도하세요.'));}).finally(function(){commSending=false;render();});
     };
-    function esc(x){return (x==null?'':String(x)).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+    function esc(x){return mailEscape(x);}
     function commHtml(){
       if(creatorLoadErrors.community)return creatorLoadNotice('community','커뮤니티');
       if(!commCells)return '<p role="status">커뮤니티를 불러오는 중입니다…</p>';
-      if(!commCells.length)return '<div class="cc"><p>참여 중인 커뮤니티가 없습니다. 브랜드 초대 링크로 먼저 합류해 주세요.</p></div>';
-      var h='<h2 style="margin-top:26px">커뮤니티</h2>';
-      if(!commOpen){
-        h+='<p style="font-size:11px;color:#5a6560;margin:2px 0 8px">멤버 = PR 리스트 합류 계정 · 검증 = 본인 확인 완료 (실시간 집계)</p>';
-        h+=commCells.map(function(c){
-          var lg=c.logoUrl?'<img src="'+c.logoUrl.replace(/"/g,'')+'" alt="" style="width:22px;height:22px;border-radius:6px;object-fit:cover;vertical-align:-5px;margin-right:6px">':'';
-          var meta=c.kind==='dm'?'1:1 대화':'멤버 '+c.memberCount+' · 검증 '+(c.verifiedCount||0);
-          return '<div class="cc" style="cursor:pointer" onclick="commOpenCell(\''+c.cellId+'\',\''+esc(c.name).replace(/'/g,'')+'\')">'+lg+'<b>'+esc(c.brandName)+'</b> · '+esc(c.name)+' <span style="font-size:11px;color:#5a6560">'+meta+' · 열기 →</span></div>';
-        }).join('');
-        return h;
+      var selected=commSelected(),brand=selected&&selected.brandId;
+      var lounges=commCells.filter(function(c){return c.kind!=='dm';});
+      var h='<section class="community-workspace" aria-label="브랜드 커뮤니티"><aside class="community-brands" aria-label="브랜드 방"><b>내 브랜드</b>';
+      h+=lounges.map(function(c){return '<button class="community-brand '+(c.brandId===brand?'active':'')+'" onclick="commOpenCell('+mailEscape(JSON.stringify(c.cellId))+','+mailEscape(JSON.stringify(c.name))+')">'+(c.logoUrl&&/^https:\/\//.test(c.logoUrl)?'<img src="'+mailEscape(c.logoUrl)+'" alt="">':'<span class="community-avatar">'+mailEscape((c.brandName||'?').slice(0,1))+'</span>')+'<span>'+mailEscape(c.brandName)+'<small>'+mailEscape(c.name)+'</small></span></button>';}).join('');
+      h+='<button class="community-brand" onclick="crTab(\'brand\')">＋ 브랜드 멤버십</button></aside><aside class="community-channels" aria-label="대화 채널"><h2>'+mailEscape(selected?selected.brandName:'브랜드 커뮤니티')+'</h2>';
+      h+='<p>'+(selected?(selected.kind==='dm'?'담당자와 나만 보는 대화':'멤버 '+selected.memberCount+' · 검증 '+(selected.verifiedCount||0)):'참여한 브랜드 방을 선택하세요.')+'</p>';
+      if(selected&&selected.kind!=='dm')h+=[['chat','# 잡담'],['tips','# 촬영 팁'],['notice','◎ 공지']].map(function(c){return '<button class="community-channel '+(commChannel===c[0]?'active':'')+'" aria-pressed="'+(commChannel===c[0])+'" onclick="commChannelSelect(\''+c[0]+'\')">'+c[1]+'</button>';}).join('');
+      if(selected)h+='<button class="community-channel" onclick="crDm('+mailEscape(JSON.stringify(brand))+')">◔ 담당자 DM</button><button class="community-channel" onclick="crTab(\'campaigns\')">▤ 캠페인</button><button class="community-channel" onclick="crTab(\'collabs\')">↑ 내 협업·제출</button>';
+      h+='</aside><div class="community-chat"><header><h2>'+mailEscape(selected?(selected.kind==='dm'?'담당자 DM':{'chat':'# 잡담','tips':'# 촬영 팁','notice':'◎ 공지'}[commChannel]):'브랜드와 함께하는 공간')+'</h2><p>내 언어로 대화하고, 원문도 확인하세요.</p>'+(commOpen?'<button class="cbt" onclick="commChannelSelect(\''+commChannel+'\')">새로고침</button>':'')+'</header><div class="community-messages" role="log" aria-label="대화 내용">';
+      if(!commOpen)h+='<div class="community-empty">'+(lounges.length?'왼쪽 브랜드 방을 선택해 대화를 시작하세요.':'아직 가입한 브랜드가 없습니다. 받은 브랜드 초대 링크로 합류하세요.')+'</div>';
+      else if(commLoading)h+='<p role="status">대화를 불러오는 중입니다…</p>';
+      else if(commError)h+='<p role="alert">'+mailEscape(commError)+'</p>';
+      else{
+        var lang=window.__USER_LANG||'ko';
+        h+=(commOpen.msgs||[]).filter(function(m){return m.channel===commChannel;}).map(function(m){
+          var shown=(m.translations&&m.translations[lang])||m.original,isTr=shown!==m.original;
+          var pending=m.translationState!=='done'&&m.originalLocale!==lang;
+          return '<article class="community-message"><span class="community-avatar">'+mailEscape((m.author||'?').slice(0,1))+'</span><div><b>'+mailEscape(m.author)+'</b> <time>'+mailEscape((m.at||'').slice(0,16).replace('T',' '))+'</time><p>'+mailEscape(shown)+'</p>'+(pending?'<small>'+(m.translationState==='failed'?'번역 실패 · 원문 표시':'번역 준비 중 · 원문 표시')+'</small>':'')+(isTr?'<details><summary>원문 ('+mailEscape(m.originalLocale)+')</summary><p>'+mailEscape(m.original)+'</p></details>':'')+'</div></article>';
+        }).join('')||'<div class="community-empty">아직 메시지가 없습니다.</div>';
       }
-      var lang=window.__USER_LANG||'ko';
-      h+='<div class="cc"><b>'+esc(commOpen.name)+'</b> <span class="cbt no" onclick="commClose()">← 목록</span>';
-      h+=(commOpen.msgs||[]).map(function(m){
-        var shown=(m.translations&&m.translations[lang])||m.original;
-        var isTr=shown!==m.original;
-        var pending=m.translationState&&m.translationState!=='done'&&m.originalLocale!==lang;
-        return '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee">'+
-          '<b style="font-size:12px">'+(m.channel==='notice'?'📢 ':'')+esc(m.author)+'</b> <span style="font-size:10px;color:#5a6560">'+esc(m.at.slice(0,16).replace('T',' '))+'</span>'+
-          '<div style="margin-top:3px">'+esc(shown)+(pending?' <span style="font-size:10px;color:#8a6d3b">('+(m.translationState==='failed'?'번역 불가 — 원문 표시':'번역 준비 중 — 원문 표시')+')</span>':'')+'</div>'+
-          (isTr?'<div style="font-size:11px;color:#5a6560;margin-top:2px">원문('+esc(m.originalLocale)+'): '+esc(m.original)+'</div>':'')+
-          '</div>';
-      }).join('')||'<p style="margin-top:8px">아직 메시지가 없어요 — 첫 인사를 남겨보세요.</p>';
-      h+='<div style="display:flex;gap:6px;margin-top:12px"><input id="commText" placeholder="내 언어('+lang+')로 쓰면 멤버 언어로 번역돼요 — 원문도 함께 보관" style="flex:1;padding:8px"><span class="cbt" onclick="commPost()">게시</span></div></div>';
-      return h;
+      h+='</div>';
+      if(commOpen&&commChannel!=='notice')h+='<form class="community-compose" onsubmit="event.preventDefault();commPost()"><label for="commText">'+(selected&&selected.kind==='dm'?'담당자에게 메시지':'채널에 메시지')+'</label><textarea id="commText" data-draft-key="'+mailEscape(commKey())+'" maxlength="2000" oninput="commDraft(this.value)" placeholder="내 언어로 메시지를 남겨 주세요" '+(commSending?'disabled':'')+'>'+mailEscape(commDrafts[commKey()]||'')+'</textarea><button class="btn" '+(commSending||commLoading||commError?'disabled':'')+'>'+(commSending?'게시 중…':'메시지 보내기')+'</button></form>';
+      else if(commOpen)h+='<p class="community-readonly">공지는 브랜드 담당자가 게시하는 읽기 전용 채널입니다.</p>';
+      return h+'</div></section>';
     }
     var creatorMagicBusy=false;
     window.creatorMagic=function(){
@@ -1760,7 +1775,7 @@
       var r=applicationContext;
       return '<section class="cc"><b>'+mailEscape(r.brandName)+' · 모집 신청</b><p>'+mailEscape(r.productName||'브랜드 PR 리스트')+'</p>'+(r.campaignName?'<p>'+mailEscape(r.campaignName)+'</p>':'')+
        '<p>브랜드 합류·모집 신청과 최종 참여 확정은 다릅니다. 제안받은 조건을 확인한 뒤 신청하세요.</p>'+
-       (applicationDone?'<p role="status">✓ 이 브랜드에 신청 접수 완료 · 참여 검토 대기</p><button class="btn line" onclick="crTab(\'community\')">이 브랜드 커뮤니티 보기</button>':window.__ME&&window.__ME.kind==='creator'?'<label><input id="recruitmentConsent" type="checkbox"> 이 브랜드 PR 리스트 합류 및 해당 모집 신청을 확인합니다.</label><button class="btn" onclick="creatorApplyRecruitment()" '+(applicationBusy?'disabled':'')+'>'+(applicationBusy?'저장 중…':'이 브랜드에 신청하기')+'</button>':'<p>제안을 받은 이메일로 로그인하면 이 모집에 신청할 수 있습니다.</p>')+'</section>';
+       (applicationDone?'<p role="status">✓ 이 브랜드에 신청 접수 완료 · 참여 검토 대기</p><button class="btn line" onclick="creatorOpenJoinedCommunity()">이 브랜드 커뮤니티 보기</button>':window.__ME&&window.__ME.kind==='creator'?'<label><input id="recruitmentConsent" type="checkbox"> 이 브랜드 PR 리스트 합류 및 해당 모집 신청을 확인합니다.</label><button class="btn" onclick="creatorApplyRecruitment()" '+(applicationBusy?'disabled':'')+'>'+(applicationBusy?'저장 중…':'이 브랜드에 신청하기')+'</button>':'<p>제안을 받은 이메일로 로그인하면 이 모집에 신청할 수 있습니다.</p>')+'</section>';
     }
     function brandCardHtml(b,joined){
       if(!b)return '';
@@ -1769,17 +1784,27 @@
       return (b.brandId===joinTarget?recruitmentCard():'')+'<div class="cc">'+logo+'<b style="font-size:17px">'+mailEscape(b.name||b.brandId)+'</b>'+(b.tagline?'<p>'+mailEscape(b.tagline)+'</p>':'')+
         (applicationToken&&b.brandId===joinTarget?'<p>아래 모집 신청에서 브랜드 합류를 함께 진행합니다.</p>':membershipState!=='ready'?'<p>가입 여부는 가입 목록 조회가 끝나면 표시됩니다.</p>':joined?'<p>✓ 이미 이 브랜드의 PR 리스트 멤버입니다.</p>':'<button class="btn" onclick="creatorJoin(\''+b.brandId+'\')">이 브랜드 PR 리스트에 합류</button>')+'</div>';
     }
-    var creatorTab='brand';
+    var creatorTab=(joinTarget||applicationToken)?'brand':'community';
     window.crTab=function(t){creatorTab=t;render();var viewport=document.getElementById('stage');if(viewport)viewport.scrollTop=0;if(window.scrollTo)window.scrollTo(0,0);};
+    window.creatorOpenJoinedCommunity=function(){
+      creatorTab='community';
+      var target=(applicationContext&&applicationContext.brandId)||joinTarget;
+      var room=(commCells||[]).find(function(c){return c.kind!=='dm'&&c.brandId===target;});
+      if(room)return window.commOpenCell(room.cellId,room.name,'chat');
+      window.commClose();
+    };
     function creatorHeadHtml(){
       // 참여(또는 초대) 브랜드가 정체성의 중심 — 로고·이름 + 작은 theprlist.
-      var b=(joinTarget&&joinBrandInfo&&!joinBrandInfo.missing)?joinBrandInfo
+      var selected=creatorTab==='community'&&commSelected();
+      var b=selected?{name:selected.brandName,brandId:selected.brandId,logoUrl:selected.logoUrl}
+            :(joinTarget&&joinBrandInfo&&!joinBrandInfo.missing)?joinBrandInfo
             :(myMemberships&&myMemberships[0])||null;
       if(!b)return '<div class="crhead"><div><div class="bn">theprlist</div><div class="svc">CREATOR</div></div></div>';
       var lg=b.logoUrl?'<img src="'+String(b.logoUrl).replace(/"/g,'')+'" alt="">':'';
       return '<div class="crhead">'+lg+'<div><div class="bn">'+mailEscape(b.name||b.brandId||'')+'</div><div class="svc">with theprlist</div></div></div>';
     }
     window.render=function(){
+      commRemember();
       document.querySelector('.svcbar').style.display='none';
       var body='';
       if(!window.__ME){
@@ -1790,7 +1815,7 @@
           '<div class="cc"><input id="crEmail" type="email" placeholder="you@email.com" style="width:100%;box-sizing:border-box;padding:12px;margin-bottom:10px"><button id="crLoginButton" class="btn" onclick="creatorMagic()">로그인 링크 받기</button><p id="crLoginStatus" role="status" aria-live="polite"></p></div>';
       }else{
         var joinedIds=(myMemberships||[]).map(function(m){return m.brandId;});
-        var tabs=[['brand','브랜드'],['campaigns','캠페인'],['collabs','내 협업'],['community','커뮤니티·메시지']];
+        var tabs=[['brand','브랜드'],['campaigns','캠페인'],['collabs','내 협업'],['community','커뮤니티']];
         var tabNav='<div class="crtabs" role="tablist">'+tabs.map(function(t){return '<button role="tab" aria-selected="'+(creatorTab===t[0])+'" class="'+(creatorTab===t[0]?'on':'')+'" onclick="crTab(\''+t[0]+'\')">'+t[1]+'</button>';}).join('')+'</div>';
         var content='';
         if(creatorTab==='brand'){
@@ -1810,6 +1835,7 @@
         }
         body=creatorHeadHtml()+'<p style="margin:0 0 4px;font-size:13px;color:var(--ink-2,#566274)">'+mailEscape(window.__ME.email)+'</p>'+conversationLanguageHtml()+tabNav+content;
       }
+      if(!window.__ME)body='<section class="community-workspace community-login"><aside class="community-brands"><b>브랜드 커뮤니티</b><p>로그인 후 참여한 브랜드 방이 표시됩니다.</p></aside><aside class="community-channels"><h2>채널</h2><p># 잡담</p><p># 촬영 팁</p><p>◎ 공지</p><p>◔ 담당자 DM</p></aside><div class="community-login-main">'+body+'</div></section>';
       document.getElementById('stage').innerHTML='<main class="live-main">'+body+'<p style="margin-top:34px"><a href="https://theprlist.net">서비스 소개</a> · <a href="https://theprlist.net/privacy">개인정보처리방침</a></p></main>';
     };
     render();loadCreatorData();

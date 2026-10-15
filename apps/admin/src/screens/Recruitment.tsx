@@ -17,6 +17,7 @@ export default function Recruitment(){
  const [selected,setSelected]=useState<string>(''),[form,setForm]=useState<Form>({...empty}),[dirty,setDirty]=useState(false);
  const [filter,setFilter]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [rowsText,setRowsText]=useState(''),[preview,setPreview]=useState<any>(null),[batches,setBatches]=useState<any[]>([]),[review,setReview]=useState<any>(null);
+ const [catalog,setCatalog]=useState({brand_id:'',brand_name:'',product_name:'',commission_pct:'',source_note:''}),[oauthUrl,setOauthUrl]=useState('');
  const requestId=useRef(''),generation=useRef(0);
  async function load(){const w=await adminApi.recruitmentWorkspace();setWorkspace(w.workspace);if(w.workspace){const [o,m]=await Promise.all([adminApi.recruitmentOptions(),adminApi.recruitmentMappings()]);setOptions(o);setItems(m.mappings);}setLoaded(true);}
  useEffect(()=>{load().catch(e=>setError(String(e)));return()=>{generation.current++;};},[]);
@@ -29,7 +30,18 @@ export default function Recruitment(){
   <h1>디노 공용 모집</h1>{/^(localhost|127\.0\.0\.1)$/.test(location.hostname)&&<p role="note">로컬 개발 검수 화면 · 운영 사이트 반영 전</p>}<p>공용 발신 계정 → 고객 브랜드·제품 매핑 → 대상 검수 → 개인별 초안 → 별도 승인</p>
   {error&&<p role="alert" style={{color:'#a22',whiteSpace:'pre-wrap'}}>{error}</p>}{notice&&<p role="status">{notice}</p>}
   {!loaded?<p>공간 상태를 확인하고 있습니다.</p>:!workspace?<div style={box}><p>내부 모집 공간을 생성합니다. 메일 발송·연락처 반입·가입 과금은 실행하지 않습니다.</p><button disabled={busy} onClick={()=>action(async()=>{await adminApi.createRecruitmentWorkspace();await load();})}>디노 공용 모집 공간 생성</button></div>:<>
-  <div style={box}><b>{workspace.name}</b> · 내부 운영 · 고객 가입 과금 제외<br/><a href="https://console.theprlist.net" target="_blank" rel="noopener noreferrer">브랜드 콘솔에서 공용 모집 공간 선택·Gmail 연결</a><p>연결된 계정 {options.accounts.length}개 · 제품 매핑 {items.length}개. 비밀번호는 저장하지 않고 Google OAuth 연결을 사용합니다.</p><button disabled={busy} onClick={()=>action(load)}>새로고침</button></div>
+  <div style={box}><b>{workspace.name}</b> · 내부 운영 · 고객 가입 과금 제외<p>연결된 계정 {options.accounts.length}개 · 제품 매핑 {items.length}개. 비밀번호는 저장하지 않고 Google OAuth 연결을 사용합니다.</p>
+   <p>Google 연결은 선택 계정의 이메일 주소 확인·메일 발송·메일 읽기 권한을 요청합니다. 실제 발송은 별도 승인하며, Google 로그인·권한 승인은 계정 소유자가 완료합니다.</p>
+   <button disabled={busy} onClick={()=>action(async()=>{setOauthUrl('');const r=await adminApi.connectRecruitmentGmail();if(!r.authUrl)throw new Error('실제 Google 연결 주소가 없습니다. 운영 설정을 확인하세요.');const u=new URL(r.authUrl);if(u.origin!=='https://accounts.google.com')throw new Error('Google 연결 주소를 확인하세요.');setOauthUrl(r.authUrl);})}>Gmail 연결 주소 준비</button>
+   {oauthUrl&&<p><a href={oauthUrl} target="_blank" rel="noopener noreferrer">Google에서 발신 계정 선택·연결 승인</a> · 승인 완료 후 새로고침하세요.</p>}
+   {options.accounts.map((a:any)=><p key={a.account_id}>{a.email} · {a.state}{a.sending_paused?' · 발송 중지':''}</p>)}
+   <button disabled={busy} onClick={()=>action(load)}>새로고침</button> <a href="https://console.theprlist.net" target="_blank" rel="noopener noreferrer">브랜드 콘솔</a></div>
+  <details style={box}><summary>운영할 브랜드·제품 등록</summary><p>운영 목록과 제품을 등록합니다. 고객 로그인 계정·계약·결제·메일 발송은 생성하지 않습니다. 커미션과 출처를 입력하며, 최신 조건을 확인하기 전에는 매핑을 준비 상태로 유지하세요.</p>
+   <fieldset disabled={busy} style={{border:0,padding:0}}>
+    {(['brand_id','brand_name','product_name','commission_pct','source_note'] as const).map((k,i)=><label key={k}>{['브랜드 주소 (영문 소문자·숫자·하이픈)','브랜드 이름','제품 이름','자료상 커미션 (%)','출처·기준일·미확정 조건 메모'][i]}<input style={input} type={k==='commission_pct'?'number':'text'} min={k==='commission_pct'?0:undefined} max={k==='commission_pct'?80:undefined} step={k==='commission_pct'?'0.01':undefined} value={catalog[k]} onChange={e=>setCatalog(v=>({...v,[k]:e.target.value}))}/></label>)}
+    <button onClick={()=>action(async()=>{if(catalog.commission_pct===''||!Number.isFinite(Number(catalog.commission_pct)))throw new Error('자료상 커미션을 입력하세요');const r=await adminApi.registerRecruitmentProduct({...catalog,commission_pct:Number(catalog.commission_pct)});await load();setNotice(r.created?'운영 제품을 등록했습니다. 계약·조건 확정이나 발송은 실행하지 않았습니다.':'기존 제품을 확인했습니다. 중복 등록하지 않았습니다.');})}>브랜드·제품 등록</button>
+   </fieldset>
+  </details>
   <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:16}}>
    <div style={box}><h2>제품별 매핑 목록</h2><input aria-label="매핑 검색" placeholder="브랜드·제품·담당자·발신 주소 검색" style={input} value={filter} onChange={e=>setFilter(e.target.value)}/><button disabled={busy} onClick={()=>void select()}>새 매핑</button>
     {visible.map(x=><button key={x.mapping_id} disabled={busy} onClick={()=>void select(x)} style={{display:'block',width:'100%',textAlign:'left',padding:12,marginTop:8,border:selected===x.mapping_id?'2px solid #946146':'1px solid #ddd',borderRadius:8,background:'white'}}><b>{x.name}</b> · {states[x.state]}<br/>{x.brand_name} / {x.product_name}<br/>{x.sender_email||'발신자 연결 대기'} · {x.owner_name||'담당 미지정'}<br/>{x.country||'국가 미지정'} · {x.language||'언어 미지정'} · 배치 {x.batch_count}개</button>)}

@@ -83,3 +83,36 @@ def test_draft_mapping_without_sender_and_review_invalidation(client,recruitment
     req={**rows,'request_id':str(uuid4()),'review_hash':p.json()['reviewHash']}
     assert client.post(url+'/drafts',json=req,headers=h).status_code==409
     assert calls==[]
+
+
+def test_operating_catalog_idempotency_isolation_and_no_customer_access(client,recruitment):
+    h,b,_,calls=recruitment
+    slug='catalog-'+uuid4().hex[:10]
+    data={'brand_id':slug,'brand_name':'Catalog '+slug,'product_name':'Verified source balm','commission_pct':20,'source_note':'2026-10-07 sheet; current terms pending'}
+    assert client.post('/admin/recruitment/catalog',json=data).status_code==401
+    bh={'Authorization':'Bearer '+auth.issue_jwt({'sub':'customer','kind':'brand','brand_id':b['target_brand_id']})}
+    assert client.post('/admin/recruitment/catalog',json=data,headers=bh).status_code==401
+    r=client.post('/admin/recruitment/catalog',json=data,headers=h)
+    assert r.status_code==200,r.text
+    p=r.json();assert p['created'] and not p['emailSent']
+    assert client.post('/admin/recruitment/catalog',json=data,headers=h).json()=={**p,'created':False}
+    assert client.post('/admin/recruitment/catalog',json={**data,'commission_pct':15},headers=h).status_code==409
+    assert client.post('/admin/recruitment/catalog',json={**data,'brand_name':'Unrelated'},headers=h).status_code==409
+    assert client.post('/admin/recruitment/catalog',json={**data,'brand_id':slug+'x'},headers=h).status_code==409
+    with connect() as c:
+        assert c.execute('SELECT count(*) AS n FROM brand_products WHERE brand_id=%s',(slug,)).fetchone()['n']==1
+        assert c.execute('SELECT count(*) AS n FROM users WHERE brand_id=%s',(slug,)).fetchone()['n']==0
+        f=c.execute('SELECT fields FROM product_profile_versions WHERE product_id=%s',(p['productId'],)).fetchone()['fields']
+        assert f['hero_product']['confirmed'] is False
+    assert calls==[]
+
+
+def test_operating_catalog_rejects_blank_demo_and_internal_brand(client,recruitment):
+    h,b,_,calls=recruitment
+    data={'brand_id':b['target_brand_id'],'brand_name':'Recruit Brand','product_name':'New serum','commission_pct':15,'source_note':'source'}
+    assert client.post('/admin/recruitment/catalog',json={**data,'product_name':'  '},headers=h).status_code==400
+    assert client.post('/admin/recruitment/catalog',json={**data,'brand_id':'dino-recruitment'},headers=h).status_code==400
+    assert client.post('/admin/recruitment/catalog',json={**data,'brand_id':'qa-customer'},headers=h).status_code==400
+    with connect() as c:c.execute('UPDATE brands SET is_demo=true WHERE brand_id=%s',(data['brand_id'],))
+    assert client.post('/admin/recruitment/catalog',json=data,headers=h).status_code==409
+    assert calls==[]

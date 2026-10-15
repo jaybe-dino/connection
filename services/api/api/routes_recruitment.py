@@ -11,6 +11,47 @@ router = APIRouter(prefix='/admin/recruitment')
 WORKSPACE = 'dino-recruitment'
 
 
+class CatalogIn(BaseModel):
+    brand_id: str = Field(pattern=r'^[a-z][a-z0-9-]{1,39}$')
+    brand_name: str = Field(min_length=1,max_length=120)
+    product_name: str = Field(min_length=1,max_length=120)
+    commission_pct: float = Field(ge=0,le=80)
+    source_note: str = Field(min_length=1,max_length=2000)
+
+
+@router.post('/catalog')
+def create_catalog(body:CatalogIn,_admin:dict=Depends(require_admin)):
+    """Register operating inventory only: no customer login, contract, payment or mail."""
+    from .routes_community import ensure_default_cell
+    import json
+    name=body.brand_name.strip();product=body.product_name.strip();note=body.source_note.strip()
+    if not name or not product or not note:
+        raise HTTPException(400,'브랜드·제품 이름과 출처 메모를 입력하세요')
+    if body.brand_id.startswith('qa-') or body.brand_id==WORKSPACE:
+        raise HTTPException(400,'실제 고객 브랜드의 고유 주소를 입력하세요')
+    with connect() as c:
+        workspace(c)
+        c.execute("SELECT pg_advisory_xact_lock(hashtextextended('recruitment:catalog',0))")
+        brand=c.execute('SELECT name,is_internal,is_demo FROM brands WHERE brand_id=%s',(body.brand_id,)).fetchone()
+        if brand and (brand['is_internal'] or brand['is_demo'] or brand['name']!=name):
+            raise HTTPException(409,'해당 주소의 기존 브랜드와 일치하지 않습니다. 기존 자료를 변경하지 않았습니다.')
+        if not brand:
+            if c.execute('SELECT 1 FROM brands WHERE lower(name)=lower(%s)',(name,)).fetchone():
+                raise HTTPException(409,'같은 이름의 브랜드가 있습니다. 기존 브랜드 주소를 사용하세요.')
+            c.execute('INSERT INTO brands(brand_id,name) VALUES(%s,%s)',(body.brand_id,name))
+            ensure_default_cell(c,body.brand_id,name)
+            ledger_append(c,str(_admin['sub']),'RECRUITMENT_BRAND_REGISTERED',body.brand_id,{'source':note})
+        p=c.execute('SELECT product_id,commission_pct,state FROM brand_products WHERE brand_id=%s AND name=%s',(body.brand_id,product)).fetchone()
+        if p:
+            if p['state']!='active' or float(p['commission_pct'])!=body.commission_pct:
+                raise HTTPException(409,'기존 제품의 상태·커미션과 다릅니다. 기존 제품은 변경하지 않았습니다.')
+            return {'brandId':body.brand_id,'productId':str(p['product_id']),'created':False,'emailSent':False}
+        p=c.execute('INSERT INTO brand_products(brand_id,name,commission_pct) VALUES(%s,%s,%s) RETURNING product_id',(body.brand_id,product,body.commission_pct)).fetchone()
+        c.execute('INSERT INTO product_profile_versions(product_id,version,fields,note) VALUES(%s,1,%s,%s)',(p['product_id'],json.dumps({'hero_product':{'value':product,'source':'operator_reference','confirmed':False,'evidence':note}}),note))
+        ledger_append(c,str(_admin['sub']),'RECRUITMENT_PRODUCT_REGISTERED',str(p['product_id']),{'brandId':body.brand_id,'source':note,'commissionPct':body.commission_pct,'termsConfirmed':False})
+    return {'brandId':body.brand_id,'productId':str(p['product_id']),'created':True,'emailSent':False}
+
+
 class MappingIn(BaseModel):
     name: str = Field(min_length=1,max_length=120)
     target_brand_id: str = Field(min_length=1,max_length=40)

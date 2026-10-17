@@ -157,3 +157,25 @@ def test_distributed_preserves_unselected_original_sender(client,recruitment):
     m=client.post('/admin/recruitment/mappings',json=b,headers=h).json()
     p=client.post('/admin/recruitment/mappings/'+m['mapping_id']+'/distributed/preview',headers=h,json={'revision':1,'sender_ids':[b['gmail_account_id']],'rows':[{'email':email,'mapping_key':'ignored'}]})
     assert p.status_code==409 and calls==[]
+
+
+def test_suspended_customer_cannot_preview_new_outreach(client,recruitment):
+    h,b,_,calls=recruitment
+    m=client.post('/admin/recruitment/mappings',json=b,headers=h).json()
+    with connect() as c:c.execute('UPDATE brands SET suspended_at=now() WHERE brand_id=%s',(b['target_brand_id'],))
+    r=client.post('/admin/recruitment/mappings/'+m['mapping_id']+'/preview',headers=h,json={'revision':1,'rows':[{'email':'suspended@qa.example','mapping_key':'ignored'}]})
+    assert r.status_code==403 and calls==[]
+
+
+def test_actual_delivery_rechecks_original_sender_without_sending(client,recruitment):
+    from api.routes_outreach import deliver_pending
+    h,b,foreign,calls=recruitment
+    email='delivery-pin-'+uuid4().hex+'@qa.example'
+    with connect() as c:
+        tid=c.execute("INSERT INTO mail_threads(brand_id,creator_email) VALUES('dino-recruitment',%s) RETURNING thread_id",(email,)).fetchone()['thread_id']
+        c.execute("INSERT INTO mail_messages(thread_id,direction,state,gmail_account_id,created_at) VALUES(%s,'out','sent',%s,now()-interval '100 days')",(tid,foreign))
+        bid=c.execute("INSERT INTO outreach_batches(brand_id,target_brand_id,gmail_account_id,subject,body,state,created_by) VALUES('dino-recruitment',%s,%s,'Subject','Body','approved','qa') RETURNING batch_id",(b['target_brand_id'],b['gmail_account_id'])).fetchone()['batch_id']
+        rid=c.execute('INSERT INTO outreach_recipients(batch_id,email) VALUES(%s,%s) RETURNING recipient_id',(bid,email)).fetchone()['recipient_id']
+        c.execute("INSERT INTO outreach_optouts(brand_id,email) VALUES('dino-recruitment',%s)",(email,))
+    assert deliver_pending('dino-recruitment',bid)==0 and calls==[]
+    with connect() as c:assert c.execute('SELECT state FROM outreach_recipients WHERE recipient_id=%s',(rid,)).fetchone()['state']=='blocked'

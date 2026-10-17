@@ -50,6 +50,8 @@ def proposal_brand(conn, source, target, authorization):
         customer=conn.execute('SELECT is_internal,is_demo FROM brands WHERE brand_id=%s',(target,)).fetchone()
         if not customer or customer['is_internal'] or customer['is_demo'] or target.startswith('qa-'):
             raise HTTPException(409,'실제 고객 브랜드를 선택하세요')
+    from .auth import check_suspended
+    check_suspended(conn,target)
     return target
 
 
@@ -225,6 +227,8 @@ def send_batch(brand: str, batch_id: UUID, authorization: str = Header(default='
     with connect() as conn:
         b=conn.execute('SELECT * FROM outreach_batches WHERE batch_id=%s AND brand_id=%s FOR UPDATE',(batch_id,brand)).fetchone()
         if not b: raise HTTPException(404,'초안 없음')
+        from .auth import check_suspended
+        check_suspended(conn,b['target_brand_id'] or brand)
         if b['sending_paused']: raise HTTPException(409,'중지된 배치입니다. 먼저 재개를 검토하세요')
         if b['state']=='cancelled': raise HTTPException(409,'취소된 초안입니다')
         account_id=b['gmail_account_id']
@@ -261,6 +265,14 @@ def deliver_pending(brand: str, batch_id) -> int:
             r=conn.execute("SELECT * FROM outreach_recipients WHERE recipient_id=%s AND state='pending' FOR UPDATE",(item['recipient_id'],)).fetchone()
             if not r: continue
             target=b['target_brand_id'] or brand
+            suspended=conn.execute('SELECT suspended_at FROM brands WHERE brand_id=%s',(target,)).fetchone()
+            if suspended and suspended['suspended_at']:
+                conn.execute('UPDATE outreach_batches SET sending_paused=true WHERE batch_id=%s',(batch_id,))
+                break
+            original=conn.execute("SELECT m.gmail_account_id FROM mail_threads t JOIN mail_messages m USING(thread_id) WHERE t.brand_id=%s AND t.creator_email=%s AND m.gmail_account_id IS NOT NULL AND m.state='sent' ORDER BY m.created_at DESC,m.msg_id DESC LIMIT 1",(brand,r['email'])).fetchone()
+            if original and original['gmail_account_id']!=b['gmail_account_id']:
+                conn.execute("UPDATE outreach_recipients SET state='blocked' WHERE recipient_id=%s",(r['recipient_id'],))
+                continue
             conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('outreach-contact:'+target+':'+r['email'],))
             target_optout=conn.execute('SELECT 1 FROM outreach_optouts WHERE brand_id=%s AND email=%s AND opted_out_at IS NOT NULL',(target,r['email'])).fetchone()
             opt=conn.execute('SELECT * FROM outreach_optouts WHERE brand_id=%s AND email=%s',(brand,r['email'])).fetchone()

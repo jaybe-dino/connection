@@ -75,6 +75,7 @@ def _member_or_owner(conn, claims: dict, cell: dict) -> str:
     kind = claims.get("kind")
     if kind == "admin":
         return "admin"
+    auth.check_suspended(conn, cell["brand_id"])  # 정지 브랜드는 운영만 접근
     if kind == "brand":
         if claims.get("brand_id") == cell["brand_id"]:
             return "brand"
@@ -230,7 +231,9 @@ def post_message(cell_id: str, body: PostIn,
             notify_brand_members(conn, cell["brand_id"], "notice",
                                  "새 공지: " + body.text[:60],
                                  "커뮤니티 공지 채널에서 전체 내용을 확인"
-                                 "하세요.")
+                                 "하세요.", {"cellId": cell_id,
+                                             "msgId": m["msg_id"],
+                                             "channel": "notice"})
         ledger_append(conn, f"{author_kind}:{author}", "CELL_MESSAGE_POSTED",
                       cell_id, {"channel": body.channel,
                                 "msgId": m["msg_id"],

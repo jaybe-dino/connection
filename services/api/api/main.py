@@ -67,6 +67,16 @@ async def legacy_access_boundary(request: Request, call_next):
         or (path == '/me/campaign-offers' and method == 'GET')        # 크리에이터 JWT 강제 (routes_collab)
         or (re.fullmatch(r"/me/campaign-offers/[^/]+/(agree|spark-code|content)", path)
             and method == 'POST')                                     # 크리에이터 JWT + 본인 terms 행만
+        # 서비스 전환 /me/* — routes_service 핸들러가 본인 JWT(_me_creator/
+        # _actor)로 수신자 본인 데이터만 조회·수정한다
+        or (path == '/me/profile' and method in ('GET', 'PUT'))
+        or (path == '/me/tiktok' and method == 'GET')
+        or (path in ('/me/tiktok/connect-start', '/me/tiktok/disconnect')
+            and method == 'POST')
+        or (path == '/me/notifications' and method == 'GET')
+        or (path == '/me/notifications/read' and method == 'POST')
+        or (path in ('/me/unread', '/me/xp', '/me/missions')
+            and method == 'GET')
     )
     if legacy and auth.auth_required() and method != 'OPTIONS' and not self_checked:
         try:

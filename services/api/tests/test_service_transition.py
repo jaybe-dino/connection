@@ -88,8 +88,9 @@ def test_profile_onboarding_states_and_handle_reset(client, box):
         "tiktokOwner"] == "none"  # 입력만으로 인증 유지·완료 불가
 
 
-def test_onboarding_gate_unit(client, box):
-    """신규(멤버십 無)만 403, 기존 회원은 legacy 통과, 완료자는 onboarded."""
+def test_onboarding_gate_blocks_new_join_and_fixes_legacy(client, box):
+    """신규는 온보딩 전 합류 불가(403) — 가입 1회로 legacy 우회 불가.
+    legacy 자격은 045 시점 고정분(legacy_creators)만 인정."""
     from fastapi import HTTPException
 
     from api.routes_identity import _ensure_creator_row
@@ -101,10 +102,31 @@ def test_onboarding_gate_unit(client, box):
         with pytest.raises(HTTPException) as e:
             require_onboarded(c, cid, "테스트")
         assert e.value.status_code == 403
-    client.post("/me/join", json={"brand_id": box["a"]}, headers=ch)
+    # 온보딩 전 합류 시도 → 403, 멤버십이 생기지 않는다
+    r = client.post("/me/join", json={"brand_id": box["a"]}, headers=ch)
+    assert r.status_code == 403
     with connect() as c:
-        assert require_onboarded(c, cid, "테스트")["legacy"] is True
+        assert not c.execute("SELECT 1 FROM memberships WHERE creator_id=%s",
+                             (cid,)).fetchone()
+        # 가입을 했더라도(과거 데이터) legacy_creators에 없으면 legacy 아님
+        c.execute("INSERT INTO memberships(creator_id,brand_id)"
+                  " VALUES(%s,%s) ON CONFLICT DO NOTHING", (cid, box["b"]))
+        with pytest.raises(HTTPException):
+            require_onboarded(c, cid, "테스트")
+        c.execute("DELETE FROM memberships WHERE creator_id=%s", (cid,))
+    # 마이그레이션 시점 기존 회원(legacy_creators)만 재연결 안내로 통과
+    legacy = _h(_creator(client, f"legacy-{box['sfx']}@ex.com"))
+    lclaims = auth.decode_jwt(legacy["Authorization"].removeprefix("Bearer "))
+    with connect() as c:
+        lcid = _ensure_creator_row(c, lclaims)
+        c.execute("INSERT INTO legacy_creators(creator_id) VALUES(%s)", (lcid,))
+        assert require_onboarded(c, lcid, "테스트")["legacy"] is True
+    assert client.post("/me/join", json={"brand_id": box["a"]},
+                       headers=legacy).status_code == 200
+    # 신규는 온보딩 완료 후에만 합류 가능
     _onboard(client, ch)
+    assert client.post("/me/join", json={"brand_id": box["a"]},
+                       headers=ch).status_code == 200
     with connect() as c:
         assert require_onboarded(c, cid, "테스트")["onboarded"] is True
 
@@ -162,13 +184,54 @@ def test_tiktok_connect_flow_cannot_fake_success(client, box, monkeypatch):
         "ownerState"] == "revoked"
 
 
+def test_tiktok_open_id_stored_and_conflict_rejected(client, box, monkeypatch):
+    """user.info.basic의 open_id로 소유 저장 — 같은 open_id 다중 계정 거절."""
+    from urllib.parse import parse_qs, urlparse
+    monkeypatch.setenv("TIKTOK_CLIENT_KEY", "k")
+    monkeypatch.setenv("TIKTOK_CLIENT_SECRET", "s")
+
+    class R:
+        def __init__(self, v):
+            self.v = v
+
+        def json(self):
+            return self.v
+    monkeypatch.setattr("httpx.post", lambda *a, **k: R(
+        {"access_token": "t", "open_id": f"oid-{box['sfx']}"}))
+    monkeypatch.setattr("httpx.get", lambda *a, **k: R(
+        {"data": {"user": {"open_id": f"oid-{box['sfx']}",
+                           "display_name": "D"}}, "error": {"code": "ok"}}))
+
+    def connect_cb(h):
+        start = client.post("/me/tiktok/connect-start", headers=h).json()
+        state = parse_qs(urlparse(start["authUrl"]).query)["state"][0]
+        return client.get(f"/tiktok/callback?code=c&state={state}")
+
+    c1 = _h(_creator(client, f"oid1-{box['sfx']}@ex.com"))
+    assert connect_cb(c1).status_code == 200
+    me = client.get("/me/tiktok", headers=c1).json()
+    assert me["ownerState"] == "connected"
+    with connect() as c:
+        row = c.execute("SELECT creator_id FROM creator_profiles WHERE"
+                        " tiktok_open_id=%s", (f"oid-{box['sfx']}",)).fetchone()
+        assert row  # 불변 open_id 저장
+    # 두 번째 계정이 같은 TikTok open_id로 소유 주장 → 거절(connected 불가)
+    c2 = _h(_creator(client, f"oid2-{box['sfx']}@ex.com"))
+    r = connect_cb(c2)
+    assert r.status_code == 409
+    assert client.get("/me/tiktok", headers=c2).json()["ownerState"] == "failed"
+    assert client.get("/me/tiktok", headers=c1).json()["ownerState"] == "connected"
+
+
 # ── 캠페인 라이프사이클·알림·국가 조건 ───────────────────────────
 
 def test_campaign_lifecycle_notifications_and_reject(client, box):
     a = box["a"]
     bh = _h(_brand_user(client, f"owner-{box['sfx']}@br.com", a))
     ch = _h(_creator(client, f"camp-{box['sfx']}@ex.com"))
-    client.post("/me/join", json={"brand_id": a}, headers=ch)
+    _onboard(client, ch)
+    assert client.post("/me/join", json={"brand_id": a},
+                       headers=ch).status_code == 200
 
     # 초안 생성 — 크리에이터에게 비노출, 신청도 404
     camp = client.post(f"/brands/{a}/campaigns", json={
@@ -188,8 +251,9 @@ def test_campaign_lifecycle_notifications_and_reject(client, box):
                        headers=bh).status_code == 409  # 재발행 불가
     notif = client.get("/me/notifications", headers=ch).json()
     assert notif["unreadCount"] >= 1
-    assert any(n["type"] == "campaign" and "신제품 앰배서더" in n["title"]
-               for n in notif["items"])
+    camp_n = next(n for n in notif["items"]
+                  if n["type"] == "campaign" and "신제품 앰배서더" in n["title"])
+    assert camp_n["target"] == {"brandId": a, "campaignId": cid}  # 딥링크
     client.post("/me/notifications/read", json={"all": True}, headers=ch)
     assert client.get("/me/notifications",
                       headers=ch).json()["unreadCount"] == 0
@@ -225,8 +289,9 @@ def test_campaign_country_eligibility(client, box):
     a = box["a"]
     bh = _h(_brand_user(client, f"geo-{box['sfx']}@br.com", a))
     ch = _h(_creator(client, f"geo-{box['sfx']}@ex.com"))
-    client.post("/me/join", json={"brand_id": a}, headers=ch)
     _onboard(client, ch, country="KR", ships=["KR"])
+    assert client.post("/me/join", json={"brand_id": a},
+                       headers=ch).status_code == 200
 
     cid = client.post(f"/brands/{a}/campaigns", json={
         "name": "태국 전용 캠페인", "countries": ["TH"]},
@@ -250,6 +315,7 @@ def test_campaign_country_eligibility(client, box):
 def test_xp_awarded_once_and_ranking_guarded(client, box):
     a, b = box["a"], box["b"]
     ch = _h(_creator(client, f"xp-{box['sfx']}@ex.com"))
+    _onboard(client, ch)
     client.post("/me/join", json={"brand_id": a}, headers=ch)
     client.post("/me/join", json={"brand_id": a}, headers=ch)  # 중복 join
     for text in ["안녕하세요!", "두 번째 글"]:
@@ -281,6 +347,7 @@ def test_threads_pins_unread_search_and_notice(client, box):
     cell = box["cell_a"]
     bh = _h(_brand_user(client, f"comm-{box['sfx']}@br.com", a))
     ch = _h(_creator(client, f"comm-{box['sfx']}@ex.com"))
+    _onboard(client, ch)
     client.post("/me/join", json={"brand_id": a}, headers=ch)
 
     root = client.post(f"/community/cells/{cell}/messages", json={
@@ -339,8 +406,11 @@ def test_threads_pins_unread_search_and_notice(client, box):
     client.post(f"/community/cells/{cell}/messages", json={
         "text": "이번 주 금요일 발송 안내", "channel": "notice"}, headers=bh)
     notif = client.get("/me/notifications", headers=ch).json()
-    assert any(n["type"] == "notice" and "발송 안내" in n["title"]
-               for n in notif["items"])
+    notice_n = next(n for n in notif["items"]
+                    if n["type"] == "notice" and "발송 안내" in n["title"])
+    assert notice_n["target"]["brandId"] == a
+    assert notice_n["target"]["cellId"] == cell
+    assert notice_n["target"]["msgId"]  # 클릭 이동용 딥링크
 
 
 # ── 브랜드 팀 역할 ───────────────────────────────────────────────
@@ -369,6 +439,10 @@ def test_team_roles_owner_only(client, box):
 def test_admin_suspend_resume_and_audit(client, box):
     a = box["a"]
     bh = _h(_brand_user(client, f"susp-{box['sfx']}@br.com", a))
+    ch = _h(_creator(client, f"susp-{box['sfx']}@ex.com"))
+    _onboard(client, ch)
+    assert client.post("/me/join", json={"brand_id": a},
+                       headers=ch).status_code == 200
     assert client.get(f"/brands/{a}/team", headers=bh).status_code == 200
 
     assert client.post(f"/admin/brands/{a}/suspend",
@@ -378,6 +452,16 @@ def test_admin_suspend_resume_and_audit(client, box):
     assert client.get(f"/brands/{a}/team", headers=bh).status_code == 403
     assert client.post(f"/brands/{a}/campaigns", json={"name": "새 캠페인"},
                        headers=bh).status_code == 403
+    # 정지 일관성: 커뮤니티(공지 포함)·신규 가입도 차단, 운영만 접근
+    assert client.post(f"/community/cells/{box['cell_a']}/messages",
+                       json={"text": "공지", "channel": "notice"},
+                       headers=bh).status_code == 403
+    assert client.get(f"/community/cells/{box['cell_a']}/messages",
+                      headers=ch).status_code == 403
+    ch2 = _h(_creator(client, f"susp2-{box['sfx']}@ex.com"))
+    _onboard(client, ch2)
+    assert client.post("/me/join", json={"brand_id": a},
+                       headers=ch2).status_code == 403
     assert client.post(f"/admin/brands/{a}/suspend", json={},
                        headers=ADMIN).json().get("already") is True
     listed = {b["brandId"]: b for b in
@@ -413,6 +497,7 @@ def test_brand_isolation_matrix(client, box):
     a, b = box["a"], box["b"]
     bh_a = _h(_brand_user(client, f"iso-{box['sfx']}@br.com", a))
     ch_a = _h(_creator(client, f"iso-{box['sfx']}@ex.com"))
+    _onboard(client, ch_a)
     client.post("/me/join", json={"brand_id": a}, headers=ch_a)
     cid_b = client.post(f"/brands/{b}/campaigns", json={"name": "B 전용"},
                         headers=_h(_brand_user(
@@ -540,6 +625,7 @@ def test_recruitment_conversion_events_idempotent(client, outreach):
     magic = parse_qs(urlparse(r["demoLink"]).query)["magic"][0]
     ch = _h(client.post("/auth/magic/verify",
                         json={"token": magic}).json()["token"])
+    _onboard(client, ch)  # 초대 신청도 온보딩 선행(신규 입장 경로)
     with connect() as c:
         c.execute("UPDATE outreach_batches SET state='approved'"
                   " WHERE batch_id=%s", (outreach["batch"],))

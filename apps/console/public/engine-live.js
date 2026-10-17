@@ -1596,6 +1596,12 @@
         req('GET','/community/my-cells').then(function(c){commCells=c;creatorLoadErrors.community=false;if(!commOpen&&creatorTab==='community'){var first=c.find(function(x){return x.kind!=='dm'&&(!joinTarget||x.brandId===joinTarget);});if(first){window.commOpenCell(first.cellId,first.name);return;}}render();}).catch(function(){creatorLoadErrors.community=true;render();});
         req('GET','/me/campaigns').then(function(c){myCampaigns=c;creatorLoadErrors.campaigns=false;render();}).catch(function(){creatorLoadErrors.campaigns=true;render();});
         req('GET','/me/campaign-offers').then(function(o){myOffers=o;creatorLoadErrors.offers=false;render();}).catch(function(){creatorLoadErrors.offers=true;render();});
+        // 서비스 전환: 미읽음 배지·알림·온보딩 프로필·TikTok 상태·XP — 실패해도 본문 탐색은 유지
+        req('GET','/me/unread').then(function(u){commUnread={};(u||[]).forEach(function(x){commUnread[x.cellId]=x;});render();}).catch(function(){});
+        req('GET','/me/notifications?limit=30').then(function(n){creatorNotifs=n;render();}).catch(function(){});
+        req('GET','/me/profile').then(function(p){creatorProfile=p;render();}).catch(function(){});
+        req('GET','/me/tiktok').then(function(t){tiktokInfo=t;render();}).catch(function(){});
+        req('GET','/me/xp').then(function(x){myXp=x;render();}).catch(function(){});
       }
     }
     var creatorApplyBusy={};

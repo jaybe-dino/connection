@@ -211,6 +211,15 @@ def _brand_suspended(brand_id: str) -> bool:
     return bool(row and row["suspended_at"])
 
 
+def check_suspended(conn, brand_id: str) -> None:
+    """정지 브랜드 접근 차단 — 커뮤니티/가입/신청 등 진입점에서 공통 사용.
+    조회 실패는 예외 전파(fail-closed)이며 정상 브랜드로 간주하지 않는다."""
+    row = conn.execute("SELECT suspended_at FROM brands WHERE brand_id=%s",
+                       (brand_id,)).fetchone()
+    if row and row["suspended_at"]:
+        raise HTTPException(403, "운영팀이 정지한 브랜드입니다 — 문의해 주세요")
+
+
 def require_brand(brand_id: str,
                   authorization: str = Header(default=""),
                   x_admin_key: str = Header(default="")) -> dict:

@@ -113,6 +113,12 @@ def join_brand(body: JoinIn,
         if not b:
             raise HTTPException(404, "brand not found")
         cid = _ensure_creator_row(conn, claims)
+        # 신규 크리에이터는 온보딩(국가·배송·필수동의) 완료 전 합류 불가.
+        # legacy(마이그레이션 시점 기존 회원)만 재연결 안내 대상으로 통과.
+        from . import auth as _auth
+        from .routes_service import require_onboarded
+        require_onboarded(conn, cid, "브랜드 합류")
+        _auth.check_suspended(conn, body.brand_id)
         ins = conn.execute(
             "INSERT INTO memberships (creator_id, brand_id) VALUES (%s,%s)"
             " ON CONFLICT DO NOTHING RETURNING creator_id",

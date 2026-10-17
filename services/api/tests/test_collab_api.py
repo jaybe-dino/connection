@@ -11,7 +11,13 @@ def _bearer(t):
 def _creator_token(client, email):
     r = client.post("/auth/magic", json={"email": email}).json()
     tok = r["demoLink"].split("magic=")[1]
-    return client.post("/auth/magic/verify", json={"token": tok}).json()["token"]
+    token = client.post("/auth/magic/verify",
+                        json={"token": tok}).json()["token"]
+    client.put("/me/profile", json={
+        "country": "KR", "languages": ["ko"], "ship_countries": ["KR"],
+        "consent_terms": True, "consent_privacy": True},
+        headers={"Authorization": "Bearer " + token})  # 신규 여정: 온보딩 선행
+    return token
 
 
 def _approved_brand(client, slug, name, email):

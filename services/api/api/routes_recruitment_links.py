@@ -55,7 +55,7 @@ def resolve(conn, token, lock=False):
     r = conn.execute('''SELECT l.link_id,l.expires_at,r.email,r.state AS recipient_state,
         b.batch_id,b.brand_id AS workspace_id,COALESCE(b.target_brand_id,b.brand_id) AS target,
         b.product_id,b.product_name,b.campaign_id,b.mapping_key,b.state AS batch_state,
-        br.name AS brand_name,br.is_internal,br.is_demo,p.state AS product_state,c.name AS campaign_name
+        br.name AS brand_name,br.is_internal,br.is_demo,br.suspended_at,p.state AS product_state,c.name AS campaign_name
         FROM recruitment_application_links l JOIN outreach_recipients r USING(recipient_id)
         JOIN outreach_batches b USING(batch_id) JOIN brands br ON br.brand_id=COALESCE(b.target_brand_id,b.brand_id)
         LEFT JOIN brand_products p USING(product_id) LEFT JOIN campaigns c ON c.campaign_id=b.campaign_id
@@ -66,6 +66,8 @@ def resolve(conn, token, lock=False):
         raise HTTPException(410,'만료되었거나 중지된 모집 링크입니다')
     if r['is_internal'] or r['is_demo']:
         raise HTTPException(409,'고객 브랜드 신청 링크가 아닙니다')
+    if r['suspended_at']:
+        raise HTTPException(410,'모집이 중지된 브랜드입니다')
     if r['product_id'] and r['product_state']!='active':
         raise HTTPException(409,'제품 모집이 중지되었습니다')
     validate_campaign(conn,r['target'],r['campaign_id'],r['product_id'])
@@ -121,6 +123,9 @@ def apply(token: str, authorization: str=Header(default='')):
         cid=_ensure_creator_row(c,claims)
         prior=c.execute('SELECT application_id FROM recruitment_applications WHERE link_id=%s AND creator_id=%s',(r['link_id'],cid)).fetchone()
         if prior:return {**public_context(r),'applicationId':str(prior['application_id']),'alreadyApplied':True,'status':'applied'}
+        # 초대 신청도 입장 경로 — 신규 크리에이터는 온보딩 완료가 선행된다.
+        from .routes_service import require_onboarded
+        require_onboarded(c,cid,'모집 신청')
         # Same existing membership + verification billing triggers; no membership for workspace.
         member=c.execute('INSERT INTO memberships(creator_id,brand_id) VALUES(%s,%s) ON CONFLICT DO NOTHING RETURNING creator_id',(cid,r['target'])).fetchone()
         if member:

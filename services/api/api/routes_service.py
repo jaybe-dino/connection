@@ -62,14 +62,19 @@ def award_xp(conn, creator_id: str, brand_id: str, kind: str,
 
 
 def notify_brand_members(conn, brand_id: str, ntype: str, title: str,
-                         body: str = "") -> int:
-    """브랜드 멤버 전원에게 알림 — 현재 대화 강제 이동 없음(배지+카드)."""
+                         body: str = "", target: dict | None = None) -> int:
+    """브랜드 멤버 전원에게 알림 — 현재 대화 강제 이동 없음(배지+카드).
+
+    target: 딥링크 정보({brandId, campaignId?, cellId?, msgId?}) — 클릭 시
+    이동하는 상세 API가 멤버십/브랜드 가드로 열람 권한을 다시 검증한다."""
+    t = {"brandId": brand_id}
+    t.update(target or {})
     rows = conn.execute(
-        "INSERT INTO notifications (user_id, type, title, body)"
-        " SELECT DISTINCT u.user_id::text, %s, %s, %s"
+        "INSERT INTO notifications (user_id, type, title, body, target)"
+        " SELECT DISTINCT u.user_id::text, %s, %s, %s, %s::jsonb"
         " FROM memberships m JOIN users u ON u.creator_id = m.creator_id"
         " WHERE m.brand_id = %s RETURNING notif_id",
-        (ntype, title, body, brand_id)).fetchall()
+        (ntype, title, body, json.dumps(t), brand_id)).fetchall()
     return len(rows)
 
 
@@ -86,8 +91,10 @@ def require_onboarded(conn, creator_id: str, action: str) -> dict:
     p = _profile(conn, creator_id)
     if p and p["onboarded_at"]:
         return {"onboarded": True, "legacy": False}
-    legacy = conn.execute("SELECT 1 FROM memberships WHERE creator_id=%s"
-                          " LIMIT 1", (creator_id,)).fetchone()
+    # legacy 자격은 045 마이그레이션 시점에 고정(legacy_creators) — 이후의
+    # 신규 가입은 멤버십이 생겨도 legacy가 되지 않는다(가입 1회 우회 차단).
+    legacy = conn.execute("SELECT 1 FROM legacy_creators WHERE creator_id=%s",
+                          (creator_id,)).fetchone()
     if legacy:
         return {"onboarded": False, "legacy": True}
     raise HTTPException(403, f"{action} 전에 프로필 온보딩(국가·배송 가능"
@@ -118,7 +125,7 @@ def my_profile(authorization: str = Header(default="")) -> dict:
         verified = conn.execute("SELECT verified FROM creators WHERE"
                                 " creator_id=%s", (cid,)).fetchone()["verified"]
         has_membership = bool(conn.execute(
-            "SELECT 1 FROM memberships WHERE creator_id=%s LIMIT 1",
+            "SELECT 1 FROM legacy_creators WHERE creator_id=%s",
             (cid,)).fetchone())
     tiktok_configured = bool(os.environ.get("TIKTOK_CLIENT_KEY"))
     out = {
@@ -195,13 +202,15 @@ def save_profile(body: ProfileIn,
             "    EXCLUDED.consent_version ELSE creator_profiles.consent_version END,"
             "  tiktok_owner_state=CASE WHEN %s THEN 'none' ELSE"
             "    creator_profiles.tiktok_owner_state END,"
+            "  tiktok_open_id=CASE WHEN %s THEN '' ELSE"
+            "    creator_profiles.tiktok_open_id END,"
             "  onboarded_at=COALESCE(creator_profiles.onboarded_at,"
             "    CASE WHEN %s THEN now() END),"
             "  updated_at=now()",
             (cid, country or None, langs, ships, handle,
              json.dumps(consents),
              CONSENT_VERSION if consents else "",
-             complete, reset_owner, complete))
+             complete, reset_owner, reset_owner, complete))
         ledger_append(conn, f"creator:{cid}", "CREATOR_ONBOARDED" if complete
                       else "CREATOR_PROFILE_UPDATED", cid,
                       {"country": country, "ship": ships,
@@ -287,7 +296,11 @@ def tiktok_callback(code: str = "", state: str = "", error: str = ""):
                          " updated_at=now() WHERE creator_id=%s", (cid,))
             return HTMLResponse(f"<h3>연결 취소/실패</h3><p>{escape(error or '코드 없음')}"
                                 " — 앱에서 다시 연결할 수 있습니다.</p>", 400)
+    # 최소 권한 user.info.basic — 소유 검증·저장 키는 provider의 불변
+    # open_id. username은 user.info.profile 스코프이므로 요구하지 않고,
+    # provider가 함께 주는 경우에만 핸들로 반영한다.
     import httpx
+    tok, info = None, None
     try:
         tok = httpx.post("https://open.tiktokapis.com/v2/oauth/token/", data={
             "client_key": os.environ["TIKTOK_CLIENT_KEY"],
@@ -296,27 +309,46 @@ def tiktok_callback(code: str = "", state: str = "", error: str = ""):
             "redirect_uri": os.environ.get("TIKTOK_REDIRECT_URI",
                 "https://api.theprlist.net/tiktok/callback")},
             timeout=15).json()
-        info = None
-        if isinstance(tok, dict) and tok.get("access_token"):
+        if isinstance(tok, dict) and tok.get("access_token") \
+                and not tok.get("error"):
             info = httpx.get(
                 "https://open.tiktokapis.com/v2/user/info/"
-                "?fields=open_id,username,display_name",
+                "?fields=open_id,display_name,avatar_url",
                 headers={"Authorization": f"Bearer {tok['access_token']}"},
                 timeout=15).json()
     except Exception:
         tok, info = None, None
-    username = ((info or {}).get("data") or {}).get("user", {}).get("username", "")
-    ok = bool(username)
+    user = (((info or {}).get("data") or {}).get("user") or {})
+    err_code = str(((info or {}).get("error") or {}).get("code", "ok"))
+    open_id = str(user.get("open_id") or "")
+    username = str(user.get("username") or "")  # profile 스코프 승인 시에만
+    ok = bool(isinstance(tok, dict) and tok.get("access_token") and open_id
+              and err_code in ("ok", "", "0"))
+    conflict = False
     with connect() as conn:
+        if ok:
+            other = conn.execute(
+                "SELECT creator_id FROM creator_profiles WHERE"
+                " tiktok_open_id=%s AND creator_id<>%s",
+                (open_id, cid)).fetchone()
+            if other:  # 같은 TikTok 계정의 다중 소유 주장 — 충돌로 거절
+                ok, conflict = False, True
         conn.execute(
             "UPDATE creator_profiles SET tiktok_owner_state=%s,"
+            " tiktok_open_id=CASE WHEN %s THEN %s ELSE tiktok_open_id END,"
             " tiktok_handle=CASE WHEN %s THEN %s ELSE tiktok_handle END,"
             " tiktok_owner_checked_at=now(), updated_at=now()"
             " WHERE creator_id=%s",
-            ("connected" if ok else "failed", ok, username, cid))
+            ("connected" if ok else "failed", ok, open_id,
+             bool(ok and username), username, cid))
         ledger_append(conn, f"creator:{cid}",
                       "TIKTOK_OWNER_" + ("CONNECTED" if ok else "FAILED"),
-                      cid, {"handle": username} if ok else {})
+                      cid, ({"openId": open_id, "handle": username} if ok else
+                            {"conflict": True} if conflict else {}))
+    if conflict:
+        return HTMLResponse("<h3>확인 실패</h3><p>이 TikTok 계정은 이미 다른"
+                            " 크리에이터 계정에 연결되어 있습니다 — 운영팀에"
+                            " 문의해 주세요.</p>", 409)
     return HTMLResponse("<h3>✅ TikTok 계정 소유 확인 완료</h3><p>앱으로"
                         " 돌아가 새로고침하세요.</p>" if ok else
                         "<h3>확인 실패</h3><p>TikTok에서 계정 정보를 확인"
@@ -329,7 +361,8 @@ def tiktok_disconnect(authorization: str = Header(default="")) -> dict:
     with connect() as conn:
         claims, cid = _me_creator(conn, authorization)
         conn.execute("UPDATE creator_profiles SET tiktok_owner_state='revoked',"
-                     " updated_at=now() WHERE creator_id=%s", (cid,))
+                     " tiktok_open_id='', updated_at=now()"
+                     " WHERE creator_id=%s", (cid,))
     return {"ok": True, "ownerState": "revoked"}
 
 
@@ -342,7 +375,7 @@ def my_notifications(limit: int = 30,
     limit = max(1, min(limit, 100))
     with connect() as conn:
         rows = conn.execute(
-            "SELECT notif_id, type, title, body, read, created_at"
+            "SELECT notif_id, type, title, body, read, created_at, target"
             " FROM notifications WHERE user_id=%s"
             " ORDER BY created_at DESC LIMIT %s",
             (str(claims["sub"]), limit)).fetchall()
@@ -352,7 +385,7 @@ def my_notifications(limit: int = 30,
     return {"unreadCount": unread,
             "items": [{"id": str(r["notif_id"]), "type": r["type"],
                        "title": r["title"], "body": r["body"],
-                       "read": r["read"],
+                       "read": r["read"], "target": r["target"] or {},
                        "at": r["created_at"].isoformat()} for r in rows]}
 
 
@@ -699,7 +732,7 @@ def publish_campaign(brand_id: str, campaign_id: str,
         n = notify_brand_members(conn, brand_id, "campaign",
                                  f"새 캠페인: {row['name']}",
                                  "캠페인 탭에서 상세를 확인하고 신청할 수"
-                                 " 있어요.")
+                                 " 있어요.", {"campaignId": campaign_id})
         ledger_append(conn, f"brand:{brand_id}", "CAMPAIGN_PUBLISHED",
                       campaign_id, {"notified": n})
     return {"ok": True, "lifecycle": "published", "notified": n}

@@ -56,12 +56,13 @@ def dbname():
 def setup(dbname, monkeypatch):
     from api import auth
     monkeypatch.setattr(auth, '_session_epoch', lambda user_id: 0)
-
     @contextmanager
     def db():
         with psycopg.connect(dbname=dbname, row_factory=dict_row) as conn:
             yield conn
     with db() as conn:
+        conn.execute('ALTER TABLE brands ADD COLUMN IF NOT EXISTS'
+                     ' suspended_at timestamptz')
         conn.execute('TRUNCATE invoice_charge_attempts, brand_billing_keys,'
                      ' signup_usage, signup_invoices, memberships, creators,'
                      ' brands CASCADE')
@@ -74,6 +75,8 @@ def setup(dbname, monkeypatch):
         conn.execute("UPDATE signup_usage SET verified_at='2026-01-15'")
     monkeypatch.setattr(routes, 'connect', db)
     monkeypatch.setattr(routes_billing, 'connect', db)
+    from api import db as dbmod
+    monkeypatch.setattr(dbmod, 'connect', db)  # auth 정지 검사도 같은 격리 DB를 실조회
     events = []
     monkeypatch.setattr(routes, 'ledger_append',
                         lambda *args: events.append(args[2]))

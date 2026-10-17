@@ -53,7 +53,12 @@ def login(client,record,token):
     q=parse_qs(urlparse(r.json()['demoLink']).query)
     assert q['brand']==[record['brand']] and q['application']==[token]
     verified=client.post('/auth/magic/verify',json={'token':q['magic'][0]});assert verified.status_code==200
-    return headers(verified.json()['token'])
+    h=headers(verified.json()['token'])
+    onboard=client.put('/me/profile',json={'country':'KR','languages':['ko'],'ship_countries':['KR'],'consent_terms':True,'consent_privacy':True},headers=h)  # 신규 여정: 온보딩 선행
+    assert onboard.status_code==200,onboard.text
+    from conftest import tiktok_connect
+    tiktok_connect(client,h,'oid-'+uuid4().hex[:12])  # 신규 필수: TikTok 소유 인증
+    return h
 
 
 def test_two_customer_cta_signup_application_community_and_billing_isolation(client,journey):

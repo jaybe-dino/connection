@@ -202,6 +202,24 @@ def current_user(authorization: str = Header(default="")) -> dict | None:
     return claims
 
 
+def _brand_suspended(brand_id: str) -> bool:
+    """어드민 정지 여부 — 격리 테스트가 자체 DB로 대체할 수 있게 분리."""
+    from .db import connect  # 지연 import — 순환 방지
+    with connect() as conn:
+        row = conn.execute("SELECT suspended_at FROM brands WHERE brand_id=%s",
+                           (brand_id,)).fetchone()
+    return bool(row and row["suspended_at"])
+
+
+def check_suspended(conn, brand_id: str) -> None:
+    """정지 브랜드 접근 차단 — 커뮤니티/가입/신청 등 진입점에서 공통 사용.
+    조회 실패는 예외 전파(fail-closed)이며 정상 브랜드로 간주하지 않는다."""
+    row = conn.execute("SELECT suspended_at FROM brands WHERE brand_id=%s",
+                       (brand_id,)).fetchone()
+    if row and row["suspended_at"]:
+        raise HTTPException(403, "운영팀이 정지한 브랜드입니다 — 문의해 주세요")
+
+
 def require_brand(brand_id: str,
                   authorization: str = Header(default=""),
                   x_admin_key: str = Header(default="")) -> dict:
@@ -210,8 +228,12 @@ def require_brand(brand_id: str,
     if u:
         if u.get("otp") == "pending":
             raise HTTPException(401, "2단계 인증을 완료하세요")
-        if u.get("kind") == "admin" or (u.get("kind") == "brand"
-                                        and u.get("brand_id") == brand_id):
+        if u.get("kind") == "admin":
+            return u
+        if u.get("kind") == "brand" and u.get("brand_id") == brand_id:
+            if _brand_suspended(brand_id):
+                raise HTTPException(
+                    403, "운영팀에 의해 정지된 브랜드입니다 — 문의해 주세요")
             return u
         raise HTTPException(403, "이 브랜드에 대한 권한이 없습니다")
     if not auth_required():

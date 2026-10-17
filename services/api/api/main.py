@@ -67,6 +67,16 @@ async def legacy_access_boundary(request: Request, call_next):
         or (path == '/me/campaign-offers' and method == 'GET')        # 크리에이터 JWT 강제 (routes_collab)
         or (re.fullmatch(r"/me/campaign-offers/[^/]+/(agree|spark-code|content)", path)
             and method == 'POST')                                     # 크리에이터 JWT + 본인 terms 행만
+        # 서비스 전환 /me/* — routes_service 핸들러가 본인 JWT(_me_creator/
+        # _actor)로 수신자 본인 데이터만 조회·수정한다
+        or (path == '/me/profile' and method in ('GET', 'PUT'))
+        or (path == '/me/tiktok' and method == 'GET')
+        or (path in ('/me/tiktok/connect-start', '/me/tiktok/disconnect')
+            and method == 'POST')
+        or (path == '/me/notifications' and method == 'GET')
+        or (path == '/me/notifications/read' and method == 'POST')
+        or (path in ('/me/unread', '/me/xp', '/me/missions')
+            and method == 'GET')
     )
     if legacy and auth.auth_required() and method != 'OPTIONS' and not self_checked:
         try:
@@ -118,6 +128,8 @@ app.include_router(_billing_router)
 app.include_router(_payments_router)
 from .routes_pool import router as _pool_router
 app.include_router(_pool_router)
+from .routes_service import router as _service_router
+app.include_router(_service_router)
 
 ALL_LOCALES = ["ko", "th", "en", "vi", "ja"]
 
@@ -438,8 +450,10 @@ def apply_campaign(campaign_id: str, body: Apply,
                             (campaign_id,)).fetchone()
         if not camp:
             raise HTTPException(404, "캠페인을 찾을 수 없습니다")
-        if camp["status"] != "open":
+        if camp["status"] != "open" or camp.get("lifecycle") == "closed":
             raise HTTPException(409, "모집이 종료된 캠페인입니다")
+        if camp.get("lifecycle") == "draft":
+            raise HTTPException(404, "캠페인을 찾을 수 없습니다")  # 미발행 비노출
         today = datetime.now(ZoneInfo("Asia/Seoul")).date()
         if camp["deadline"] and camp["deadline"] < today:
             raise HTTPException(409, "지원 마감일이 지났습니다")
@@ -452,10 +466,29 @@ def apply_campaign(campaign_id: str, body: Apply,
         if not member:
             raise HTTPException(
                 403, "이 브랜드 PR 리스트 멤버만 지원할 수 있습니다 — 먼저 합류하세요")
+        # 국가 조건 — 미충족은 사유와 함께 거절(화면에도 동일 사유 표기)
+        from .routes_service import award_xp, require_onboarded
+        if claims and claims.get("kind") == "creator":
+            require_onboarded(conn, cid, "캠페인 신청")
+        countries = camp.get("countries") or []
+        if countries:
+            prof = conn.execute("SELECT country, ship_countries FROM"
+                                " creator_profiles WHERE creator_id=%s",
+                                (cid,)).fetchone()
+            ship = set((prof["ship_countries"] if prof else []) or [])
+            if prof and prof["country"]:
+                ship.add(prof["country"])
+            if not (ship & set(countries)):
+                raise HTTPException(409, "이 캠페인은 "
+                                    + ", ".join(countries)
+                                    + " 지역 대상입니다 — 프로필의 국가/배송"
+                                      " 가능 국가가 조건과 맞지 않습니다")
         ins = conn.execute(
             "INSERT INTO campaign_applications (campaign_id, creator_id)"
             " VALUES (%s,%s) ON CONFLICT DO NOTHING RETURNING creator_id",
             (campaign_id, cid)).fetchone()
+        if ins:
+            award_xp(conn, cid, camp["brand_id"], "application", campaign_id)
         st = conn.execute(
             "SELECT status FROM campaign_applications"
             " WHERE campaign_id=%s AND creator_id=%s",

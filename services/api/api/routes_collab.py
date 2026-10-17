@@ -78,7 +78,7 @@ def brand_campaigns(brand: str,
     with connect() as conn:
         rows = conn.execute(
             "SELECT c.campaign_id, c.name, c.product, c.status,"
-            " c.affiliate_pct,"
+            " c.affiliate_pct, c.lifecycle, c.countries, c.deadline,"
             " (SELECT count(*) FROM campaign_applications a"
             "   WHERE a.campaign_id=c.campaign_id) AS applicants,"
             " (SELECT count(*) FROM campaign_terms t"
@@ -88,6 +88,8 @@ def brand_campaigns(brand: str,
             " ORDER BY c.campaign_id", (brand,)).fetchall()
     return [{"campaignId": r["campaign_id"], "name": r["name"],
              "product": r["product"], "status": r["status"],
+             "lifecycle": r["lifecycle"], "countries": list(r["countries"] or []),
+             "deadline": r["deadline"].isoformat() if r["deadline"] else None,
              "affiliatePct": (float(r["affiliate_pct"])
                               if r["affiliate_pct"] is not None else None),
              "applicants": r["applicants"], "selected": r["selected"]}
@@ -114,7 +116,7 @@ def applicants(brand: str, campaign_id: str,
     return [{"creatorId": r["creator_id"], "handle": r["handle"],
              "platform": r["platform"], "verified": r["verified"],
              "appliedAt": r["applied_at"].isoformat(),
-             "termsState": r["terms_state"],
+             "status": r["status"], "termsState": r["terms_state"],
              "commissionPct": (float(r["commission_pct"])
                                if r["commission_pct"] is not None else None),
              "agreedCommissionPct": (float(r["agreed_commission_pct"])
@@ -270,6 +272,8 @@ def complete_terms(brand: str, campaign_id: str, creator_id: str,
         conn.execute(
             "UPDATE campaign_applications SET status='passed'"
             " WHERE campaign_id=%s AND creator_id=%s", (campaign_id, creator_id))
+        from .routes_service import award_xp
+        award_xp(conn, creator_id, brand, "completed", campaign_id)
         ledger_append(conn, f"brand:{brand}", "CAMPAIGN_TERMS_COMPLETED",
                       campaign_id, {"creator": creator_id})
     return _terms_out(t)
@@ -285,7 +289,7 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
         rows = conn.execute(
             "SELECT c.campaign_id, c.brand_id, c.name, c.product,"
             " c.reward_type, c.affiliate_pct, c.deadline, c.status,"
-            " b.name AS brand_name, b.logo_url,"
+            " c.countries, b.name AS brand_name, b.logo_url,"
             " a.status AS my_status, t.state AS terms_state"
             " FROM campaigns c JOIN brands b USING (brand_id)"
             " JOIN memberships m ON m.brand_id=c.brand_id AND m.creator_id=%s"
@@ -293,9 +297,23 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
             "   ON a.campaign_id=c.campaign_id AND a.creator_id=%s"
             " LEFT JOIN campaign_terms t"
             "   ON t.campaign_id=c.campaign_id AND t.creator_id=%s"
-            " WHERE c.status='open' ORDER BY c.campaign_id",
+            " WHERE c.status='open' AND c.lifecycle='published'"
+            " ORDER BY c.campaign_id",
             (cid, cid, cid)).fetchall()
-    return [{"campaignId": r["campaign_id"], "brandId": r["brand_id"],
+        prof = conn.execute(
+            "SELECT country, ship_countries FROM creator_profiles"
+            " WHERE creator_id=%s", (cid,)).fetchone()
+    my_countries = set()
+    if prof:
+        if prof["country"]:
+            my_countries.add(prof["country"])
+        my_countries.update(prof["ship_countries"] or [])
+    out = []
+    for r in rows:
+        countries = r["countries"] or []
+        eligible = not countries or bool(my_countries & set(countries))
+        out.append(
+            {"campaignId": r["campaign_id"], "brandId": r["brand_id"],
              "brandName": r["brand_name"], "logoUrl": r["logo_url"],
              "name": r["name"], "product": r["product"],
              "rewardType": r["reward_type"],
@@ -303,7 +321,13 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
                               if r["affiliate_pct"] is not None else None),
              "deadline": r["deadline"].isoformat() if r["deadline"] else None,
              "myStatus": r["my_status"] or "none",
-             "termsState": r["terms_state"]} for r in rows]
+             "termsState": r["terms_state"],
+             "countries": list(countries), "eligible": eligible,
+             "ineligibleReason": (None if eligible else
+                                  "이 캠페인은 " + ", ".join(countries)
+                                  + " 지역 대상입니다 — 프로필의 국가/배송 가능"
+                                  " 국가가 조건과 맞지 않습니다")})
+    return out
 
 
 @router.get("/me/campaign-offers")
@@ -352,6 +376,11 @@ def agree_offer(campaign_id: str, body: AgreeIn,
             " agreed_at=now()"
             " WHERE campaign_id=%s AND creator_id=%s RETURNING *",
             (handle, campaign_id, cid)).fetchone()
+        from .routes_service import award_xp
+        _b = conn.execute("SELECT brand_id FROM campaigns WHERE"
+                          " campaign_id=%s", (campaign_id,)).fetchone()
+        if _b:
+            award_xp(conn, cid, _b["brand_id"], "agreement", campaign_id)
         ledger_append(conn, f"creator:{cid}", "CAMPAIGN_TERMS_AGREED",
                       campaign_id,
                       {"commissionPct": float(t["agreed_commission_pct"])})
@@ -409,6 +438,12 @@ def submit_content(campaign_id: str, body: ContentIn,
         conn.execute(
             "UPDATE campaign_applications SET status='submitted'"
             " WHERE campaign_id=%s AND creator_id=%s", (campaign_id, cid))
+        from .routes_service import award_xp
+        _b = conn.execute("SELECT brand_id FROM campaigns WHERE"
+                          " campaign_id=%s", (campaign_id,)).fetchone()
+        if _b:
+            award_xp(conn, cid, _b["brand_id"], "content_submitted",
+                     campaign_id)
         ledger_append(conn, f"creator:{cid}", "CAMPAIGN_CONTENT_SUBMITTED",
                       campaign_id, {"url": body.content_url})
     return _terms_out(t)

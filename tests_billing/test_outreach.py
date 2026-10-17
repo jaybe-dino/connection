@@ -33,6 +33,8 @@ def setup(outreach_db,monkeypatch):
         c.execute("INSERT INTO brands(brand_id,name) VALUES('real','Real'),('other','Other') ON CONFLICT DO NOTHING")
         c.execute("INSERT INTO gmail_accounts(brand_id,email) VALUES('real','sender@example.com')")
     monkeypatch.setattr(routes,'connect',db);monkeypatch.setattr(gmail,'connect',db)
+    from api import db as dbmod
+    monkeypatch.setattr(dbmod,'connect',db)  # auth 정지 검사도 같은 격리 DB를 실조회
     monkeypatch.setenv('JWT_SECRET','local-test-secret');monkeypatch.setenv('GOOGLE_CLIENT_ID','test')
     app=FastAPI();app.include_router(routes.router);app.include_router(gmail.router)
     h={'Authorization':'Bearer '+issue_jwt({'kind':'brand','brand_id':'real','sub':'u1'})}

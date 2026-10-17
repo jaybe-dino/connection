@@ -1,14 +1,14 @@
 import {useEffect,useRef,useState} from 'react';
 import {adminApi} from '../adminApi';
-type Props={mappingId:string;revision:number;dirty:boolean;accounts:any[];onSaved:()=>Promise<void>};
+type Props={mappingId:string;revision:number;dirty:boolean;accounts:any[];onSaved:()=>Promise<void>;onBusy:(busy:boolean)=>void};
 const reasons:Record<string,string>={original_sender_unavailable:'기존 대화 발신자 연결·잔여량 확인 필요',sender_capacity_exhausted:'발신 계정 잔여량 부족'};
-export default function DistributedRecruitment({mappingId,revision,dirty,accounts,onSaved}:Props){
+export default function DistributedRecruitment({mappingId,revision,dirty,accounts,onSaved,onBusy}:Props){
  const [ids,setIds]=useState<string[]>([]),[text,setText]=useState(''),[result,setResult]=useState<any>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const requestId=useRef(''),generation=useRef(0);
  useEffect(()=>{generation.current++;setIds([]);setText('');setResult(null);setError('');setNotice('');requestId.current='';},[mappingId,revision,dirty]);
  function invalidate(){generation.current++;setResult(null);requestId.current='';}
  function payload(){return {revision,sender_ids:ids,rows:text.split(/\r?\n/).filter(x=>x.trim()).map((line,i)=>{const [email,name='',reason='',...extra]=line.split('\t');if(extra.length)throw Error(`${i+1}행: 이메일·이름·선정 이유 3열을 입력하세요`);return {email:email.trim(),name,reason,mapping_key:mappingId};})};}
- async function act(fn:()=>Promise<void>){setBusy(true);setError('');try{await fn();}catch(e){setError(String(e));}finally{setBusy(false);}}
+ async function act(fn:()=>Promise<void>){setBusy(true);onBusy(true);setError('');try{await fn();}catch(e){setError(String(e));}finally{setBusy(false);onBusy(false);}}
  const available=accounts.filter(a=>a.state==='connected'&&!a.sending_paused);
  return <details style={{background:'white',border:'1px solid var(--n300)',padding:18,borderRadius:12,marginBottom:16}} open><summary><b>여러 발신 계정으로 대량 모집</b></summary>
  <p>같은 제품 제안을 선택한 계정으로 분산합니다. 기존 대화는 원래 계정에 고정하고, 계정별 24시간 한도와 기존 예약분을 제외합니다. 새 계정이나 도메인을 추가해 한도를 우회하지 않습니다.</p>

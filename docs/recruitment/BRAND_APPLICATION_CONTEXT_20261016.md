@@ -113,3 +113,7 @@ flowchart LR
 - 이전 API `9ee4c6d5-7a2c-4586-a34b-46d3c2cc6d5b`, 이전 admin `connection-admin-lth1561ej-dino5.vercel.app`, 이전 creator `connection-creator-ggt8kmv6m-dino5.vercel.app`. API 복귀 시 새 신청 링크·온보딩과의 호환성을 먼저 확인한다.
 - 운영 DB 백업 `0ae9a8a6-40ad-4abf-8509-a9b01e4c40fd` 생성 목록 확인. 이번 백업의 실제 복원 시험은 수행하지 않았다. 새 DB 컬럼/신청/회원 기록을 DROP하거나 과거 DB로 덮어쓰지 않는다.
 - 증빙 `evidence-20261018/`. 환경 스냅샷은 저장소 밖 비공개 파일에 보관했다.
+
+최종 보강: `4b9d73e`에서 정지 브랜드의 검수/발송 차단과 실제 전달 직전 원래 대화 발신자 검사를 추가했다. 관련 회귀 49개와 관리자 모집 9개를 통과했다. `d63740e`에서는 분산 검수 중 제품 선택을 바꾸지 못하게 해 서로 다른 제품의 검수 결과가 섞이는 화면 경합을 방지했다. 최종 API 배포는 `72de2fc8-3af7-46c3-9cda-11089f55a413` SUCCESS, admin은 `dpl_9wNQX6EPix7xgna5MhvAd6zcP5vC` READY다. 공개 health DB 정상과 최신 관리자 HTML 일치를 재확인했다. 브라우저에서 FAU 고객 브랜드 이름을 유지한 로그인 입구를 확인했으며, 관리자 인증 후 저장 검수는 여전히 로그인 대기다.
+
+최종 API·청구 전체 회귀는 **330 passed**다. UI 78개와 웹앱 전체 빌드가 통과했고, 마지막 화면 경합 수정 뒤 관리자 TypeScript·운영 빌드도 통과했다.

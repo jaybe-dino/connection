@@ -1,0 +1,13 @@
+
+> @connection/admin@0.1.0 build /Users/jaybe/Documents/Codex/2026-10-11/task-3/connection-operations/apps/admin
+> tsc --noEmit && vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 52 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.40 kB │ gzip:  0.29 kB
+dist/assets/index-BF5q4wIe.css    3.04 kB │ gzip:  1.32 kB
+dist/assets/index-kS15I3do.js   219.72 kB │ gzip: 72.59 kB
+✓ built in 694ms

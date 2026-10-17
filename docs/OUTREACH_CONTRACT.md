@@ -1,66 +1,42 @@
-# 중앙 아웃리치 연동 계약 초안 (2026-10-17)
+# 중앙 아웃리치 연동 계약 — 구현 확인본 (2026-10-18)
 
-상태: **초안** — 별도 채팅 「(아웃리치)월 3만 명 어필리에이트 운영 중요」
-의 정확한 링크·협의는 완료되지 않았다. 본 문서는 연동 파트너에게
-제시할 서버 측 계약이며, 기존 구현(routes_recruitment_links,
-routes_outreach_bulk)을 재사용한다 — **새 서명 토큰 체계를 중복 도입하지
-않는다**(불투명 토큰+DB 해시가 요구사항 충족: 위조 불가·서버 단독
-검증·수신자 비노출).
+상태: 아웃리치 운영 채팅과 협의 완료. 서비스 전환 수정본과 운영 소스 194362e를 통합했다. 이 문서는 구현된 경로와 준비 중인 기능을 구분한다. 실제 발송·월 3만 명 처리 성공을 뜻하지 않는다.
 
-## 1. 원칙
+## 원칙과 귀속
 
-- 발송 작업 공간은 **중앙 하나**(admin workspace). 가입·캠페인 신청의
-  귀속은 각 모집 건의 `target_brand_id`/`product_id`/`campaign_id`로
-  서버가 검증한다(URL의 brand_id 임의 변경으로 타 브랜드 접근 불가 —
-  토큰이 대상을 고정).
-- 링크 조회·이메일 로그인만으로 멤버십·비용이 생기지 않는다. 명시적
-  가입(join)·신청(apply)·검증(verify)은 서로 다른 전환이다.
-- 실제 대량 발송과 월 3만 명 처리 성공은 이 계약 문서로 검증되지 않는다.
+중앙 운영 공간에서 발신 계정을 관리하며, 모집 매핑의 target_brand_id·product_id·campaign_id를 서버가 검증한다. 신청은 수신자별 불투명 토큰으로 고정된 고객 브랜드에 귀속된다. 공개 조회와 이메일 로그인만으로 가입·비용이 발생하지 않는다. 명시적 신청과 검증 가입 과금은 별도다.
 
-## 2. 초대 토큰 (기존 재사용)
+## 구현된 API와 토큰
 
-- 생성: 어드민 전용 `POST /admin/recruitment/batches`(기존) — 수신자별
-  **불투명 토큰**을 발급하고 서버에는 해시만 저장. 레코드:
-  `invitation_id, target_brand_id, product_id, campaign_id, email(해시
-  대조용), source, utm_{source,medium,campaign}, expires_at,
-  cancelled_at, optout 연계`.
-- 공개 조회: `GET /r/{token}`(기존) — 수신자 이메일 비노출, 만료/취소/
-  수신거부면 해당 상태만 반환.
-- 귀속 유지: 토큰이 세션·localStorage가 아니라 **URL+서버 레코드**로
-  유지되므로 로그인 리다이렉트·이탈·재접속·다른 기기에서도 target
-  브랜드/캠페인이 보존된다(기존 application context 테스트 존재).
-- 이메일 일치: 로그인 계정 이메일과 초대 수신자 일치 검증(기존).
-  재가입/중복: memberships ON CONFLICT·usage 중복 과금 방지 기존 규칙.
+- 어드민 매핑: /admin/recruitment/mappings.
+- 단일 발신 검수·초안: POST /admin/recruitment/mappings/{mapping_id}/preview 및 /drafts.
+- 복수 발신 분산 검수·초안: POST /admin/recruitment/mappings/{mapping_id}/distributed/preview 및 /distributed/drafts.
+- 공개 모집 조회: GET /recruitment-links/{token}.
+- 인증 후 신청: POST /recruitment-links/{token}/apply.
+- 브랜드별 신청 조회: GET /recruitment-links/brands/{brand}/applications. 해당 브랜드 권한을 검사한다.
 
-## 3. 전환 이벤트 (이번 추가)
+토큰은 무작위로 생성하며 해시만 DB에 저장한다. link_id → recipient → batch 관계로 대상 브랜드·제품·캠페인을 찾는다. 만료, 배치 취소, 차단·수신거부, 브랜드 정지, 제품·캠페인 유효성을 검사하고 로그인 이메일과 초대 수신자를 대조한다. source/UTM 및 cancelled_at 전용 저장 필드는 현재 없다. 다른 기기에서도 같은 초대 URL과 일치하는 이메일로 문맥을 복원한다.
 
-`recruitment_link_events` — append-only, (invitation, kind) 멱등:
+## 전환 기록과 과금
 
-| kind | 기록 시점 | 비고 |
-|---|---|---|
-| click | GET /r/{token} 최초 유효 조회 | 만료/취소는 기록하되 kind=blocked |
-| join | 해당 토큰 경유 멤버십 생성 | 비용 아님 |
-| verify | 운영 검증(기존 /admin/creators/{id}/verify) 시 토큰 귀속 발견 | 과금 트리거는 기존 signup_usage 규칙 그대로 |
-| apply | 토큰의 campaign에 신청 | |
+recruitment_link_events의 (link_id, kind) 유니크로 중복 이벤트를 방지한다. 애플리케이션은 INSERT로 기록하지만 DB에서 UPDATE/DELETE를 금지한 강제 append-only 구조는 아니다.
 
-어드민 조회: `GET /admin/recruitment/conversions?batch=` —
-click/join/verify/apply 집계와 브랜드 귀속. 외부 시스템 쓰기 연동 시:
-HTTPS + 어드민 자격 + `Idempotency-Key` 헤더(이벤트 재전송 중복 방지,
-서버는 (invitation, kind) 유니크로 2차 방어) + 요청 본문 서명(합의 후
-HMAC 헤더 — 키 교환 전까지 미활성).
+| kind | 의미 |
+| --- | --- |
+| click | 유효 모집 링크 조회. 사람의 클릭 여부를 검증한 수치가 아님 |
+| blocked | 차단된 링크 조회 기록 |
+| join | 해당 초대를 통한 새 멤버십 생성 |
+| verify | 운영 검증 시 초대 귀속 기록. 기존 signup_usage 과금 규칙 유지 |
+| apply | 제품 모집 신청 저장. 캠페인 없는 모집에도 기록 가능 |
 
-## 4. 발송 제어 (기존 유지)
+검증 가입 1명당 5,000원(부가세 포함)을 월별 합산하며 기존 중복 과금 방지를 유지한다. 전용 /admin/recruitment/conversions 집계 API와 외부 HMAC 이벤트 수신 계약은 아직 구현되지 않았다.
 
-- 발신자 분리: gmail_accounts 복수·명시 발신자(a9004ea), 계정별 점진
-  발송 한도(워밍업 2→…→200, 소유자 승인 상한 7677879), 중지:
-  sending_paused·GMAIL_SEND_RESUME_ENABLED=0, 재시도: pending 보존.
-- 수신거부(outreach_optouts)·90일 중복·반송 시 발송 차단 기존 규칙.
-  초대 배치도 발송 전 optout 대조.
+## 발송 제어
 
-## 5. 파트너에게 받는 것 / 주는 것
+연결된 중앙 발신 계정을 명시 선택한다. rolling 24시간 최대 200건·최소 60초 간격, 기존 예약분 차감과 균등 분산을 적용한다. 기존 대화는 원래 발신 계정을 고정하고 실제 전달 직전에 재검사한다. 수신거부·중복 억제·정지 브랜드 차단을 유지한다.
 
-- 받는 것: 수신자 목록(이메일·국가·언어), source/UTM, 배치 식별자.
-- 주는 것: 수신자별 초대 URL(토큰), 전환 집계 API(수신자 이메일은
-  해시/마스킹), 수신거부 목록 반영 확인.
-- 금지: 토큰 재사용 가능한 공용 링크, 이메일 평문 회신, 브랜드별
-  연락처 원본 제공.
+046 마이그레이션의 auto_resume 기본값은 false다. 운영 GMAIL_SEND_RESUME_ENABLED=scoped에서는 새로 명시 승인한 배치만 자동 재개하며 기존 승인 배치는 제외한다. 수동 중지·발송 전 검토·배치별 승인 흐름을 유지한다. 점진 웜업 2→200 자동 운영과 반송·불만 자동 억제 전체 구현은 확인되지 않았다.
+
+## 외부 의존성과 미완료
+
+신규 크리에이터는 TikTok 소유 인증이 필요하다. 외부 승인·키가 없으면 가입 차단 상태를 유지한다. 추가 발신 계정은 각 계정의 Google OAuth 승인이 필요하다. 운영 관리자 로그인 후 실제 저장·신청 종단 검수와 발신 계정 잔여량 재확인이 남았다. 실제 대량 이메일·실결제는 이번 통합 검수에서 실행하지 않는다.

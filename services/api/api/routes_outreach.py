@@ -235,7 +235,7 @@ def send_batch(brand: str, batch_id: UUID, authorization: str = Header(default='
         account=conn.execute("SELECT account_id,sending_paused FROM gmail_accounts WHERE account_id=%s AND brand_id=%s AND state='connected'",(account_id,brand)).fetchone()
         if not account or account['sending_paused']: raise HTTPException(409,'선택한 Gmail 연결 또는 발송 중지 상태를 확인하세요')
         conn.execute('UPDATE outreach_batches SET gmail_account_id=%s WHERE batch_id=%s',(account_id,batch_id))
-        conn.execute("UPDATE outreach_batches SET state='approved',approved_by=%s,approved_at=COALESCE(approved_at,now()) WHERE batch_id=%s",(actor,batch_id))
+        conn.execute("UPDATE outreach_batches SET state='approved',auto_resume=true,approved_by=%s,approved_at=COALESCE(approved_at,now()) WHERE batch_id=%s",(actor,batch_id))
     deliver_pending(brand,batch_id)
     with connect() as conn:
         return batch_out(conn,conn.execute('SELECT * FROM outreach_batches WHERE batch_id=%s',(batch_id,)).fetchone())

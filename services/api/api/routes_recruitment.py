@@ -1,4 +1,5 @@
 """Admin-owned reusable product mappings. These routes never approve or send mail."""
+import os
 from uuid import UUID
 from typing import Literal
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -78,6 +79,15 @@ class DraftRows(RowsIn):
     review_hash: str = Field(pattern=r'^[a-f0-9]{64}$')
 
 
+class DistributedRows(RowsIn):
+    sender_ids: list[UUID] = Field(min_length=1,max_length=50)
+
+
+class DistributedDrafts(DistributedRows):
+    request_id: UUID
+    review_hash: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
 def workspace(conn):
     r=conn.execute('SELECT is_internal FROM brands WHERE brand_id=%s',(WORKSPACE,)).fetchone()
     if not r or not r['is_internal']:
@@ -114,9 +124,19 @@ def options(_admin:dict=Depends(require_admin)):
         workspace(c)
         brands=c.execute("SELECT brand_id,name FROM brands WHERE NOT is_internal AND NOT is_demo AND brand_id NOT LIKE 'qa-%%' ORDER BY name").fetchall()
         products=c.execute("SELECT p.product_id,p.brand_id,p.name FROM brand_products p JOIN brands b USING(brand_id) WHERE p.state='active' AND NOT b.is_internal AND NOT b.is_demo AND b.brand_id NOT LIKE 'qa-%%' ORDER BY b.name,p.name").fetchall()
-        accounts=c.execute('SELECT account_id,email,state,sending_paused FROM gmail_accounts WHERE brand_id=%s ORDER BY email',(WORKSPACE,)).fetchall()
+        from . import routes_gmail as gmail
+        accounts=[]
+        for a in c.execute('SELECT * FROM gmail_accounts WHERE brand_id=%s ORDER BY email',(WORKSPACE,)).fetchall():
+            usage=gmail._acct_out(gmail._with_delivery_usage(c,a))
+            reserved=c.execute("SELECT count(*) AS n FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE b.gmail_account_id=%s AND b.state IN ('draft','approved') AND r.state IN ('pending','sending')",(a['account_id'],)).fetchone()['n']
+            accounts.append({'account_id':a['account_id'],'email':a['email'],'state':a['state'],'sending_paused':a['sending_paused'],
+                'today_cap':usage['todayCap'],'sent_last_24h':usage['sentLast24Hours'],'reserved':reserved,
+                'available':max(0,usage['remainingToday']-reserved) if a['state']=='connected' else 0,
+                'can_read':usage['canRead'],'pause_reason':usage['pauseReason']})
         campaigns=c.execute("SELECT campaign_id,brand_id,product_id,name FROM campaigns WHERE status='open' AND product_id IS NOT NULL ORDER BY name").fetchall()
-    return {'campaigns':[output(r) for r in campaigns],'brands':[output(r) for r in brands],'products':[output(r) for r in products],'accounts':[output(r) for r in accounts]}
+    from . import runner_daemon
+    queue=runner_daemon.status()['jobs']['sendResume']
+    return {'creatorEntryReady':bool(os.environ.get('TIKTOK_CLIENT_KEY') and os.environ.get('TIKTOK_CLIENT_SECRET')),'queue':{'enabled':queue['enabled'],'reason':queue['reason']},'campaigns':[output(r) for r in campaigns],'brands':[output(r) for r in brands],'products':[output(r) for r in products],'accounts':[output(r) for r in accounts]}
 
 
 @router.get('/mappings')
@@ -124,7 +144,7 @@ def mappings(_admin:dict=Depends(require_admin)):
     with connect() as c:
         workspace(c)
         rows=c.execute("""SELECT m.*,b.name AS brand_name,p.name AS product_name,g.email AS sender_email,
-           (SELECT count(*) FROM outreach_batches x WHERE x.brand_id=m.workspace_id AND x.mapping_key=m.mapping_id::text) AS batch_count
+           (SELECT count(*) FROM outreach_batches x WHERE x.brand_id=m.workspace_id AND split_part(x.mapping_key,'_',1)=m.mapping_id::text) AS batch_count
            FROM recruitment_mappings m JOIN brands b ON b.brand_id=m.target_brand_id
            JOIN brand_products p USING(product_id) LEFT JOIN gmail_accounts g ON g.account_id=m.gmail_account_id
            WHERE m.workspace_id=%s ORDER BY m.updated_at DESC,m.mapping_id""",(WORKSPACE,)).fetchall()
@@ -195,5 +215,60 @@ def batches(mapping_id:UUID,_admin:dict=Depends(require_admin)):
           count(*) FILTER(WHERE r.state='blocked') AS blocked_count
           FROM outreach_batches b LEFT JOIN outreach_recipients r USING(batch_id)
           LEFT JOIN gmail_accounts g ON g.account_id=b.gmail_account_id
-          WHERE b.brand_id=%s AND b.mapping_key=%s GROUP BY b.batch_id,g.email ORDER BY b.created_at DESC,b.batch_id DESC LIMIT 100""",(WORKSPACE,str(mapping_id))).fetchall()
+          WHERE b.brand_id=%s AND split_part(b.mapping_key,'_',1)=%s GROUP BY b.batch_id,g.email ORDER BY b.created_at DESC,b.batch_id DESC LIMIT 100""",(WORKSPACE,str(mapping_id))).fetchall()
     return {'batches':[output(r) for r in rows],'limit':100,'note':'최근 100개 배치. 수신 주소·발송 상태 기준이며 배달·고유 인원·회신·신청·판매 성과가 아닙니다.'}
+
+
+def distributed_plan(c,mapping_id,body):
+    """Stable, capacity bounded allocation. Existing conversations never rotate senders."""
+    from . import routes_gmail as gmail
+    base=saved_plan(c,mapping_id,body).mappings[0]
+    ids=sorted(set(body.sender_ids),key=str)
+    if len(ids)!=len(body.sender_ids):raise HTTPException(400,'발신 계정이 중복되었습니다')
+    old=[]
+    if getattr(body,'request_id',None):
+        prior=c.execute('SELECT batch_ids FROM outreach_bulk_saves WHERE brand_id=%s AND request_id=%s',(WORKSPACE,body.request_id)).fetchone()
+        if prior:old=prior['batch_ids']
+    senders={}
+    for aid in ids:
+        a=c.execute("SELECT * FROM gmail_accounts WHERE account_id=%s AND brand_id=%s AND state='connected' AND NOT sending_paused",(aid,WORKSPACE)).fetchone()
+        if not a:raise HTTPException(409,'공용 공간의 연결·중지 상태를 확인하고 발신 계정을 다시 선택하세요')
+        remaining=gmail._acct_out(gmail._with_delivery_usage(c,a))['remainingToday']
+        reserved=c.execute("SELECT count(*) AS n FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE b.gmail_account_id=%s AND b.state IN ('draft','approved') AND r.state IN ('pending','sending') AND NOT (b.batch_id=ANY(%s::uuid[]))",(aid,old)).fetchone()['n']
+        senders[str(aid)]=max(0,remaining-reserved)
+    emails=list({r.email.strip().lower() for r in body.rows})
+    history=c.execute("SELECT t.creator_email,m.gmail_account_id FROM mail_threads t JOIN mail_messages m USING(thread_id) WHERE t.brand_id=%s AND t.creator_email=ANY(%s) AND m.gmail_account_id IS NOT NULL AND m.state='sent' ORDER BY m.created_at DESC,m.msg_id DESC",(WORKSPACE,emails)).fetchall()
+    pinned={}
+    for r in history:pinned.setdefault(r['creator_email'],str(r['gmail_account_id']))
+    assigned={};rows=[];unassigned=[];allocated={k:0 for k in senders}
+    for number,r in enumerate(body.rows,1):
+        email=r.email.strip().lower()
+        if email in assigned:aid=assigned[email]
+        else:
+            aid=pinned.get(email)
+            if aid and (aid not in senders or senders[aid]<=0):
+                unassigned.append({'row':number,'reason':'original_sender_unavailable'});continue
+            if not aid:aid=min((k for k in senders if senders[k]>0),key=lambda k:allocated[k],default=None)
+            if not aid:
+                unassigned.append({'row':number,'reason':'sender_capacity_exhausted'});continue
+            assigned[email]=aid;senders[aid]-=1;allocated[aid]+=1
+        rows.append(bulk.Candidate(email=r.email,name=r.name,reason=r.reason,mapping_key=str(mapping_id)+'_'+str(ids.index(UUID(aid)))))
+    if not rows:raise HTTPException(409,'배정 가능한 발신 잔여량이 없습니다. 기존 대기열·원래 발신자·계정 연결을 확인하세요')
+    mappings=[bulk.Mapping(**{**base.model_dump(),'key':str(mapping_id)+'_'+str(i),'gmail_account_id':aid}) for i,aid in enumerate(ids) if any(r.mapping_key==str(mapping_id)+'_'+str(i) for r in rows)]
+    return bulk.Plan(mappings=mappings,rows=rows),unassigned
+
+
+@router.post('/mappings/{mapping_id}/distributed/preview')
+def distributed_preview(mapping_id:UUID,body:DistributedRows,authorization:str=Header(default=''),_admin:dict=Depends(require_admin)):
+    with connect() as c:
+        plan,unassigned=distributed_plan(c,mapping_id,body)
+        result=bulk.prepare(c,WORKSPACE,plan,authorization)[0]
+        return {**result,'unassigned':unassigned,'submittedCount':len(body.rows)}
+
+
+@router.post('/mappings/{mapping_id}/distributed/drafts')
+def distributed_drafts(mapping_id:UUID,body:DistributedDrafts,authorization:str=Header(default=''),_admin:dict=Depends(require_admin)):
+    with connect() as c:
+        c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('distributed-recruitment:'+WORKSPACE,))
+        plan,_=distributed_plan(c,mapping_id,body)
+        return bulk.save(WORKSPACE,bulk.SavePlan(**plan.model_dump(),request_id=body.request_id,review_hash=body.review_hash),authorization)

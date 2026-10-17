@@ -101,6 +101,9 @@ def prepare(conn, brand, body, authorization):
     history = conn.execute("SELECT DISTINCT r.email,b.brand_id,COALESCE(b.target_brand_id,b.brand_id) AS target,r.state,b.state AS batch_state FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE (b.brand_id=ANY(%s) OR b.target_brand_id=ANY(%s)) AND r.email=ANY(%s) AND ((r.state IN ('sent','sending','review') AND b.created_at>now()-interval '90 days') OR (r.state='pending' AND b.state IN ('draft','approved')))",(targets,targets,emails)).fetchall()
     history_by_email = defaultdict(list)
     for record in history:history_by_email[record['email']].append(record)
+    prior_senders={}
+    for record in conn.execute("SELECT t.creator_email,m.gmail_account_id FROM mail_threads t JOIN mail_messages m USING(thread_id) WHERE t.brand_id=%s AND t.creator_email=ANY(%s) AND m.gmail_account_id IS NOT NULL AND m.state='sent' ORDER BY m.created_at DESC,m.msg_id DESC",(brand,emails)):
+        prior_senders.setdefault(record['creator_email'],str(record['gmail_account_id']))
     excluded, eligible, seen = [], defaultdict(list), set()
     for number,email,row in normalized:
         definition = definitions[row.mapping_key]
@@ -109,6 +112,7 @@ def prepare(conn, brand, body, authorization):
         reason = ('mapping_conflict' if len(assignments[email])>1 else
                   'duplicate_row' if email in seen else
                   'opted_out' if any((s,email) in suppressed for s in scope) else
+                  'sender_mismatch' if email in prior_senders and prior_senders[email]!=str(definition['mapping'].gmail_account_id) else
                   'recent_contact' if any(h['state'] in ('sent','sending','review') for h in relevant) else
                   'reserved_draft_or_queue' if relevant else None)
         seen.add(email)

@@ -116,3 +116,44 @@ def test_operating_catalog_rejects_blank_demo_and_internal_brand(client,recruitm
     with connect() as c:c.execute('UPDATE brands SET is_demo=true WHERE brand_id=%s',(data['brand_id'],))
     assert client.post('/admin/recruitment/catalog',json=data,headers=h).status_code==409
     assert calls==[]
+
+
+def test_distributed_sender_capacity_pinning_and_customer_links(client,recruitment,monkeypatch):
+    h,b,foreign,calls=recruitment
+    monkeypatch.setenv('GMAIL_DAILY_CAP','2')
+    with connect() as c:
+        second=str(c.execute("INSERT INTO gmail_accounts(brand_id,email) VALUES('dino-recruitment',%s) RETURNING account_id",('second-'+uuid4().hex+'@qa.example',)).fetchone()['account_id'])
+        email='old-'+uuid4().hex+'@qa.example'
+        tid=c.execute("INSERT INTO mail_threads(brand_id,creator_email,subject) VALUES('dino-recruitment',%s,'Existing') RETURNING thread_id",(email,)).fetchone()['thread_id']
+        c.execute("INSERT INTO mail_messages(thread_id,direction,state,gmail_account_id) VALUES(%s,'out','sent',%s)",(tid,second))
+    m=client.post('/admin/recruitment/mappings',json=b,headers=h).json();url='/admin/recruitment/mappings/'+m['mapping_id']
+    rows=[{'email':email,'mapping_key':'ignored'}]+[{'email':'new-'+uuid4().hex+'@qa.example','mapping_key':'ignored'} for _ in range(5)]
+    body={'revision':1,'rows':rows,'sender_ids':[b['gmail_account_id'],second]}
+    p=client.post(url+'/distributed/preview',json=body,headers=h);assert p.status_code==200,p.text
+    result=p.json();assert result['eligibleCount']==4 and len(result['unassigned'])==2
+    old_group=next(g for g in result['groups'] if any(x['email']==email for x in g['samples']))
+    assert old_group['gmailAccountId']==second
+    assert client.post(url+'/distributed/preview',json={**body,'sender_ids':[foreign]},headers=h).status_code==409
+    req={**body,'request_id':str(uuid4()),'review_hash':result['reviewHash']}
+    saved=client.post(url+'/distributed/drafts',json=req,headers=h);assert saved.status_code==200,saved.text
+    assert saved.json()['sent'] is False
+    again=client.post(url+'/distributed/drafts',json=req,headers=h);assert again.status_code==200,again.text
+    assert again.json()['replayed']
+    batches=client.get(url+'/batches',headers=h).json()['batches'];assert len(batches)==2
+    assert sum(x['recipient_count'] for x in batches)==4
+    for bid in saved.json()['batchIds']:
+        r=client.get('/brands/dino-recruitment/outreach/'+bid+'/review',headers=h).json()
+        assert r['targetBrandId']==b['target_brand_id']
+        assert all('application=' in x['body'] for x in r['messages'])
+    assert calls==[]
+
+
+def test_distributed_preserves_unselected_original_sender(client,recruitment):
+    h,b,foreign,calls=recruitment
+    with connect() as c:
+        email='fixed-'+uuid4().hex+'@qa.example'
+        tid=c.execute("INSERT INTO mail_threads(brand_id,creator_email) VALUES('dino-recruitment',%s) RETURNING thread_id",(email,)).fetchone()['thread_id']
+        c.execute("INSERT INTO mail_messages(thread_id,direction,state,gmail_account_id) VALUES(%s,'out','sent',%s)",(tid,foreign))
+    m=client.post('/admin/recruitment/mappings',json=b,headers=h).json()
+    p=client.post('/admin/recruitment/mappings/'+m['mapping_id']+'/distributed/preview',headers=h,json={'revision':1,'sender_ids':[b['gmail_account_id']],'rows':[{'email':email,'mapping_key':'ignored'}]})
+    assert p.status_code==409 and calls==[]

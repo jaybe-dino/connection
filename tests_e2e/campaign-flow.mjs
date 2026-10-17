@@ -127,6 +127,7 @@ await A.goto(`http://localhost:5175/?api=${encodeURIComponent(API)}`);
 await A.evaluate((tk) => localStorage.setItem("CONNECTION_JWT", tk), applicant.jwt);
 await A.goto("http://localhost:5175/#campaigns");
 await A.waitForTimeout(2300);
+await A.evaluate(() => { window.__navMarker = 9; });
 await A.click(`article:has-text("${NAME}") >> button:has-text("조건 및 상세 보기")`);
 await A.waitForTimeout(800);
 await A.click('dialog button:has-text("이 캠페인에 신청하기")');
@@ -153,6 +154,78 @@ const sel = applicants.find((a) => a.creatorId === applicant.creatorId);
 ok("서버 termsState=selected + 제안 수수료 12.5%",
   !!sel && sel.termsState === "selected" && sel.commissionPct === 12.5,
   JSON.stringify(sel || {}));
+
+// ── (보완1) 선정 직후: A가 '내 협업' 탭 전환만으로 최신 조건 표시 ──
+await A.click('.crside-item:has-text("내 협업")');
+await A.waitForSelector(`#ofHandle_${camp.campaignId}`, { timeout: 15000 });  // 이 캠페인의 선정 카드
+const freshA = await A.evaluate((n) => ({ marker: window.__navMarker,
+  card: [...document.querySelectorAll(".cc")].map(e => e.innerText).find(t => t.includes(n)) || "" }), NAME);
+ok("선정 반영: 탭 전환만으로 12.5% 제안 표시(전체 reload 없음)",
+  freshA.marker === 9 && freshA.card.includes("12.5"), freshA.card.slice(0, 120));
+
+// ── (보완2) 캠페인 상세: 서버 저장 usp/보상 유형/대상 국가/마감 표시 ──
+await A.click('.crside-item:has-text("캠페인")');
+await A.waitForTimeout(1600);
+await A.click(`article:has-text("${NAME}") >> button:has-text("조건 및 상세 보기")`);
+await A.waitForTimeout(700);
+const dlg = await A.evaluate(() => (document.querySelector("dialog") || {}).innerText || "");
+ok("상세 다이얼로그: usp·보상 유형·대상 국가·마감 표시",
+  dlg.includes("비건 인증 — 2주 사용 후기 영상") && dlg.includes("어필리에이트 커미션")
+  && dlg.includes("KR, TH") && dlg.includes("2026-11-30"), dlg.slice(0, 180));
+await A.click('dialog button:has-text("내 협업 확인")');
+await A.waitForTimeout(1600);
+
+// ── 합의(수수료 12.5%) ──
+await A.fill(`#ofHandle_${camp.campaignId}`, "@flow.applicant");
+await A.click(`.cc:has(#ofHandle_${camp.campaignId}) >> button:has-text("수수료 합의")`);
+await A.waitForTimeout(2000);
+
+// ── 콘솔: 송장 기록 ──
+await C.click(`p:has-text("${NAME}") >> span:has-text("지원자 보기")`);
+await C.waitForTimeout(1600);
+await C.fill(`#shp_${applicant.creatorId}`, "1Z-FLOW-999");
+await C.click('span:has-text("샘플 발송")');
+await C.waitForTimeout(1800);
+
+// ── (보완1 재확인) 크리에이터 탭 재진입만으로 송장 반영 후 콘텐츠 먼저 제출 ──
+await A.click('.crside-item:has-text("캠페인")');
+await A.waitForTimeout(500);
+await A.click('.crside-item:has-text("내 협업")');
+await A.waitForSelector("text=1Z-FLOW-999", { timeout: 15000 });
+await A.fill(`#ofUrl_${camp.campaignId}`, "https://www.tiktok.com/@flow/video/1");
+await A.click(`.cc:has(#ofUrl_${camp.campaignId}) >> span:has-text("콘텐츠 제출")`);
+await A.waitForTimeout(2000);
+
+// ── (보완3) 콘텐츠 제출 '후' Spark 코드 등록 가능 ──
+await A.waitForSelector(`#ofSpark_${camp.campaignId}`, { timeout: 12000 });
+await A.fill(`#ofSpark_${camp.campaignId}`, "SPARK-LATE-77");
+await A.click(`.cc:has(#ofSpark_${camp.campaignId}) >> span:has-text("코드 제출")`);
+await A.waitForTimeout(1800);
+let late = await api("GET",
+  `/brands/glowlab/campaigns/${camp.campaignId}/applicants`, null, gjwt);
+const lr = late.find((a) => a.creatorId === applicant.creatorId);
+ok("콘텐츠 제출 후 Spark 코드 등록(서버 저장·커뮤니티 비노출)",
+  !!lr && lr.termsState === "content_submitted" && lr.sparkCode === "SPARK-LATE-77",
+  JSON.stringify(lr || {}));
+
+// ── 콘솔: 콘텐츠+Spark 확인 → 완료 처리 ──
+await C.click(`p:has-text("${NAME}") >> span:has-text("지원자 보기")`);
+await C.waitForTimeout(1600);
+const ct = await C.evaluate(() => document.body.innerText);
+ok("콘솔: 제출 콘텐츠 + Spark 수령 ✓ 표시",
+  ct.includes("tiktok.com/@flow/video/1") && ct.includes("Spark 코드 ✓"));
+await C.click('span:has-text("완료 처리")');
+await C.waitForTimeout(2000);
+
+// ── 완료 반영: 탭 전환만으로 협업 완료 표시 ──
+await A.click('.crside-item:has-text("캠페인")');
+await A.waitForTimeout(500);
+await A.click('.crside-item:has-text("내 협업")');
+await A.waitForSelector(`.cc:has-text("${NAME}"):has-text("협업 완료")`, { timeout: 15000 });
+const doneA = await A.evaluate((n) => ({ marker: window.__navMarker,
+  card: [...document.querySelectorAll(".cc")].map(e => e.innerText).find(t => t.includes(n)) || "" }), NAME);
+ok("완료 반영: 탭 전환만으로 완료 + 확정 수수료 표시(전체 reload 없음)",
+  doneA.marker === 9 && doneA.card.includes("12.5") && doneA.card.includes("협업 완료"), doneA.card.slice(0, 120));
 
 ok("JS 에러 없음", errors.length === 0, errors.join(" | ").slice(0, 300));
 await browser.close();

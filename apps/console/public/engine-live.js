@@ -1504,7 +1504,7 @@
   var livePage='home', chatMessages=[], chatBusy=false, profileAnswers={};
   var profileLabels={brand_one_liner:'브랜드 소개',hero_product:'주력 제품',ingredients:'성분·특징',price_range:'가격대',voice:'말투',ideal_creator:'원하는 크리에이터',banned_words:'금지 표현',sample_criteria:'샘플 기준'};
   function loadProfile(){var brand=BRAND();if(!brand)return;profileError='';req('GET','/brands/'+brand+'/profile/learned').then(function(r){if(BRAND()!==brand)return;profileData=r;Object.keys(r.fields||{}).forEach(function(k){profileAnswers[k]=typeof r.fields[k]==='string'?r.fields[k]:(r.fields[k].value||'');});if(window.__SURFACE==='brand')render();}).catch(function(e){profileError=e.message;if(window.__SURFACE==='brand')render();});}
-  window.liveNav=function(page){livePage=page;ST.b=page==='mail'?'src':page==='billing'?'settle':'brief';ST.srcTab='mail';if(BRAND()){if(page==='mail'){if(!window.__BID)loadIdentity();if(!window.__GMAIL)loadGmail();if(!window.__INBOX)loadInbox();if(!outreachData)loadOutreach();}if(page==='billing'&&!window.__billing)loadBilling();}render();var viewport=document.getElementById('stage');if(viewport)viewport.scrollTop=0;if(window.scrollTo)window.scrollTo(0,0);if(page==='community')window.brandCommunityRefresh();};
+  window.liveNav=function(page){livePage=page;ST.b=page==='mail'?'src':page==='billing'?'settle':'brief';ST.srcTab='mail';if(BRAND()){if(page==='products')loadProducts();if(page==='mail'){if(!window.__BID)loadIdentity();if(!window.__GMAIL)loadGmail();if(!window.__INBOX)loadInbox();if(!outreachData)loadOutreach();}if(page==='billing'&&!window.__billing)loadBilling();}render();var viewport=document.getElementById('stage');if(viewport)viewport.scrollTop=0;if(window.scrollTo)window.scrollTo(0,0);if(page==='community')window.brandCommunityRefresh();};
   window.profileUrlChanged=function(v){if(v!==profileUrl){profileUrl=v;profileDraft=null;profileNotice="주소가 바뀌었습니다. 다시 분석해 주세요.";var save=document.getElementById("profileSave");if(save){save.disabled=true;save.textContent="새 주소로 다시 분석해 주세요";}}};
   window.liveLearn=async function(){
     if(profileBusy)return;profileUrl=(document.getElementById('brandSite').value||'').trim();if(!profileUrl)return toast('주소 입력 필요','분석할 홈페이지 주소를 입력해 주세요.');
@@ -1892,6 +1892,18 @@
         crPollStart();  // 실시간 갱신 폴링 시작(멱등 — 타이머 재설정)
       }
     }
+    /* 캠페인/내 협업 최신화 — 탭 진입·알림 딥링크 시 즉시 서버 재조회.
+       단일 비행 + 세션 교체 stale 무시. (visibility 복귀·주기 갱신은
+       crPollTick이 같은 데이터를 sig 비교로 당겨온다) */
+    var collabFreshBusy=false;
+    function crCollabRefresh(){
+      if(collabFreshBusy||!window.__ME||window.__ME.kind!=='creator'||!jwtGet())return;
+      collabFreshBusy=true;var token=jwtGet();
+      return Promise.all([
+        req('GET','/me/campaigns').then(function(c){if(token===jwtGet()){myCampaigns=c;creatorLoadErrors.campaigns=false;}}).catch(function(){}),
+        req('GET','/me/campaign-offers').then(function(o){if(token===jwtGet()){myOffers=o;creatorLoadErrors.offers=false;}}).catch(function(){})
+      ]).then(function(){collabFreshBusy=false;render();});
+    }
     var creatorApplyBusy={};
     window.crApply=function(cid){
       if(creatorApplyBusy[cid])return;
@@ -1904,10 +1916,18 @@
     window.crCampaignDetail=function(id){
       var c=(myCampaigns||[]).find(function(x){return x.campaignId===id;});if(!c)return;
       var old=document.getElementById('creatorCampaignDialog');if(old)old.remove();
+      var expired=campExpired(c);
       var d=document.createElement('dialog');d.id='creatorCampaignDialog';d.className='creator-detail';
-      d.innerHTML='<button class="creator-detail-close" aria-label="닫기" onclick="this.closest(\'dialog\').close()">×</button><span class="creator-kicker">'+esc(c.brandName||c.brandId)+'</span><h2>'+esc(c.name)+'</h2><p>'+esc(c.product||'브랜드가 등록한 제품 정보를 확인하세요.')+'</p><dl><dt>제안 커미션</dt><dd>'+(c.affiliatePct!=null?esc(c.affiliatePct)+'%':'브랜드와 확인')+'</dd><dt>신청 마감</dt><dd>'+esc(c.deadline||'브랜드와 확인')+'</dd><dt>참여 상태</dt><dd>'+esc(creatorStateLabel(c.termsState||c.myStatus))+'</dd></dl><p>신청 후 브랜드가 검토합니다. 선정되면 내 협업에서 조건을 확인하고, 담당자와 샘플·콘텐츠 일정을 조율하세요.</p>'+(c.eligible===false?'<p style="color:#8a5a1b;font-size:13px">'+esc(c.ineligibleReason||'이 캠페인의 대상 지역이 아닙니다 — 내 공간에서 국가·배송 가능 국가를 확인하세요.')+'</p><button class="btn line" onclick="this.closest(\'dialog\').close();crTab(\'brand\')">내 공간에서 프로필 확인</button>':c.myStatus==='none'?'<button class="btn" onclick="this.closest(\'dialog\').close();crApply('+mailEscape(JSON.stringify(c.campaignId))+')" '+(creatorApplyBusy[c.campaignId]?'disabled':'')+'>'+(creatorApplyBusy[c.campaignId]?'신청 중…':'이 캠페인에 신청하기')+'</button>':'<button class="btn" onclick="this.closest(\'dialog\').close();crTab(\'collabs\')">내 협업 확인</button>');
+      d.innerHTML='<button class="creator-detail-close" aria-label="닫기" onclick="this.closest(\'dialog\').close()">×</button><span class="creator-kicker">'+esc(c.brandName||c.brandId)+'</span><h2>'+esc(c.name)+'</h2><p>'+esc(c.product||'브랜드가 등록한 제품 정보를 확인하세요.')+'</p>'
+        +(c.usp?'<p><b>소개 · 조건</b><br>'+esc(c.usp)+'</p>':'')
+        +'<dl><dt>보상 유형</dt><dd>'+esc(crRewardLabel(c.rewardType))+'</dd><dt>제안 커미션</dt><dd>'+(c.affiliatePct!=null?esc(c.affiliatePct)+'%':'브랜드와 확인')+'</dd><dt>대상 국가</dt><dd>'+((c.countries||[]).length?esc(c.countries.join(', '))+(c.eligible===false?' — 내 지역 아님':''):'전체')+'</dd><dt>신청 마감</dt><dd>'+esc(c.deadline||'브랜드와 확인')+(expired?' — 마감됨':'')+'</dd><dt>참여 상태</dt><dd>'+esc(expired&&c.myStatus==='none'?'모집 마감':creatorStateLabel(c.termsState||c.myStatus))+'</dd></dl><p>신청 후 브랜드가 검토합니다. 선정되면 내 협업에서 조건을 확인하고, 담당자와 샘플·콘텐츠 일정을 조율하세요.</p>'
+        +(expired&&c.myStatus==='none'?'<p style="color:#8a5a1b;font-size:13px">지원 마감일이 지났습니다 — 더 이상 신청할 수 없어요.</p>'
+          :c.eligible===false?'<p style="color:#8a5a1b;font-size:13px">'+esc(c.ineligibleReason||'이 캠페인의 대상 지역이 아닙니다 — 내 공간에서 국가·배송 가능 국가를 확인하세요.')+'</p><button class="btn line" onclick="this.closest(\'dialog\').close();crTab(\'brand\')">내 공간에서 프로필 확인</button>'
+          :c.myStatus==='none'?'<button class="btn" onclick="this.closest(\'dialog\').close();crApply('+mailEscape(JSON.stringify(c.campaignId))+')" '+(creatorApplyBusy[c.campaignId]?'disabled':'')+'>'+(creatorApplyBusy[c.campaignId]?'신청 중…':'이 캠페인에 신청하기')+'</button>'
+          :'<button class="btn" onclick="this.closest(\'dialog\').close();crTab(\'collabs\')">내 협업 확인</button>');
       document.body.appendChild(d);d.addEventListener('close',function(){d.remove();});d.showModal();
     };
+    function crRewardLabel(t){return ({affiliate:'어필리에이트 커미션',gifted:'제품 제공(기프트)',paid:'고정 보상'})[t]||t||'브랜드와 확인';}
     window.crAgree=function(cid,accept){
       var h=((document.getElementById('ofHandle_'+cid)||{}).value||'').trim();
       if(accept&&!h)return toast('TikTok 핸들','합의에는 본인 TikTok 핸들 확인이 필요해요.');
@@ -1941,8 +1961,9 @@
       if(!myCampaigns)return '<p role="status">캠페인을 불러오는 중입니다…</p>';
       var h='<section class="creator-page-intro"><span>CAMPAIGNS</span><h1>함께 만들 다음 이야기.</h1><p>내 브랜드의 모집 소식과 참여 조건을 확인하세요.</p></section>';
       if(!myCampaigns.length)return h+'<div class="cc"><h3>아직 열린 캠페인이 없어요.</h3><p>가입한 브랜드에서 새 모집을 시작하면 이곳에서 확인할 수 있습니다.</p><button class="btn line" onclick="crTab(\'community\')">브랜드 커뮤니티 보기</button></div>';
-      return h+'<div class="creator-campaign-grid">'+myCampaigns.map(function(c){var logo=c.logoUrl&&/^https:\/\//.test(c.logoUrl)?'<img src="'+esc(c.logoUrl)+'" alt="'+esc(c.brandName||c.brandId)+' 로고">':'<span>'+esc((c.brandName||c.brandId||'?').slice(0,1))+'</span>';return '<article class="cc creator-campaign-card"><div class="creator-campaign-brand">'+logo+'<b>'+esc(c.brandName||c.brandId)+'</b><small>'+esc(creatorStateLabel(c.termsState||c.myStatus))+'</small></div><h2>'+esc(c.name)+'</h2><p>'+esc(c.product||'제품 정보는 브랜드 담당자에게 확인하세요.')+'</p><div class="creator-campaign-facts"><span>제안 커미션 <b>'+(c.affiliatePct!=null?esc(c.affiliatePct)+'%':'확인 필요')+'</b></span><span>마감 <b>'+esc(c.deadline||'별도 안내')+'</b></span>'+((c.countries||[]).length?'<span>대상 <b>'+esc(c.countries.join(', '))+(c.eligible===false?' · 내 지역 아님':'')+'</b></span>':'')+'</div><button class="btn" onclick="crCampaignDetail('+mailEscape(JSON.stringify(c.campaignId))+')">조건 및 상세 보기 →</button></article>';}).join('')+'</div>';
+      return h+'<div class="creator-campaign-grid">'+myCampaigns.map(function(c){var logo=c.logoUrl&&/^https:\/\//.test(c.logoUrl)?'<img src="'+esc(c.logoUrl)+'" alt="'+esc(c.brandName||c.brandId)+' 로고">':'<span>'+esc((c.brandName||c.brandId||'?').slice(0,1))+'</span>';return '<article class="cc creator-campaign-card"><div class="creator-campaign-brand">'+logo+'<b>'+esc(c.brandName||c.brandId)+'</b><small>'+esc(campExpired(c)&&c.myStatus==='none'?'모집 마감':creatorStateLabel(c.termsState||c.myStatus))+'</small></div><h2>'+esc(c.name)+'</h2><p>'+esc(c.product||'제품 정보는 브랜드 담당자에게 확인하세요.')+'</p><div class="creator-campaign-facts"><span>제안 커미션 <b>'+(c.affiliatePct!=null?esc(c.affiliatePct)+'%':'확인 필요')+'</b></span><span>마감 <b>'+esc(c.deadline||'별도 안내')+'</b></span>'+((c.countries||[]).length?'<span>대상 <b>'+esc(c.countries.join(', '))+(c.eligible===false?' · 내 지역 아님':'')+'</b></span>':'')+'</div><button class="btn" onclick="crCampaignDetail('+mailEscape(JSON.stringify(c.campaignId))+')">조건 및 상세 보기 →</button></article>';}).join('')+'</div>';
     }
+    function campExpired(c){try{return !!(c&&c.deadline&&String(c.deadline).slice(0,10)<new Date().toISOString().slice(0,10));}catch(e){return false;}}
     function creatorStateLabel(value){return ({none:'모집 중',applied:'신청 검토 중',selected:'조건 확인 필요',terms_agreed:'샘플 발송 대기',sample_shipped:'샘플 발송됨 · 콘텐츠 준비',content_submitted:'제출 완료 · 브랜드 검토 중',completed:'협업 완료',declined:'제안 거절'})[value]||value||'확인 필요';}
     function creatorProgressHtml(state){
       var steps=['selected','terms_agreed','sample_shipped','content_submitted','completed'],labels=['선정','조건 합의','샘플 발송','콘텐츠 제출','완료'],index=steps.indexOf(state);
@@ -1969,7 +1990,9 @@
             '<div style="display:flex;gap:6px;margin:6px 0"><input id="ofSpark_'+id+'" placeholder="Spark 코드 (광고 권한 — 내가 발급)" value="'+esc(o.sparkCode||'')+'" style="flex:1;padding:8px"><span class="cbt" onclick="crSpark(\''+id+'\')">코드 제출</span></div>'+
             '<div style="display:flex;gap:6px"><input id="ofUrl_'+id+'" placeholder="게시한 콘텐츠 URL (https://…)" style="flex:1;padding:8px"><span class="cbt" onclick="crContent(\''+id+'\')">콘텐츠 제출</span></div>';
         }else if(o.state==='content_submitted'){
-          h+='<p style="font-size:13px">제출 완료: '+esc(o.contentUrl)+'<br>브랜드 확인을 기다리고 있어요.</p>';
+          h+='<p style="font-size:13px">제출 완료: '+esc(o.contentUrl)+'<br>브랜드 확인을 기다리고 있어요.</p>'+
+            '<div style="display:flex;gap:6px;margin:6px 0"><input id="ofSpark_'+id+'" placeholder="Spark 코드 (광고 권한 — 지금도 등록/수정 가능)" value="'+esc(o.sparkCode||'')+'" style="flex:1;padding:8px"><span class="cbt" onclick="crSpark(\''+id+'\')">'+(o.sparkCode?'코드 수정':'코드 제출')+'</span></div>'+
+            (o.sparkCode?'<p style="font-size:12px;color:#5a6560">Spark 코드 제출됨 ✓ — 브랜드에만 전달되며 공개 커뮤니티에는 노출되지 않습니다.</p>':'<p style="font-size:12px;color:#5a6560">Spark 코드는 브랜드에만 전달됩니다(커뮤니티 비노출).</p>');
         }else if(o.state==='completed'){
           h+='<p style="font-size:13px">✓ 완료 — 확정 수수료 '+(o.agreedCommissionPct!=null?o.agreedCommissionPct+'%':'-')+' 기준으로 정산됩니다.'+
             (o.contentUrl?'<br>제출 콘텐츠: <a href="'+esc(o.contentUrl)+'" target="_blank" rel="noopener">'+esc(o.contentUrl)+'</a>':'')+
@@ -2088,6 +2111,18 @@
             commOpen.msgs=m;changed=true;
             var maxId=0;(m||[]).forEach(function(x){if(x.msgId&&x.msgId>maxId)maxId=x.msgId;});
             if(maxId)req('POST','/community/cells/'+encodeURIComponent(id)+'/read',{last_msg_id:maxId}).then(function(){if(commUnread&&commUnread[id])delete commUnread[id];}).catch(function(){});
+          }
+        });
+      }).then(function(){
+        var tab=(typeof creatorTab!=='undefined')?creatorTab:'';
+        if(tab!=='campaigns'&&tab!=='collabs')return;
+        var url=tab==='campaigns'?'/me/campaigns':'/me/campaign-offers';
+        return req('GET',url).then(function(list){
+          if(token!==jwtGet())return;
+          var prev=tab==='campaigns'?(typeof myCampaigns!=='undefined'?myCampaigns:null):(typeof myOffers!=='undefined'?myOffers:null);
+          if(JSON.stringify(list)!==JSON.stringify(prev)){
+            if(tab==='campaigns')myCampaigns=list;else myOffers=list;
+            changed=true;
           }
         });
       }).then(function(){
@@ -2225,7 +2260,7 @@
     var creatorTabs=['community','campaigns','collabs','messages','brand','settings'];
     var creatorTab=(joinTarget||applicationToken)?'brand':'community';
     try{var startTab=location.hash.slice(1);if(creatorTabs.indexOf(startTab)>=0)creatorTab=startTab;}catch(e){}
-    window.crTab=function(t){if(creatorTabs.indexOf(t)<0)return;commRemember();creatorTab=t;history.replaceState(null,'','#'+t);render();var viewport=document.getElementById('stage');if(viewport)viewport.scrollTop=0;if(window.scrollTo)window.scrollTo(0,0);};
+    window.crTab=function(t){if(creatorTabs.indexOf(t)<0)return;commRemember();creatorTab=t;history.replaceState(null,'','#'+t);render();if(t==='campaigns'||t==='collabs')crCollabRefresh();var viewport=document.getElementById('stage');if(viewport)viewport.scrollTop=0;if(window.scrollTo)window.scrollTo(0,0);};
     window.creatorOpenJoinedCommunity=function(){
       creatorTab='community';
       var target=(applicationContext&&applicationContext.brandId)||joinTarget;

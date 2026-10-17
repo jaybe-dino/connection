@@ -295,6 +295,7 @@ def test_campaign_lifecycle_notifications_and_reject(client, box):
     mine = [c for c in client.get("/me/campaigns", headers=ch).json()
             if c["campaignId"] == cid]
     assert mine and mine[0]["eligible"] is True  # 국가 조건 없음
+    assert "usp" in mine[0] and "rewardType" in mine[0]  # 상세(소개·보상) 노출용
 
     # 신청 → applied, 수정 → 반려(사유) → 재반려 409
     r = client.post(f"/campaigns/{cid}/apply", json={"creator_id": "ignored"},

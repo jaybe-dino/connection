@@ -287,7 +287,7 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
     with connect() as conn:
         cid = _creator(conn, authorization)
         rows = conn.execute(
-            "SELECT c.campaign_id, c.brand_id, c.name, c.product,"
+            "SELECT c.campaign_id, c.brand_id, c.name, c.product, c.usp,"
             " c.reward_type, c.affiliate_pct, c.deadline, c.status,"
             " c.countries, b.name AS brand_name, b.logo_url,"
             " a.status AS my_status, t.state AS terms_state"
@@ -316,7 +316,7 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
             {"campaignId": r["campaign_id"], "brandId": r["brand_id"],
              "brandName": r["brand_name"], "logoUrl": r["logo_url"],
              "name": r["name"], "product": r["product"],
-             "rewardType": r["reward_type"],
+             "usp": r["usp"] or "", "rewardType": r["reward_type"],
              "affiliatePct": (float(r["affiliate_pct"])
                               if r["affiliate_pct"] is not None else None),
              "deadline": r["deadline"].isoformat() if r["deadline"] else None,

@@ -208,14 +208,40 @@ ok("콘텐츠 제출 후 Spark 코드 등록(서버 저장·커뮤니티 비노�
   !!lr && lr.termsState === "content_submitted" && lr.sparkCode === "SPARK-LATE-77",
   JSON.stringify(lr || {}));
 
-// ── 콘솔: 콘텐츠+Spark 확인 → 완료 처리 ──
+// ── 콘솔: 콘텐츠 + Spark '원문' 조회/복사 → 완료 처리 ──
 await C.click(`p:has-text("${NAME}") >> span:has-text("지원자 보기")`);
 await C.waitForTimeout(1600);
 const ct = await C.evaluate(() => document.body.innerText);
 ok("콘솔: 제출 콘텐츠 + Spark 수령 ✓ 표시",
   ct.includes("tiktok.com/@flow/video/1") && ct.includes("Spark 코드 ✓"));
+const sparkField = await C.evaluate((cid) => {
+  const el = document.getElementById("spark_" + cid);
+  return el ? { value: el.value, readOnly: el.readOnly,
+    copyBtn: !!el.parentElement.querySelector("span.cbt") } : null;
+}, applicant.creatorId);
+ok("콘솔: Spark 코드 원문 readonly 표시 + 복사 버튼",
+  !!sparkField && sparkField.value === "SPARK-LATE-77" && sparkField.readOnly
+  && sparkField.copyBtn, JSON.stringify(sparkField));
+// 크리에이터 공개 커뮤니티에는 코드 원문 비노출
+await A.click('.crside-item >> text=GLOWLAB');
+await A.waitForTimeout(1800);
+const commText = await A.evaluate(() => document.body.innerText);
+ok("공개 커뮤니티에 Spark 코드 원문 비노출", !commText.includes("SPARK-LATE-77"));
+await A.click('.crside-item:has-text("내 협업")');
+await A.waitForTimeout(800);
 await C.click('span:has-text("완료 처리")');
 await C.waitForTimeout(2000);
+// ── 완료 후에도 기록(확정 수수료/송장/콘텐츠/코드 원문) 조회 가능 ──
+await C.click(`p:has-text("${NAME}") >> span:has-text("지원자 보기")`);
+await C.waitForTimeout(1600);
+const doneRecord = await C.evaluate((cid) => ({
+  t: document.body.innerText,
+  spark: (document.getElementById("spark_" + cid) || {}).value || "" }), applicant.creatorId);
+ok("완료 후 기록 보존: 확정 수수료·송장·콘텐츠 링크·Spark 원문",
+  doneRecord.t.includes("12.5%") && doneRecord.t.includes("1Z-FLOW-999")
+  && doneRecord.t.includes("tiktok.com/@flow/video/1")
+  && doneRecord.spark === "SPARK-LATE-77",
+  doneRecord.spark || "no-spark");
 
 // ── 완료 반영: 탭 전환만으로 협업 완료 표시 ──
 await A.click('.crside-item:has-text("캠페인")');

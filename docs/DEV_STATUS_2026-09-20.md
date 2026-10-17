@@ -1338,3 +1338,18 @@ Claude의 62f9c1d UI 가이드·개편을 인수한 뒤 직접 검수하여 다�
   송장→콘텐츠 먼저 제출→Spark 늦은 등록(서버 저장 확인)→콘솔 수령 표시
   →완료 처리→탭 전환만으로 완료 반영. 회귀: API 230, tests_ui 78,
   Playwright 12종 전부 PASS. 운영 배포 보류 유지.
+
+## 2026-10-17 (6차) — 브랜드 측 Spark 코드 원문 조회·완료 기록 보존
+
+- 콘솔 지원자/협업 카드에서 Spark 코드 '✓'만 보이던 공백 → 브랜드 권한
+  화면(require_brand 라우트 데이터)에 readonly 원문 입력 + 복사 버튼
+  (sparkRowHtml/wkCopy, 클립보드 실패 시 선택-복사 안내). terms_agreed/
+  sample_shipped/content_submitted/completed 전 상태에서 표시되고,
+  completed는 확정 수수료·송장·콘텐츠 링크(새 탭)·코드 원문을 함께 보존
+  조회. readonly 입력은 폼 초안 스토어에서 제외(서버 최신값 우선). 공개
+  커뮤니티/크리에이터 측에는 렌더하지 않음(API 권한도 기존 브랜드 가드
+  그대로 — 서버 무변경).
+- campaign-flow.mjs 20단언으로 확장: 콘텐츠 먼저 제출→Spark 늦은 등록→
+  브랜드 화면에서 원문 SPARK-LATE-77 readonly+복사 버튼 확인→공개
+  커뮤니티 비노출 확인→완료 처리 후 재진입에도 확정 수수료 12.5%·송장·
+  콘텐츠·코드 원문 조회. tests_ui 78, e2e 12종 전부 PASS. 운영 배포 보류.

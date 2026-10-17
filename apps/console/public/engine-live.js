@@ -1354,6 +1354,20 @@
       +'<div class="live-grid"><label>신청 마감일 (YYYY-MM-DD)<input id="campDeadline" placeholder="2026-11-30"></label><label>대상 국가 (ISO 2자리, 쉼표)<input id="campCountries" placeholder="KR, TH — 비우면 전체"></label></div>'
       +'<button class="btn" onclick="campCreate()" '+(campBusy?'disabled':'')+'>'+(campBusy?'저장 중…':'초안 저장')+'</button></div>';
   }
+  window.wkCopy=function(id){
+    var el=document.getElementById(id);if(!el)return;
+    try{el.select&&el.select();}catch(e){}
+    var done=false;
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(el.value);done=true;}}catch(e){}
+    if(!done){try{done=document.execCommand&&document.execCommand('copy');}catch(e){}}
+    toast('복사'+(done?'됨':''),done?'Spark 코드가 클립보드에 복사되었습니다.':'선택된 코드를 Ctrl/Cmd+C로 복사하세요.');
+  };
+  function sparkRowHtml(a){
+    // 브랜드 권한(require_brand 라우트)에서만 렌더 — 코드 원문 조회/복사.
+    // 공개 커뮤니티/크리에이터 측에는 노출하지 않는다.
+    if(!a.sparkCode)return '';
+    return '<div style="display:flex;gap:6px;margin:4px 0;align-items:center"><label style="font-size:12px;flex-shrink:0">Spark 코드</label><input id="spark_'+a.creatorId+'" readonly value="'+mailEscape(a.sparkCode)+'" onclick="this.select()" style="flex:1;padding:8px;font-family:monospace"><span class="cbt" onclick="wkCopy(\'spark_'+a.creatorId+'\')">복사</span></div>';
+  }
   function collabCard(){
     var h=campDraftFormHtml();
     if(!brandCampaigns||!brandCampaigns.length)return h;
@@ -1379,13 +1393,13 @@
           }else if(a.termsState==='selected'){
             h+='<p style="font-size:12px;margin:6px 0">제안 수수료 '+(a.commissionPct!=null?a.commissionPct+'%':'-')+' — 크리에이터 합의 대기 중.</p>';
           }else if(a.termsState==='terms_agreed'||a.termsState==='sample_shipped'){
-            h+='<p style="font-size:12px;margin:6px 0">확정 수수료 '+(a.agreedCommissionPct!=null?a.agreedCommissionPct+'%':'-')+(a.sampleTracking?' · 송장 '+mailEscape(a.sampleTracking):'')+(a.sparkCode?' · Spark 코드 수령 ✓':'')+'</p>';
+            h+='<p style="font-size:12px;margin:6px 0">확정 수수료 '+(a.agreedCommissionPct!=null?a.agreedCommissionPct+'%':'-')+(a.sampleTracking?' · 송장 '+mailEscape(a.sampleTracking):'')+(a.sparkCode?' · Spark 코드 수령 ✓':'')+'</p>'+sparkRowHtml(a);
             if(a.termsState==='terms_agreed')h+='<div style="display:flex;gap:6px;margin:4px 0"><input id="shp_'+a.creatorId+'" placeholder="샘플 송장 번호" style="flex:1;padding:8px"><span class="cbt" onclick="collabShip(\''+c.campaignId+'\',\''+a.creatorId+'\')">샘플 발송</span></div>';
             h+='<div style="display:flex;gap:6px;margin:4px 0"><input id="afl_'+a.creatorId+'" placeholder="어필리에이트 링크 (https://… — 브랜드 발급)" value="'+mailEscape(a.affiliateLink||'')+'" style="flex:1;padding:8px"><span class="cbt" onclick="collabLink(\''+c.campaignId+'\',\''+a.creatorId+'\')">링크 발급</span></div>';
           }else if(a.termsState==='content_submitted'){
-            h+='<p style="font-size:12px;margin:6px 0">콘텐츠: '+mailEscape(a.contentUrl)+(a.sparkCode?' · Spark 코드 ✓':'')+'</p><span class="cbt" onclick="collabComplete(\''+c.campaignId+'\',\''+a.creatorId+'\')">완료 처리</span>';
+            h+='<p style="font-size:12px;margin:6px 0">콘텐츠: '+mailEscape(a.contentUrl)+(a.sparkCode?' · Spark 코드 ✓':'')+'</p>'+sparkRowHtml(a)+'<span class="cbt" onclick="collabComplete(\''+c.campaignId+'\',\''+a.creatorId+'\')">완료 처리</span>';
           }else if(a.termsState==='completed'){
-            h+='<p style="font-size:12px;margin:6px 0">✓ 완료 — 콘텐츠 '+mailEscape(a.contentUrl||'')+'</p>';
+            h+='<p style="font-size:12px;margin:6px 0">✓ 완료 — 확정 수수료 '+(a.agreedCommissionPct!=null?a.agreedCommissionPct+'%':'-')+(a.sampleTracking?' · 송장 '+mailEscape(a.sampleTracking):'')+'<br>콘텐츠: '+(a.contentUrl?'<a href="'+mailEscape(a.contentUrl)+'" target="_blank" rel="noopener">'+mailEscape(a.contentUrl)+'</a>':'-')+'</p>'+sparkRowHtml(a);
           }else if(a.termsState==='declined'){
             h+='<p style="font-size:12px;margin:6px 0">크리에이터가 제안을 거절했어요.</p>';
           }
@@ -1714,7 +1728,7 @@
        다른 브랜드로 값이 새지 않는다. 결제 카드(bc*)·password는 제외. */
     var wkDrafts={},wkLastKey=null,wkDraftToken='';
     function wkDraftKey(){return (BRAND()||'')+'|'+livePage;}
-    function wkDraftSkip(el){return el.type==='password'||/^bc/.test(el.id)||el.id==='axEmail'||el.id==='axPw';}
+    function wkDraftSkip(el){return el.readOnly||el.type==='password'||/^bc/.test(el.id)||el.id==='axEmail'||el.id==='axPw';}
     window.wkFormClear=function(ids){
       var m=wkDrafts[wkDraftKey()];
       (ids||[]).forEach(function(id){

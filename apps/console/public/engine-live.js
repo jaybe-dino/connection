@@ -1169,6 +1169,36 @@
     };
     document.body.appendChild(d);
   }
+  /* ── 보존 렌더 — 폴링이 화면을 갱신할 때 입력 중 초안·포커스·커서·
+        스크롤을 유지한다(채팅 로그는 바닥 근처였으면 바닥 유지).
+        모달(dialog)은 body 소속이라 stage 재렌더의 영향을 받지 않는다. ── */
+  function softRender(){
+    try{
+      var st=document.getElementById('stage');
+      var act=document.activeElement,actId=act&&act.id,selS=null,selE=null,actVal=null;
+      if(actId&&st&&st.contains(act)&&(act.tagName==='TEXTAREA'||act.tagName==='INPUT')){
+        try{actVal=act.value;selS=act.selectionStart;selE=act.selectionEnd;}catch(e){}
+      }else{actId=null;}
+      var keep=[];
+      ['.crmsgs','.crthreadp-msgs','.crnotif-list','.crmain','.crside-scroll'].forEach(function(sel){
+        var el=document.querySelector(sel);
+        if(el)keep.push({sel:sel,top:el.scrollTop,bottom:(el.scrollHeight-el.scrollTop-el.clientHeight)<48});
+      });
+      var winY=(typeof window.scrollY==='number')?window.scrollY:0, stTop=st?st.scrollTop:0;
+      render();
+      keep.forEach(function(k){var el=document.querySelector(k.sel);if(el)el.scrollTop=k.bottom?el.scrollHeight:k.top;});
+      if(st)st.scrollTop=stTop;
+      if(window.scrollTo)window.scrollTo(0,winY);
+      if(actId){
+        var el=document.getElementById(actId);
+        if(el){
+          if(actVal!=null&&('value' in el))el.value=actVal;
+          try{el.focus({preventScroll:true});}catch(e){try{el.focus();}catch(e2){}}
+          try{if(selS!=null&&el.setSelectionRange)el.setSelectionRange(selS,selE);}catch(e){}
+        }
+      }
+    }catch(e){try{render();}catch(e2){}}
+  }
   window.authBack = function(){authPanel(null);var chip=document.getElementById('authChip');if(chip)chip.click();};
   window.authLogout = function () { jwtClear(); window.__ME = null; authPanel(null); authChip(); reloadBrand(); toast("로그아웃", "다시 로그인해야 서비스를 사용할 수 있습니다."); };
   window.authLogin = function () {
@@ -1499,7 +1529,10 @@
   window.brandCommunityOpen=async function(index){
     var cell=brandCells[index];if(!cell||brandConversationBusy)return;
     var version=++brandConversationVersion,owner=BRAND(),token=jwtGet();brandConversationError='';brandConversationDraft='';brandConversation=null;render();
-    try{var rows=await req('GET','/community/cells/'+encodeURIComponent(cell.cellId)+'/messages');if(version!==brandConversationVersion||owner!==BRAND()||token!==jwtGet())return;brandConversation={cell:cell,messages:rows};render();}
+    try{var rows=await req('GET','/community/cells/'+encodeURIComponent(cell.cellId)+'/messages');if(version!==brandConversationVersion||owner!==BRAND()||token!==jwtGet())return;brandConversation={cell:cell,messages:rows};
+      var maxId=0;(rows||[]).forEach(function(x){if(x.msgId&&x.msgId>maxId)maxId=x.msgId;});
+      if(maxId)req('POST','/community/cells/'+encodeURIComponent(cell.cellId)+'/read',{last_msg_id:maxId}).then(function(){if(typeof brandUnread!=='undefined'&&brandUnread[cell.cellId])delete brandUnread[cell.cellId];}).catch(function(){});
+      render();}
     catch(e){if(version===brandConversationVersion){brandConversationError=e.message;render();}}
   };
   window.brandCommunityDraft=function(value){brandConversationDraft=value;};
@@ -1543,7 +1576,7 @@
   };
   function brandCommunityCard(){
     var h='<h1>커뮤니티 · 담당자 DM</h1><p>브랜드 멤버의 라운지와 일대일 대화입니다. 이메일로 발송되지 않습니다.</p><button class="btn line" onclick="brandCommunityRefresh()" '+(brandConversationBusy?'disabled':'')+'>대화 목록 새로고침</button><p role="status">'+mailEscape(brandConversationError)+'</p>';
-    h+=brandCells.map(function(c,i){return '<button class="btn line" onclick="brandCommunityOpen('+i+')" '+(brandConversationBusy?'disabled':'')+'>'+mailEscape((c.kind==='dm'?'DM · ':'라운지 · ')+c.name)+'</button>';}).join('');
+    h+=brandCells.map(function(c,i){var un=(typeof brandUnread!=='undefined'&&brandUnread[c.cellId]&&brandUnread[c.cellId].unread)||0;return '<button class="btn line" onclick="brandCommunityOpen('+i+')" '+(brandConversationBusy?'disabled':'')+'>'+mailEscape((c.kind==='dm'?'DM · ':'라운지 · ')+c.name)+(un?' <b>새 '+un+'</b>':'')+'</button>';}).join('');
     if(!brandCells.length)h+='<p>표시할 대화가 없습니다.</p>';
     if(brandConversation){h+='<h2>'+mailEscape(brandConversation.cell.name)+'</h2>';
       h+=brandConversation.messages.map(function(m){var translated=m.originalLocale!=='ko'&&m.translations&&m.translations.ko;
@@ -1657,13 +1690,69 @@
     function wkSideHtml(){
       var bid=window.__BID||{};
       var h='<aside class="crside'+(wkMenuOpen?' open':'')+'" aria-label="업무 메뉴"><div class="crside-head"><b>'+mailEscape(bid.name||BRAND()||'')+'</b><small>브랜드 워크스페이스'+(window.__ME&&window.__ME.kind==='admin'?' · 관리자':'')+'</small></div><div class="crside-scroll"><div class="crside-label">업무</div><div class="crside-quick" style="border-bottom:0">';
-      h+=WK_MENU.map(function(t){return '<button class="crside-item'+(livePage===t[0]?' active':'')+'" '+(livePage===t[0]?'aria-current="page"':'')+' onclick="wkNav(\''+t[0]+'\')"><span class="hash" aria-hidden="true">'+t[1]+'</span>'+t[2]+'</button>';}).join('');
+      h+=WK_MENU.map(function(t){var un=t[0]==='community'?wkUnreadTotal():0;return '<button class="crside-item'+(livePage===t[0]?' active':'')+'" '+(livePage===t[0]?'aria-current="page"':'')+' onclick="wkNav(\''+t[0]+'\')"><span class="hash" aria-hidden="true">'+t[1]+'</span>'+t[2]+(un?'<em>'+(un>99?'99+':un)+'</em>':'')+'</button>';}).join('');
       h+='</div></div><div class="crside-bottom"><span class="crside-me">'+mailEscape((window.__ME&&window.__ME.email)||'')+'</span><a href="https://theprlist.net/privacy">개인정보처리방침</a> · <a href="https://theprlist.net/terms">이용약관</a> · <a href="mailto:chief@dinostudio.kr">문의</a></div></aside>';
       return h;
     }
     function wkBottomNavHtml(){
       // 모바일 4열 고정 네비 — 홈은 상단 로고, 학습·팀은 접는 메뉴(버거)로.
       return '<nav class="crbottomnav" aria-label="주요 메뉴">'+[['products','▦','제품·캠페인'],['community','◈','커뮤니티'],['mail','✉','아웃리치·인박스'],['billing','₩','월별 청구']].map(function(t){return '<button class="'+(livePage===t[0]?'active':'')+'" '+(livePage===t[0]?'aria-current="page"':'')+' onclick="wkNav(\''+t[0]+'\')"><span aria-hidden="true">'+t[1]+'</span>'+t[2]+'</button>';}).join('')+'</nav>';
+    }
+    /* ── 콘솔 실시간 갱신 폴링 — 알림·미읽음·열린 대화. 크리에이터 폴러와
+          같은 규칙: background/로그아웃 중단, 복귀 즉시 1회, 단일 비행,
+          오류 backoff, stale(브랜드 전환·세션 교체) 무시, 변경시에만
+          softRender. 현재 페이지/대화 강제 이동 없음. ── */
+    var brandUnread={},brandPollTimer=null,brandPollBusy=false,brandPollFail=0,brandPollWired=false;
+    function wkUnreadTotal(){var t=0;Object.keys(brandUnread||{}).forEach(function(k){t+=(brandUnread[k]&&brandUnread[k].unread)||0;});return t;}
+    function brandPollSchedule(){
+      if(typeof setTimeout!=='function')return;
+      if(brandPollTimer)clearTimeout(brandPollTimer);
+      brandPollTimer=setTimeout(brandPollTick,Math.min(6000*Math.pow(2,brandPollFail),60000));
+    }
+    function brandNotifSig(n){return n?JSON.stringify([n.unreadCount,(n.items||[]).map(function(i){return [i.id,i.read];})]):'';}
+    function brandPollTick(){
+      if(brandPollBusy)return brandPollSchedule();
+      if(typeof document!=='undefined'&&document.hidden)return;
+      if(!window.__ME||window.__ME.kind==='creator'||!jwtGet()||!BRAND())return; // 로그아웃·브랜드 미선택 시 중단
+      brandPollBusy=true;
+      var token=jwtGet(),owner=BRAND(),changed=false;
+      var work=req('GET','/me/unread').then(function(u){
+        if(token!==jwtGet()||owner!==BRAND())return;
+        var next={};(u||[]).forEach(function(x){next[x.cellId]=x;});
+        if(JSON.stringify(next)!==JSON.stringify(brandUnread)){brandUnread=next;changed=true;}
+      }).then(function(){return req('GET','/me/notifications?limit=10');}).then(function(n){
+        if(token!==jwtGet()||owner!==BRAND())return;
+        if(brandNotifs!==null&&brandNotifs!==false&&brandNotifSig(n)!==brandNotifSig(brandNotifs)){brandNotifs=n;changed=true;}
+      }).then(function(){
+        if(!brandConversation||brandConversationBusy)return;
+        var version=brandConversationVersion,cell=brandConversation.cell;
+        return req('GET','/community/cells/'+encodeURIComponent(cell.cellId)+'/messages').then(function(rows){
+          if(version!==brandConversationVersion||token!==jwtGet()||owner!==BRAND()||!brandConversation||brandConversation.cell.cellId!==cell.cellId)return; // stale 무시
+          if(JSON.stringify(rows)!==JSON.stringify(brandConversation.messages)){
+            brandConversation.messages=rows;changed=true;
+            var maxId=0;(rows||[]).forEach(function(x){if(x.msgId&&x.msgId>maxId)maxId=x.msgId;});
+            if(maxId)req('POST','/community/cells/'+encodeURIComponent(cell.cellId)+'/read',{last_msg_id:maxId}).then(function(){if(brandUnread[cell.cellId])delete brandUnread[cell.cellId];}).catch(function(){});
+          }
+        });
+      });
+      return work.then(function(){brandPollFail=0;})
+        .catch(function(){brandPollFail=Math.min(brandPollFail+1,4);})
+        .then(function(){
+          brandPollBusy=false;
+          if(changed&&typeof softRender==='function')softRender();
+          brandPollSchedule();
+        });
+    }
+    window.brandPollNow=function(){brandPollFail=0;if(brandPollTimer&&typeof clearTimeout==='function')clearTimeout(brandPollTimer);return brandPollTick();};
+    function brandPollStart(){
+      if(!brandPollWired){
+        brandPollWired=true;
+        try{document.addEventListener('visibilitychange',function(){
+          if(document.hidden){if(brandPollTimer)clearTimeout(brandPollTimer);}
+          else window.brandPollNow();
+        });}catch(e){}
+      }
+      brandPollFail=0;brandPollSchedule();
     }
     window.render=function(){
       var stage=document.getElementById('stage');if(!stage)return;
@@ -1689,13 +1778,13 @@
       Object.keys(preserved).forEach(function(id){var el=document.getElementById(id);if(el)el.value=preserved[id];});
     };
     var previousReload=reloadBrand;
-    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','outSender','outTarget','bulkRows','bulkKey','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';bulkMappings=[];bulkInvalidate();outreachTargets=[];outreachTargetProducts=[];outreachTargetBrand='';outreachTargetVersion++;productsData=null;productsLoadError='';prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;candSelected={};prodEditOpen={};brandCampaigns=null;collabOpen=null;brandTeam=null;brandTeamError='';brandNotifs=null;campEditOpen=null;brandComposeChannel='chat';window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;inboxShowAll=false;previousReload();if(window.__ME&&BRAND()){loadProfile();loadProducts();loadIdentity();}};
+    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','outSender','outTarget','bulkRows','bulkKey','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';bulkMappings=[];bulkInvalidate();outreachTargets=[];outreachTargetProducts=[];outreachTargetBrand='';outreachTargetVersion++;productsData=null;productsLoadError='';prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;candSelected={};prodEditOpen={};brandCampaigns=null;collabOpen=null;brandTeam=null;brandTeamError='';brandNotifs=null;campEditOpen=null;brandComposeChannel='chat';window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;inboxShowAll=false;previousReload();if(window.__ME&&BRAND()){loadProfile();loadProducts();loadIdentity();brandPollStart();}};
     // 시각 정본은 live-theme.css(docs/UI_DESIGN_GUIDE.md) — 여기서는 표면
     // 활성 클래스만 부여한다.
     document.body.classList.add('live-surface');
     // 시각 정본 live-theme.css를 런타임 주입(콘솔 index.html은 legacy-compat 유지)
     if(!document.querySelector('link[href*="live-theme"]')){var lk=document.createElement('link');lk.rel='stylesheet';lk.href='/live-theme.css?v=wk1';document.head.appendChild(lk);}
-    var style=document.createElement('style');style.textContent='body{background:#fcfbfd}.live-main button:focus-visible,.live-main a:focus-visible,.crtop button:focus-visible,.crside button:focus-visible{outline:3px solid #9e8aab;outline-offset:2px}';document.head.appendChild(style);render();
+    var style=document.createElement('style');style.textContent='body{background:#fcfbfd}.live-main button:focus-visible,.live-main a:focus-visible,.crtop button:focus-visible,.crside button:focus-visible{outline:3px solid #9e8aab;outline-offset:2px}';document.head.appendChild(style);render();brandPollStart();
   }
 
   if(window.__SURFACE==='bjoin'){
@@ -1760,6 +1849,7 @@
         req('GET','/me/profile').then(function(p){creatorProfile=p;render();}).catch(function(){});
         req('GET','/me/tiktok').then(function(t){tiktokInfo=t;render();}).catch(function(){});
         req('GET','/me/xp').then(function(x){myXp=x;render();}).catch(function(){});
+        crPollStart();  // 실시간 갱신 폴링 시작(멱등 — 타이머 재설정)
       }
     }
     var creatorApplyBusy={};
@@ -1922,6 +2012,73 @@
       .finally(function(){commSearchBusy=false;render();});
     };
     window.commSearchClear=function(){commSearchRes=null;commSearchQ='';render();};
+    /* ── 실시간 갱신 폴링 — 알림·미읽음·열린 채널/DM·스레드.
+          background/로그아웃 중단, 복귀 시 즉시 1회, 단일 비행, 오류
+          backoff(5s→최대 60s), 이전 세션/셀 stale 응답 무시, 변경시에만
+          softRender(입력·포커스·스크롤 보존). 강제 이동 없음. ── */
+    var crPollTimer=null,crPollBusy=false,crPollFail=0,crPollWired=false;
+    var CR_POLL_BASE=5000,CR_POLL_MAX=60000;
+    function crPollSchedule(){
+      if(typeof setTimeout!=='function')return;
+      if(crPollTimer)clearTimeout(crPollTimer);
+      crPollTimer=setTimeout(crPollTick,Math.min(CR_POLL_BASE*Math.pow(2,crPollFail),CR_POLL_MAX));
+    }
+    function crNotifSig(n){return n?JSON.stringify([n.unreadCount,(n.items||[]).map(function(i){return [i.id,i.read];})]):'';}
+    function crMsgSig(list){return JSON.stringify((list||[]).map(function(m){return [m.msgId,m.pinnedAt,m.replyCount,m.translationState];}));}
+    function crPollTick(){
+      if(crPollBusy)return crPollSchedule();
+      if(typeof document!=='undefined'&&document.hidden)return;        // visibility 복귀가 재개
+      if(!window.__ME||window.__ME.kind!=='creator'||!jwtGet())return; // 로그아웃 시 중단(재로그인 때 재시작)
+      crPollBusy=true;
+      var token=jwtGet(),changed=false;
+      var work=req('GET','/me/unread').then(function(u){
+        if(token!==jwtGet())return;
+        var next={};(u||[]).forEach(function(x){next[x.cellId]=x;});
+        if(JSON.stringify(next)!==JSON.stringify(commUnread)){commUnread=next;changed=true;}
+      }).then(function(){return req('GET','/me/notifications?limit=30');}).then(function(n){
+        if(token!==jwtGet())return;
+        var prev=(typeof creatorNotifs!=='undefined')?creatorNotifs:null; // 격리 vm 가드
+        if(crNotifSig(n)!==crNotifSig(prev)){creatorNotifs=n;changed=true;}
+      }).then(function(){
+        if(!commOpen||commLoading||commSending)return;
+        var id=commOpen.cellId,ch=commChannel,version=commVersion;
+        return req('GET','/community/cells/'+encodeURIComponent(id)+'/messages?channel='+ch+'&limit=200').then(function(m){
+          if(version!==commVersion||token!==jwtGet()||!commOpen||commOpen.cellId!==id||commChannel!==ch)return; // stale 무시
+          if(crMsgSig(m)!==crMsgSig(commOpen.msgs)){
+            commOpen.msgs=m;changed=true;
+            var maxId=0;(m||[]).forEach(function(x){if(x.msgId&&x.msgId>maxId)maxId=x.msgId;});
+            if(maxId)req('POST','/community/cells/'+encodeURIComponent(id)+'/read',{last_msg_id:maxId}).then(function(){if(commUnread&&commUnread[id])delete commUnread[id];}).catch(function(){});
+          }
+        });
+      }).then(function(){
+        if(!commThread||!commThread.msgs||!commOpen||commThreadBusy)return;
+        var id=commOpen.cellId,mid=commThread.rootId,version=commVersion;
+        return req('GET','/community/cells/'+encodeURIComponent(id)+'/messages/'+mid+'/thread').then(function(m){
+          if(version!==commVersion||token!==jwtGet()||!commThread||commThread.rootId!==mid)return;
+          if(crMsgSig(m)!==crMsgSig(commThread.msgs)){commThread={rootId:mid,msgs:m};changed=true;}
+        });
+      });
+      return work.then(function(){crPollFail=0;})
+        .catch(function(){crPollFail=Math.min(crPollFail+1,4);})
+        .then(function(){
+          crPollBusy=false;
+          if(changed&&typeof softRender==='function')softRender();
+          crPollSchedule();
+        });
+    }
+    window.crPollNow=function(){crPollFail=0;if(crPollTimer&&typeof clearTimeout==='function')clearTimeout(crPollTimer);return crPollTick();};
+    function crPollStart(){
+      if(!crPollWired){
+        crPollWired=true;
+        try{document.addEventListener('visibilitychange',function(){
+          if(document.hidden){if(crPollTimer)clearTimeout(crPollTimer);}
+          else window.crPollNow();
+        });}catch(e){}
+      }
+      crPollFail=0;crPollSchedule();
+    }
+    window.__crPollTick=crPollTick;  // 격리 vm 테스트용(런타임 사용 없음)
+    window.__crPollStart=crPollStart;
     function esc(x){return mailEscape(x);}
     function commMsgHtml(m,inThread){
       var lang=window.__USER_LANG||'ko';

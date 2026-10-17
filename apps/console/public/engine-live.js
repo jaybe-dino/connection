@@ -1144,6 +1144,10 @@
       "background:#22272b;color:#fff;border-radius:999px;padding:7px 13px;" +
       "font-size:11px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.25)";
     d.textContent = window.__ME ? "🔐 " + window.__ME.email : "🔐 로그인";
+    // 워크스페이스 셸(브랜드/크리에이터)에서는 로그인 후 탑바 아바타가 계정
+    // 진입점 — 플로팅 칩은 숨겨 모바일 하단 네비를 가리지 않는다(클릭은
+    // 탑바 버튼이 d.click()으로 위임).
+    if (window.__ME && (window.__SURFACE === "brand" || window.__SURFACE === "creator")) d.style.display = "none";
     d.onclick = function () {
       if (document.getElementById("authPanel")) return authPanel(null);
       if (window.__ME) {
@@ -1628,25 +1632,47 @@
     adminBrands=null;reloadBrand();render();
   };
   if(window.__SURFACE==='brand'){
+    // 콘솔 워크스페이스 셸(wk) — 크리에이터 앱과 같은 Slack-v3 플럼 셸을
+    // 공유한다(live-theme.css 런타임 주입 · index.html은 legacy-compat 유지).
+    var WK_MENU=[['home','⌂','홈'],['learn','◳','브랜드 학습'],['products','▦','제품·캠페인'],['community','◈','커뮤니티·DM'],['mail','✉','아웃리치·인박스'],['team','◌','팀'],['billing','₩','월별 청구']];
+    var wkMenuOpen=false;
+    function wkMobile(){try{return window.matchMedia('(max-width:760px)').matches;}catch(e){return false;}}
+    window.wkMenuToggle=function(){wkMenuOpen=!wkMenuOpen;render();};
+    window.addEventListener('resize',function(){clearTimeout(window.__wkRz);window.__wkRz=setTimeout(function(){if(window.render)render();},150);});
+    window.wkNav=function(p){wkMenuOpen=false;liveNav(p);};
+    function wkTopHtml(bare){
+      var bid=window.__BID||{};
+      return '<header class="crtop">'+(bare?'':'<button class="wkburger" onclick="wkMenuToggle()" aria-label="업무 메뉴 열기">☰</button>')
+        +'<button class="crtop-brand" style="background:none;border:0;color:inherit;font:inherit;font-weight:700;cursor:pointer;padding:0" onclick="'+(bare?'':'wkNav(\'home\')')+'">theprlist <small>CONSOLE</small></button>'
+        +(!bare&&BRAND()?'<span class="wkchip" title="현재 브랜드">'+(bid.logoUrl?'<img src="'+String(bid.logoUrl).replace(/"/g,'')+'" alt="">':'')+mailEscape(bid.name||BRAND())+(window.__ME&&window.__ME.kind==='admin'?' · 관리자':'')+'</span>':'')
+        +'<span class="wkspace"></span>'
+        +(!bare&&window.__ME&&window.__ME.kind==='admin'&&BRAND()?'<button class="wktop-btn" onclick="adminSwitchBrand()">브랜드 전환</button>':'')
+        +(window.__ME?'<button class="crtop-me" onclick="document.getElementById(\'authChip\')&&document.getElementById(\'authChip\').click()" title="계정" aria-label="계정 '+mailEscape(window.__ME.email||'')+'">'+mailEscape((window.__ME.email||'?').slice(0,1).toUpperCase())+'</button>':'')
+        +'</header>';
+    }
+    function wkRailHtml(){
+      var bid=window.__BID||{};
+      return '<nav class="crrail" aria-label="브랜드"><button class="crrail-brand active" onclick="wkNav(\'home\')" aria-label="'+mailEscape(bid.name||BRAND()||'')+' 홈">'+(bid.logoUrl?'<img src="'+String(bid.logoUrl).replace(/"/g,'')+'" alt="">':mailEscape((bid.name||BRAND()||'?').slice(0,1).toUpperCase()))+'</button>'+(window.__ME&&window.__ME.kind==='admin'?'<button class="crrail-add" onclick="adminSwitchBrand()" aria-label="브랜드 전환">⇄</button>':'')+'</nav>';
+    }
+    function wkSideHtml(){
+      var bid=window.__BID||{};
+      var h='<aside class="crside'+(wkMenuOpen?' open':'')+'" aria-label="업무 메뉴"><div class="crside-head"><b>'+mailEscape(bid.name||BRAND()||'')+'</b><small>브랜드 워크스페이스'+(window.__ME&&window.__ME.kind==='admin'?' · 관리자':'')+'</small></div><div class="crside-scroll"><div class="crside-label">업무</div><div class="crside-quick" style="border-bottom:0">';
+      h+=WK_MENU.map(function(t){return '<button class="crside-item'+(livePage===t[0]?' active':'')+'" '+(livePage===t[0]?'aria-current="page"':'')+' onclick="wkNav(\''+t[0]+'\')"><span class="hash" aria-hidden="true">'+t[1]+'</span>'+t[2]+'</button>';}).join('');
+      h+='</div></div><div class="crside-bottom"><span class="crside-me">'+mailEscape((window.__ME&&window.__ME.email)||'')+'</span><a href="https://theprlist.net/privacy">개인정보처리방침</a> · <a href="https://theprlist.net/terms">이용약관</a> · <a href="mailto:chief@dinostudio.kr">문의</a></div></aside>';
+      return h;
+    }
+    function wkBottomNavHtml(){
+      // 모바일 4열 고정 네비 — 홈은 상단 로고, 학습·팀은 접는 메뉴(버거)로.
+      return '<nav class="crbottomnav" aria-label="주요 메뉴">'+[['products','▦','제품·캠페인'],['community','◈','커뮤니티'],['mail','✉','아웃리치·인박스'],['billing','₩','월별 청구']].map(function(t){return '<button class="'+(livePage===t[0]?'active':'')+'" '+(livePage===t[0]?'aria-current="page"':'')+' onclick="wkNav(\''+t[0]+'\')"><span aria-hidden="true">'+t[1]+'</span>'+t[2]+'</button>';}).join('')+'</nav>';
+    }
     window.render=function(){
       var stage=document.getElementById('stage');if(!stage)return;
       document.querySelector('.svcbar').style.display='none';
-      // 브랜드 칩 — 모든 페이지 동일 위치에 현재 브랜드(로고+이름)와
-      // 관리자 전환 상태를 상시 노출한다.
-      var chip='';
-      if(window.__ME&&BRAND()){
-        var bid=window.__BID||{};
-        chip='<span class="brandchip" title="현재 브랜드">'+
-          (bid.logoUrl?'<img src="'+String(bid.logoUrl).replace(/"/g,'')+'" alt="">':'')+
-          '<span>'+mailEscape(bid.name||BRAND())+'</span>'+
-          (window.__ME.kind==='admin'?'<small>관리자</small>':'')+'</span>';
-      }
-      var nav='<header class="live-head"><a href="https://theprlist.net">theprlist<span> / brand console</span></a>'+chip+'<nav>'+[['home','홈'],['learn','브랜드 학습'],['products','제품·캠페인'],['community','커뮤니티·DM'],['mail','아웃리치·인박스'],['team','팀'],['billing','월별 청구']].map(function(x){return '<button class="btn '+(livePage===x[0]?'':'line')+'" onclick="liveNav(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+(window.__ME&&window.__ME.kind==='admin'&&BRAND()?'<span style="font-size:12px;color:var(--ink-2,#566274)">관리자 · <b>'+mailEscape(BRAND())+'</b> <button class="btn line" onclick="adminSwitchBrand()">전환</button></span>':'')+'</nav></header>';
       var preserved={};['outRecipients','outSubject','outBody','outBrief','outProduct','outSender','outTarget','bulkRows','bulkKey','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)preserved[id]=el.value;});
-      var body='';
-      if(!window.__ME){body='<h1>브랜드와 크리에이터,<br>함께 시작할 준비.</h1><p>승인된 브랜드 계정으로 로그인해 주세요.</p><button class="btn" onclick="document.getElementById(\'authChip\').click()">로그인</button> <a class="btn line" href="https://theprlist.net/signup">가입 신청</a>';}
-      else if(window.__ME.kind==='creator'){body='<h1>크리에이터 계정입니다</h1><p>브랜드 콘솔은 브랜드·운영 계정 전용이에요. 캠페인 지원·커뮤니티·DM은 크리에이터 앱에서 이용하세요.</p><a class="btn" href="https://app.theprlist.net">크리에이터 앱 열기</a> <span class="cbt no" onclick="authLogout()">로그아웃</span>';}
-      else if(window.__ME.kind==='admin'&&!BRAND()){body=adminPickCard();}
+      var body='',bare=false;
+      if(!window.__ME){bare=true;body='<h1>브랜드와 크리에이터,<br>함께 시작할 준비.</h1><p>승인된 브랜드 계정으로 로그인해 주세요.</p><button class="btn" onclick="document.getElementById(\'authChip\').click()">로그인</button> <a class="btn line" href="https://theprlist.net/signup">가입 신청</a>';}
+      else if(window.__ME.kind==='creator'){bare=true;body='<h1>크리에이터 계정입니다</h1><p>브랜드 콘솔은 브랜드·운영 계정 전용이에요. 캠페인 지원·커뮤니티·DM은 크리에이터 앱에서 이용하세요.</p><a class="btn" href="https://app.theprlist.net">크리에이터 앱 열기</a> <span class="cbt no" onclick="authLogout()">로그아웃</span>';}
+      else if(window.__ME.kind==='admin'&&!BRAND()){bare=true;body=adminPickCard();}
       else if(livePage==='learn')body=liveLearningCard();
       else if(livePage==='products')body=productsCard();
       else if(livePage==='community')body=brandCommunityCard();
@@ -1654,8 +1680,12 @@
       else if(livePage==='mail')body='<h1>브랜드 메일링</h1>'+identityCard()+gmailCard()+outreachCard()+inboxCard();
       else if(livePage==='billing')body='<h1>월별 청구</h1><p>검증 가입 1명당 5,000원 · 부가세 포함 · 월 단위 합산</p><p>현재는 월별 합산 금액을 계산서(수기 청구) 방식으로 안내하는 운영입니다 — <b>카드 등록은 필수가 아닙니다.</b> 계산서 발행 여부·시점은 별도 이메일로 안내됩니다(이 화면은 발행 여부를 표시하지 않습니다).</p><p>카드 결제 최소금액은 1,000원입니다. 미만 청구서도 보관되며 자동 결제되지 않습니다.</p><button class="btn line" onclick="refreshBilling()">새로고침</button>'+window.billingCardHtml()+window.billingInvoicesHtml();
       else if(livePage==='status')body='<h1>서비스 상태</h1><div class="cc"><h2>이용 가능한 흐름</h2><p>브랜드 신청 → 운영자 승인 → 계정 생성 → 홈페이지 분석·프로필 저장 → 제품별 후보 추천 → Gmail 연결 → 아웃리치 초안 검토·발송 → 답장 수신(인박스 동기화) → 크리에이터 커뮤니티·캠페인 협업 → 월별 청구 확인</p></div><div class="cc"><h2>준비 중</h2><p>틱톡·인스타 계정 자동 검증과 자동 후보 수집(현재는 운영자 등록 후보 기준), 크리에이터 대금 지급 화면은 아직 공개 운영 대상이 아닙니다.</p><p>가입 과금은 실제 검증 가입이 기록될 때만 발생합니다.</p></div>';
-      else body='<p class="live-eyebrow">YOUR BRAND, IN GOOD COMPANY</p><h1>브랜드의 다음 연결을<br>만들어 보세요.</h1><p>'+(window.__ME.kind==='admin'?'관리자 ':'')+mailEscape(window.__ME.email)+' · 브랜드 <b>'+mailEscape(BRAND()||'')+'</b>'+(window.__ME.kind==='admin'?' <span class="cbt no" onclick="adminSwitchBrand()">브랜드 전환</span>':'')+'</p>'+brandNotifsCard()+'<div class="live-grid"><button class="cc" onclick="liveNav(\'learn\')"><h2>01. 브랜드 학습</h2><p>홈페이지 분석과 근거를 확인하고 저장하세요.</p></button><button class="cc" onclick="liveNav(\'mail\')"><h2>02. 메일링</h2><p>Gmail을 연결하고 초안을 검토한 뒤 발송하세요.</p></button></div><h2>theprlist에게 물어보세요</h2><p>저장된 브랜드 프로필을 참고해 답합니다. 대화로 메일을 발송하거나 결제를 실행하지 않습니다.</p>'+chatMessages.map(function(m){return '<div class="cc"><b>'+(m.role==='user'?'나':'theprlist')+'</b><p>'+mailEscape(m.content)+'</p></div>';}).join('')+'<form onsubmit="event.preventDefault();liveChat()"><input id="liveQuestion" maxlength="2000" placeholder="우리 브랜드를 소개하는 문구를 제안해 줘" required '+(chatBusy?'disabled':'')+'><button class="btn" '+(chatBusy?'disabled':'')+'>'+(chatBusy?'답변 중…':'질문하기')+'</button></form>';
-      stage.innerHTML=nav+'<main class="live-main">'+body+'</main><footer class="live-footer"><a href="https://theprlist.net/privacy">개인정보처리방침</a> · <a href="https://theprlist.net/terms">이용약관</a> · <a href="mailto:chief@dinostudio.kr">문의</a></footer>';
+      else body='<p class="live-eyebrow">HOME</p><h1>'+mailEscape((window.__BID&&window.__BID.name)||BRAND()||'')+' 워크스페이스</h1><p>'+(window.__ME.kind==='admin'?'관리자 · ':'')+mailEscape(window.__ME.email)+' · 브랜드 <b>'+mailEscape(BRAND()||'')+'</b></p>'+brandNotifsCard()+'<div class="live-grid"><button class="cc" onclick="wkNav(\'learn\')"><h2>01. 브랜드 학습</h2><p>홈페이지 분석과 근거를 확인하고 저장하세요.</p></button><button class="cc" onclick="wkNav(\'mail\')"><h2>02. 메일링</h2><p>Gmail을 연결하고 초안을 검토한 뒤 발송하세요.</p></button></div><h2>theprlist에게 물어보세요</h2><p>저장된 브랜드 프로필을 참고해 답합니다. 대화로 메일을 발송하거나 결제를 실행하지 않습니다.</p>'+chatMessages.map(function(m){return '<div class="cc"><b>'+(m.role==='user'?'나':'theprlist')+'</b><p>'+mailEscape(m.content)+'</p></div>';}).join('')+'<form onsubmit="event.preventDefault();liveChat()"><input id="liveQuestion" maxlength="2000" placeholder="우리 브랜드를 소개하는 문구를 제안해 줘" required '+(chatBusy?'disabled':'')+'><button class="btn" '+(chatBusy?'disabled':'')+'>'+(chatBusy?'답변 중…':'질문하기')+'</button></form>';
+      if(bare){
+        stage.innerHTML='<main class="crapp wk" aria-label="theprlist 콘솔">'+wkTopHtml(true)+'<div class="wkbare"><section class="live-main wkentry">'+body+'</section></div></main>';
+      }else{
+        stage.innerHTML='<main class="crapp wk" aria-label="theprlist 콘솔">'+wkTopHtml(false)+'<div class="crshell">'+wkRailHtml()+((!wkMobile()||wkMenuOpen)?wkSideHtml():'')+'<div class="crmain"><section class="live-main wkpage page-'+livePage+'">'+body+'</section></div></div>'+(wkMenuOpen?'<div class="wkbackdrop" onclick="wkMenuToggle()" aria-hidden="true"></div>':'')+wkBottomNavHtml()+'</main>';
+      }
       Object.keys(preserved).forEach(function(id){var el=document.getElementById(id);if(el)el.value=preserved[id];});
     };
     var previousReload=reloadBrand;
@@ -1663,7 +1693,9 @@
     // 시각 정본은 live-theme.css(docs/UI_DESIGN_GUIDE.md) — 여기서는 표면
     // 활성 클래스만 부여한다.
     document.body.classList.add('live-surface');
-    var style=document.createElement('style');style.textContent='body{background:#f5f4ef}.stage{display:block!important;overflow:auto!important;height:calc(100vh - 1px)!important}.live-head{padding:24px 5%;display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid #dadbd2;background:#fafbf5}.live-head>a{font-size:25px;font-weight:800;color:#163f35;text-decoration:none}.live-head span{font-size:12px;font-weight:400}.live-head nav{display:flex;gap:8px;flex-wrap:wrap}.live-main{max-width:1050px;margin:0 auto;padding:55px 24px 95px;font-size:15px;line-height:1.8}.live-main h1{font-size:40px;line-height:1.25;margin:0 0 25px}.live-main h2{font-size:21px;margin:18px 0 10px}.live-main p{margin:12px 0}.live-main .cc{background:#fff;border:1px solid #dadbd2;border-radius:12px;padding:24px;margin:15px 0;text-align:left}.live-main input,.live-main textarea{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid #aebcb1;border-radius:6px;margin:8px 0 14px;font:inherit}.live-main .btn,.live-main .cbt{font-size:14px;padding:10px 16px;cursor:pointer}.live-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.live-eyebrow{letter-spacing:.1em;color:#41684c}.live-footer{padding:20px 24px 75px;text-align:center}.live-main blockquote{padding:12px;border-left:3px solid #5e8c6a;color:#526157;overflow-wrap:anywhere}@media(max-width:700px){.live-head{display:block}.live-head nav{margin-top:15px}.live-main{padding-top:30px}.live-main h1{font-size:30px}.live-grid{grid-template-columns:1fr}}';document.head.appendChild(style);render();
+    // 시각 정본 live-theme.css를 런타임 주입(콘솔 index.html은 legacy-compat 유지)
+    if(!document.querySelector('link[href*="live-theme"]')){var lk=document.createElement('link');lk.rel='stylesheet';lk.href='/live-theme.css?v=wk1';document.head.appendChild(lk);}
+    var style=document.createElement('style');style.textContent='body{background:#fcfbfd}.live-main button:focus-visible,.live-main a:focus-visible,.crtop button:focus-visible,.crside button:focus-visible{outline:3px solid #9e8aab;outline-offset:2px}';document.head.appendChild(style);render();
   }
 
   if(window.__SURFACE==='bjoin'){

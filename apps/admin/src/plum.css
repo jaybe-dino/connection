@@ -1,0 +1,53 @@
+/* 어드민 전사 운영 셸 — Slack-v3 journey 최종 플럼 팔레트
+   (docs/ui-reference/slack-v3/journey.css: top #302037 · rail #3A2843 ·
+   side #F3EFF6 · active #6B5478 · CTA #695177). 어드민 앱 범위에서만
+   공용 토큰을 재지정해 구조·기능은 그대로 둔다. */
+:root {
+  /* 다크(레일·탑) → 플럼 */
+  --d900: #241a2b;
+  --d800: #3a2843;
+  --d700: #302037;
+  --d600: #6b5478;
+  --d500: #4c3a56;
+  --d400: #ad97ba;
+
+  /* 주 액션 → CTA #695177 */
+  --t100: #eee6f3;
+  --t200: #ddd0e6;
+  --t300: #a58cb7;
+  --t400: #755d84;
+  --t500: #695177;
+
+  /* 뉴트럴 표면 — journey 본문 톤 */
+  --n50: #fcfbfd;
+  --n100: #f3eff6;
+  --n150: #eae3ee;
+  --n200: #e7e3e9;
+  --n300: #c9c0ce;
+  --n400: #9e8aab;
+  --n500: #706a75;
+  --n800: #28242d;
+}
+.wk-admin-top {
+  height: 36px;
+  flex-shrink: 0;
+  background: #302037;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.wk-admin-top small {
+  font-size: 10px;
+  font-weight: 500;
+  color: #cdbfd6;
+  letter-spacing: .08em;
+}
+.wk-admin-top .live {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+}

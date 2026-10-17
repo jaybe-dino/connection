@@ -220,8 +220,16 @@ export default function App() {
   if (authed === false) return <AuthGate onDone={() => setAuthed(true)} />;
 
   return (
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100dvh",
+      height: narrow ? "auto" : "100dvh", background: "var(--n50)" }}>
+    <header className="wk-admin-top">
+      theprlist <small>ADMIN · 전사 운영</small>
+      <span className="live" style={{ color: live ? "var(--t300)" : "var(--c300)" }}>
+        {live ? "● 서버 연결됨" : "● 서버 연결 확인 필요"}
+      </span>
+    </header>
     <div style={{ display: "flex", flexDirection: narrow ? "column" : "row",
-      minHeight: "100dvh", height: narrow ? "auto" : "100dvh", background: "var(--n50)" }}>
+      flex: 1, minHeight: 0 }}>
       <nav style={narrow ? {
         /* 모바일(≤760px): 좌측 고정 레일 대신 상단 랩 메뉴 — 본문 폭 확보 */
         width: "100%", boxSizing: "border-box", background: "var(--d800)",
@@ -286,6 +294,7 @@ export default function App() {
           <Route path="/pool" element={<Pool />} />
         </Routes>
       </main>
+    </div>
     </div>
   );
 }

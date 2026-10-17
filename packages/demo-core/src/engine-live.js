@@ -1598,10 +1598,21 @@
         req('GET','/me/campaign-offers').then(function(o){myOffers=o;creatorLoadErrors.offers=false;render();}).catch(function(){creatorLoadErrors.offers=true;render();});
       }
     }
+    var creatorApplyBusy={};
     window.crApply=function(cid){
-      req('POST','/campaigns/'+cid+'/apply',{creator_id:'me'}).then(function(){
-        toast('지원 완료','브랜드가 검토 후 선정하면 여기서 수수료 합의를 진행해요.');loadCreatorData();
-      }).catch(function(e){toast('지원 실패',(e&&e.message)||'잠시 후 다시.');});
+      if(creatorApplyBusy[cid])return;
+      creatorApplyBusy[cid]=true;render();
+      return req('POST','/campaigns/'+encodeURIComponent(cid)+'/apply',{creator_id:'me'}).then(function(){
+        toast('지원 완료','브랜드가 검토 후 선정하면 내 협업에서 조건을 확인할 수 있습니다.');loadCreatorData();
+      }).catch(function(e){toast('지원 실패',mailEscape((e&&e.message)||'잠시 후 다시 시도해 주세요.'));})
+      .finally(function(){creatorApplyBusy[cid]=false;render();});
+    };
+    window.crCampaignDetail=function(id){
+      var c=(myCampaigns||[]).find(function(x){return x.campaignId===id;});if(!c)return;
+      var old=document.getElementById('creatorCampaignDialog');if(old)old.remove();
+      var d=document.createElement('dialog');d.id='creatorCampaignDialog';d.className='creator-detail';
+      d.innerHTML='<button class="creator-detail-close" aria-label="닫기" onclick="this.closest(\'dialog\').close()">×</button><span class="creator-kicker">'+esc(c.brandName||c.brandId)+'</span><h2>'+esc(c.name)+'</h2><p>'+esc(c.product||'브랜드가 등록한 제품 정보를 확인하세요.')+'</p><dl><dt>제안 커미션</dt><dd>'+(c.affiliatePct!=null?esc(c.affiliatePct)+'%':'브랜드와 확인')+'</dd><dt>신청 마감</dt><dd>'+esc(c.deadline||'브랜드와 확인')+'</dd><dt>참여 상태</dt><dd>'+esc(creatorStateLabel(c.termsState||c.myStatus))+'</dd></dl><p>신청 후 브랜드가 검토합니다. 선정되면 내 협업에서 조건을 확인하고, 담당자와 샘플·콘텐츠 일정을 조율하세요.</p>'+(c.myStatus==='none'?'<button class="btn" onclick="this.closest(\'dialog\').close();crApply('+mailEscape(JSON.stringify(c.campaignId))+')" '+(creatorApplyBusy[c.campaignId]?'disabled':'')+'>'+(creatorApplyBusy[c.campaignId]?'신청 중…':'이 캠페인에 신청하기')+'</button>':'<button class="btn" onclick="this.closest(\'dialog\').close();crTab(\'collabs\')">내 협업 확인</button>');
+      document.body.appendChild(d);d.addEventListener('close',function(){d.remove();});d.showModal();
     };
     window.crAgree=function(cid,accept){
       var h=((document.getElementById('ofHandle_'+cid)||{}).value||'').trim();
@@ -1634,16 +1645,15 @@
     function campHtml(){
       if(creatorLoadErrors.campaigns)return creatorLoadNotice('campaigns','캠페인');
       if(!myCampaigns)return '<p role="status">캠페인을 불러오는 중입니다…</p>';
-      if(!myCampaigns.length)return '<div class="cc"><p>참여 가능한 캠페인이 아직 없습니다. 가입한 브랜드의 모집 소식을 기다려 주세요.</p></div>';
-      var h='<h2 style="margin-top:26px">참여 가능한 캠페인</h2>';
-      myCampaigns.forEach(function(c){
-        h+='<div class="cc"><b>'+esc(c.brandName||c.brandId)+'</b> · '+esc(c.name)+
-          (c.affiliatePct!=null?' <span style="font-size:12px">커미션 '+c.affiliatePct+'%</span>':'')+
-          '<p style="font-size:12px;margin:6px 0">'+esc(c.product||'')+(c.deadline?' · 마감 '+esc(c.deadline):'')+'</p>'+
-          (c.myStatus==='none'?'<button class="btn" onclick="crApply(\''+esc(c.campaignId)+'\')">이 캠페인에 지원</button>'
-            :'<p style="font-size:12px">내 상태: '+esc(c.termsState||c.myStatus)+'</p>')+'</div>';
-      });
-      return h;
+      var h='<section class="creator-page-intro"><span>CAMPAIGNS</span><h1>함께 만들 다음 이야기.</h1><p>내 브랜드의 모집 소식과 참여 조건을 확인하세요.</p></section>';
+      if(!myCampaigns.length)return h+'<div class="cc"><h3>아직 열린 캠페인이 없어요.</h3><p>가입한 브랜드에서 새 모집을 시작하면 이곳에서 확인할 수 있습니다.</p><button class="btn line" onclick="crTab(\'community\')">브랜드 커뮤니티 보기</button></div>';
+      return h+'<div class="creator-campaign-grid">'+myCampaigns.map(function(c){var logo=c.logoUrl&&/^https:\/\//.test(c.logoUrl)?'<img src="'+esc(c.logoUrl)+'" alt="'+esc(c.brandName||c.brandId)+' 로고">':'<span>'+esc((c.brandName||c.brandId||'?').slice(0,1))+'</span>';return '<article class="cc creator-campaign-card"><div class="creator-campaign-brand">'+logo+'<b>'+esc(c.brandName||c.brandId)+'</b><small>'+esc(creatorStateLabel(c.termsState||c.myStatus))+'</small></div><h2>'+esc(c.name)+'</h2><p>'+esc(c.product||'제품 정보는 브랜드 담당자에게 확인하세요.')+'</p><div class="creator-campaign-facts"><span>제안 커미션 <b>'+(c.affiliatePct!=null?esc(c.affiliatePct)+'%':'확인 필요')+'</b></span><span>마감 <b>'+esc(c.deadline||'별도 안내')+'</b></span></div><button class="btn" onclick="crCampaignDetail('+mailEscape(JSON.stringify(c.campaignId))+')">조건 및 상세 보기 →</button></article>';}).join('')+'</div>';
+    }
+    function creatorStateLabel(value){return ({none:'모집 중',applied:'신청 검토 중',selected:'조건 확인 필요',terms_agreed:'샘플 발송 대기',sample_shipped:'샘플 발송됨 · 콘텐츠 준비',content_submitted:'제출 완료 · 브랜드 검토 중',completed:'협업 완료',declined:'제안 거절'})[value]||value||'확인 필요';}
+    function creatorProgressHtml(state){
+      var steps=['selected','terms_agreed','sample_shipped','content_submitted','completed'],labels=['선정','조건 합의','샘플 발송','콘텐츠 제출','완료'],index=steps.indexOf(state);
+      if(index<0)return '';
+      return '<ol class="creator-progress" aria-label="협업 진행 단계">'+steps.map(function(step,i){return '<li class="'+(i<index?'done':i===index?'current':'')+'" '+(i===index?'aria-current="step"':'')+'><span>'+(i<index?'✓':i+1)+'</span>'+labels[i]+'</li>';}).join('')+'</ol>';
     }
     function offersHtml(){
       if(creatorLoadErrors.offers)return creatorLoadNotice('offers','협업');
@@ -1652,8 +1662,8 @@
       var h='<h2 style="margin-top:26px">내 캠페인 진행</h2>';
       myOffers.forEach(function(o){
         var id=esc(o.campaignId);
-        h+='<div class="cc"><b>'+esc(o.brandName||o.brandId)+'</b> · '+esc(o.campaignName||o.campaignId)+
-          ' <span style="font-size:12px">상태: '+esc(o.state)+'</span>';
+        h+='<div class="cc">'+creatorProgressHtml(o.state)+'<b>'+esc(o.brandName||o.brandId)+'</b> · '+esc(o.campaignName||o.campaignId)+
+          ' <span style="font-size:12px">상태: '+esc(creatorStateLabel(o.state))+'</span>';
         if(o.state==='selected'){
           h+='<p style="font-size:13px">브랜드 제안 수수료 <b>'+(o.commissionPct!=null?o.commissionPct+'%':'-')+'</b> — 합의하면 확정됩니다.</p>'+
             '<input id="ofHandle_'+id+'" placeholder="본인 TikTok 핸들 (예: @myhandle)" style="width:100%;box-sizing:border-box;padding:8px;margin:6px 0">'+
@@ -1784,8 +1794,10 @@
       return (b.brandId===joinTarget?recruitmentCard():'')+'<div class="cc">'+logo+'<b style="font-size:17px">'+mailEscape(b.name||b.brandId)+'</b>'+(b.tagline?'<p>'+mailEscape(b.tagline)+'</p>':'')+
         (applicationToken&&b.brandId===joinTarget?'<p>아래 모집 신청에서 브랜드 합류를 함께 진행합니다.</p>':membershipState!=='ready'?'<p>가입 여부는 가입 목록 조회가 끝나면 표시됩니다.</p>':joined?'<p>✓ 이미 이 브랜드의 PR 리스트 멤버입니다.</p>':'<button class="btn" onclick="creatorJoin(\''+b.brandId+'\')">이 브랜드 PR 리스트에 합류</button>')+'</div>';
     }
+    var creatorTabs=['community','campaigns','collabs','messages','brand','settings'];
     var creatorTab=(joinTarget||applicationToken)?'brand':'community';
-    window.crTab=function(t){creatorTab=t;render();var viewport=document.getElementById('stage');if(viewport)viewport.scrollTop=0;if(window.scrollTo)window.scrollTo(0,0);};
+    try{var startTab=location.hash.slice(1);if(creatorTabs.indexOf(startTab)>=0)creatorTab=startTab;}catch(e){}
+    window.crTab=function(t){if(creatorTabs.indexOf(t)<0)return;commRemember();creatorTab=t;history.replaceState(null,'','#'+t);render();var viewport=document.getElementById('stage');if(viewport)viewport.scrollTop=0;if(window.scrollTo)window.scrollTo(0,0);};
     window.creatorOpenJoinedCommunity=function(){
       creatorTab='community';
       var target=(applicationContext&&applicationContext.brandId)||joinTarget;
@@ -1793,6 +1805,20 @@
       if(room)return window.commOpenCell(room.cellId,room.name,'chat');
       window.commClose();
     };
+    function creatorNavHtml(){
+      return '<nav class="creator-app-nav" aria-label="주요 메뉴">'+[['community','◈','커뮤니티'],['campaigns','▦','캠페인'],['collabs','↗','내 협업'],['messages','◌','메시지'],['brand','◯','내 공간']].map(function(t){return '<button class="'+(creatorTab===t[0]?'active':'')+'" '+(creatorTab===t[0]?'aria-current="page"':'')+' onclick="crTab(\''+t[0]+'\')"><span aria-hidden="true">'+t[1]+'</span>'+t[2]+'</button>';}).join('')+'</nav>';
+    }
+    function creatorSettingsHtml(){
+      return '<section class="cc creator-settings"><h2>계정과 언어</h2><dl><dt>로그인 이메일</dt><dd>'+mailEscape(window.__ME.email||'')+'</dd><dt>계정 유형</dt><dd>크리에이터</dd></dl><h3>대화·번역 언어</h3>'+conversationLanguageHtml()+'<p>번역이 준비되지 않으면 원문을 표시합니다. 계약 조건과 수수료는 원문도 함께 확인하세요.</p><button class="btn line" onclick="authLogout()">로그아웃</button></section>';
+    }
+    function creatorMessagesHtml(){
+      if(creatorLoadErrors.community)return creatorLoadNotice('community','메시지');
+      if(!commCells)return '<p role="status">메시지를 불러오는 중입니다…</p>';
+      var dms=commCells.filter(function(c){return c.kind==='dm';});
+      return '<section class="creator-message-list"><h2>브랜드 담당자와의 대화</h2><p>각 브랜드 담당자와 나누는 1:1 대화입니다.</p>'+(dms.length?dms.map(function(c){return '<button class="cc creator-dm-card" onclick="crOpenConversation('+mailEscape(JSON.stringify(c.cellId))+','+mailEscape(JSON.stringify(c.name))+')"><span class="community-avatar">'+mailEscape((c.brandName||'?').slice(0,1))+'</span><span><b>'+mailEscape(c.brandName||c.brandId)+'</b><small>담당자 DM 열기</small></span><span>→</span></button>';}).join(''):'<div class="cc"><h3>아직 시작한 대화가 없어요.</h3><p>참여 중인 브랜드 커뮤니티에서 담당자 DM을 열어 대화를 시작하세요.</p><button class="btn" onclick="crTab(\'community\')">커뮤니티로 이동</button></div>')+'</section>';
+    }
+    window.crOpenConversation=function(id,name){creatorTab='community';history.replaceState(null,'','#community');return window.commOpenCell(id,name);};
+    window.addEventListener('popstate',function(){var t=location.hash.slice(1);if(creatorTabs.indexOf(t)>=0){commRemember();creatorTab=t;render();}});
     function creatorHeadHtml(){
       // 참여(또는 초대) 브랜드가 정체성의 중심 — 로고·이름 + 작은 theprlist.
       var selected=creatorTab==='community'&&commSelected();
@@ -1812,30 +1838,32 @@
           recruitmentCard()+(joinBrandInfo&&!joinBrandInfo.missing?'<p>'+mailEscape(joinBrandInfo.name||'브랜드')+'의 PR 리스트 초대를 받으셨나요? 먼저 로그인해 주세요.</p>':'')+
           '<h2>크리에이터 로그인</h2><p>비밀번호 없이 이메일 링크로 로그인해요.</p>'+
           (magicSent?'<div class="cc"><p>메일함의 로그인 링크를 확인하세요 (15분 유효).</p></div>':'')+
-          '<div class="cc"><input id="crEmail" type="email" placeholder="you@email.com" style="width:100%;box-sizing:border-box;padding:12px;margin-bottom:10px"><button id="crLoginButton" class="btn" onclick="creatorMagic()">로그인 링크 받기</button><p id="crLoginStatus" role="status" aria-live="polite"></p></div>';
+          '<form class="cc" onsubmit="event.preventDefault();creatorMagic()"><label for="crEmail">이메일 주소</label><input id="crEmail" type="email" required autocomplete="email" placeholder="you@email.com" style="width:100%;box-sizing:border-box;padding:12px;margin-bottom:10px"><button id="crLoginButton" type="submit" class="btn">로그인 링크 받기</button><p id="crLoginStatus" role="status" aria-live="polite"></p></form>';
       }else{
         var joinedIds=(myMemberships||[]).map(function(m){return m.brandId;});
-        var tabs=[['brand','브랜드'],['campaigns','캠페인'],['collabs','내 협업'],['community','커뮤니티']];
+        var tabs=[['brand','내 공간'],['campaigns','캠페인'],['collabs','내 협업'],['community','커뮤니티']];
         var tabNav='<div class="crtabs" role="tablist">'+tabs.map(function(t){return '<button role="tab" aria-selected="'+(creatorTab===t[0])+'" class="'+(creatorTab===t[0]?'on':'')+'" onclick="crTab(\''+t[0]+'\')">'+t[1]+'</button>';}).join('')+'</div>';
         var content='';
         if(creatorTab==='brand'){
           content=(joinTarget?brandCardHtml(joinBrandInfo,joinedIds.indexOf(joinTarget)>=0):'')+
-            '<h2>내 브랜드 멤버십</h2>'+membershipNoticeHtml()+
+            '<section class="creator-page-intro"><span>MY SPACE</span><h1>나의 브랜드, 이어지는 협업.</h1><p>참여 중인 브랜드와 담당자, 내 활동을 확인하세요.</p></section><h2>내 브랜드 멤버십</h2>'+membershipNoticeHtml()+
             ((myMemberships&&myMemberships.length)?myMemberships.map(function(m){
               var lg=m.logoUrl?'<img src="'+m.logoUrl.replace(/"/g,'')+'" alt="" style="width:26px;height:26px;border-radius:6px;object-fit:cover;vertical-align:-7px;margin-right:8px">':'';
-              return '<div class="cc">'+lg+'<b>'+mailEscape(m.name||m.brandId)+'</b>'+(m.tagline?' · '+mailEscape(m.tagline):'')+' <span class="cbt" onclick="crDm(\''+esc(m.brandId)+'\')">담당자 DM</span></div>';}).join('')
+              return '<div class="cc">'+lg+'<b>'+mailEscape(m.name||m.brandId)+'</b>'+(m.tagline?' · '+mailEscape(m.tagline):'')+' <button class="btn line" onclick="crDm(\''+esc(m.brandId)+'\')">담당자 DM</button></div>';}).join('')
              :membershipState==='ready'?'<div class="cc"><p>아직 가입한 브랜드가 없어요. 브랜드의 초대 링크로 합류할 수 있습니다.</p></div>':'');
         }else if(creatorTab==='campaigns'){
           content=(joinTarget?brandCardHtml(joinBrandInfo,joinedIds.indexOf(joinTarget)>=0):'')+campHtml();
         }else if(creatorTab==='collabs'){
           content='<p style="font-size:13px;color:var(--ink-2,#566274)">진행 순서: 지원 → 선정 → 조건 확인(수수료 합의) → 샘플 배송 → 콘텐츠·Spark 코드 제출 → 완료. 각 협업 카드에 지금 할 다음 행동이 표시됩니다.</p>'+offersHtml()+
             '<div class="cc"><p style="font-size:12px">대금 지급(정산 송금) 화면은 공개 준비 중입니다.</p></div>';
+        }else if(creatorTab==='settings'){content=creatorSettingsHtml();
+        }else if(creatorTab==='messages'){content=creatorMessagesHtml();
         }else{
           content='<p style="font-size:13px;color:var(--ink-2,#566274)">커뮤니티(라운지)는 브랜드 멤버가 함께 보는 공간, 담당자 DM은 1:1 대화입니다. 메시지는 원문과 함께 내 언어 번역이 표시됩니다.</p>'+commHtml();
         }
-        body=creatorHeadHtml()+'<p style="margin:0 0 4px;font-size:13px;color:var(--ink-2,#566274)">'+mailEscape(window.__ME.email)+'</p>'+conversationLanguageHtml()+tabNav+content;
+        body='<header class="creator-app-header"><a class="creator-wordmark" href="/">theprlist<span>CREATOR CLUB</span></a>'+creatorHeadHtml()+'<button class="creator-account" onclick="crTab(\'settings\')" aria-label="계정과 언어 설정">'+mailEscape((window.__ME.email||'?').slice(0,1).toUpperCase())+'</button></header>'+creatorNavHtml()+'<section class="creator-page creator-page-'+creatorTab+'">'+(creatorTab==='community'?'<details class="creator-language"><summary>대화 언어 · '+mailEscape(langLabel(window.__USER_LANG||'ko'))+'</summary>'+conversationLanguageHtml()+'</details>':'')+content+'</section>';
       }
-      if(!window.__ME)body='<section class="community-workspace community-login"><aside class="community-brands"><b>브랜드 커뮤니티</b><p>로그인 후 참여한 브랜드 방이 표시됩니다.</p></aside><aside class="community-channels"><h2>채널</h2><p># 잡담</p><p># 촬영 팁</p><p>◎ 공지</p><p>◔ 담당자 DM</p></aside><div class="community-login-main">'+body+'</div></section>';
+      if(!window.__ME)body='<section class="community-workspace community-login"><aside class="community-login-intro"><a class="creator-wordmark" href="https://theprlist.net">theprlist<span>CREATOR CLUB</span></a><h1>브랜드와 만나고,<br>나의 콘텐츠로 연결해요.</h1><p>당신과 어울리는 브랜드 커뮤니티에 참여하고, 캠페인부터 콘텐츠 협업까지 한곳에서 이어가세요.</p><ul><li>브랜드별 커뮤니티와 담당자 대화</li><li>캠페인 신청과 참여 조건 확인</li><li>샘플 배송 · 콘텐츠 제출 · 진행 관리</li></ul></aside><div class="community-login-main">'+body+'</div></section>';
       document.getElementById('stage').innerHTML='<main class="live-main">'+body+'<p style="margin-top:34px"><a href="https://theprlist.net">서비스 소개</a> · <a href="https://theprlist.net/privacy">개인정보처리방침</a></p></main>';
     };
     render();loadCreatorData();

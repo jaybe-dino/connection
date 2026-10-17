@@ -83,22 +83,41 @@ def _profile(conn, creator_id: str):
                         (creator_id,)).fetchone()
 
 
-def require_onboarded(conn, creator_id: str, action: str) -> dict:
-    """온보딩(국가·배송국가·필수동의) 게이트.
+def _profile_complete(p) -> bool:
+    """온보딩 실데이터 검사 — 과거 onboarded_at만으로는 통과하지 않는다."""
+    return bool(p and p["onboarded_at"] and p["country"]
+                and (p["ship_countries"] or []) and p["consent_version"])
 
-    기존 회원(이미 멤버십 보유) 은 차단하지 않고 재연결 안내 대상으로
-    통과시킨다 — 신규 사용자만 완료 전 쓰기/신청이 제한된다."""
+
+def _tiktok_verified(p) -> bool:
+    """TikTok 소유 인증 — provider 콜백이 저장한 불변 open_id까지 확인."""
+    return bool(p and p["tiktok_owner_state"] == "connected"
+                and p["tiktok_open_id"])
+
+
+def require_onboarded(conn, creator_id: str, action: str) -> dict:
+    """입장 게이트: 프로필 온보딩(국가·배송국가·필수동의) + TikTok 소유 인증.
+
+    legacy(045 시점 기존 회원)는 차단하지 않고 재연결 안내 대상으로
+    통과시킨다 — 신규는 두 조건을 서버에서 모두 충족해야 가입/신청/쓰기가
+    가능하다. provider 키 미구성 운영에서는 신규가 인증을 완료할 수 없으며
+    이는 외부 승인 대기 blocker로, 수동 확인으로 대체하지 않는다."""
     p = _profile(conn, creator_id)
-    if p and p["onboarded_at"]:
-        return {"onboarded": True, "legacy": False}
     # legacy 자격은 045 마이그레이션 시점에 고정(legacy_creators) — 이후의
     # 신규 가입은 멤버십이 생겨도 legacy가 되지 않는다(가입 1회 우회 차단).
     legacy = conn.execute("SELECT 1 FROM legacy_creators WHERE creator_id=%s",
                           (creator_id,)).fetchone()
     if legacy:
-        return {"onboarded": False, "legacy": True}
-    raise HTTPException(403, f"{action} 전에 프로필 온보딩(국가·배송 가능"
-                             " 국가·필수 동의)을 완료해 주세요")
+        return {"onboarded": _profile_complete(p) and _tiktok_verified(p),
+                "legacy": True}
+    if not _profile_complete(p):
+        raise HTTPException(403, f"{action} 전에 프로필 온보딩(국가·배송 가능"
+                                 " 국가·필수 동의)을 완료해 주세요")
+    if not _tiktok_verified(p):
+        raise HTTPException(403, f"{action} 전에 TikTok 계정 소유 인증을"
+                                 " 완료해 주세요 — 인증 전에는 입장이"
+                                 " 제한됩니다")
+    return {"onboarded": True, "legacy": False}
 
 
 def check_brand_suspended(conn, brand_id: str) -> None:
@@ -136,7 +155,10 @@ def my_profile(authorization: str = Header(default="")) -> dict:
         "tiktokHandle": p["tiktok_handle"] if p else "",
         "consentVersion": CONSENT_VERSION, "consentText": CONSENT_TEXT,
         "consentedVersion": p["consent_version"] if p else "",
-        "onboarded": bool(p and p["onboarded_at"]),
+        "onboarded": _profile_complete(p),
+        # 입장(합류·신청·쓰기) 준비: 신규는 TikTok 소유 인증까지 필요
+        "entryReady": bool(has_membership
+                           or (_profile_complete(p) and _tiktok_verified(p))),
         # 별개 상태 4종 — 서로를 대체하지 않는다
         "states": {
             "emailLogin": True,                       # 매직링크 로그인 자체

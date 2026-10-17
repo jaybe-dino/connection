@@ -78,7 +78,7 @@ def brand_campaigns(brand: str,
     with connect() as conn:
         rows = conn.execute(
             "SELECT c.campaign_id, c.name, c.product, c.status,"
-            " c.affiliate_pct,"
+            " c.affiliate_pct, c.lifecycle, c.countries, c.deadline,"
             " (SELECT count(*) FROM campaign_applications a"
             "   WHERE a.campaign_id=c.campaign_id) AS applicants,"
             " (SELECT count(*) FROM campaign_terms t"
@@ -88,6 +88,8 @@ def brand_campaigns(brand: str,
             " ORDER BY c.campaign_id", (brand,)).fetchall()
     return [{"campaignId": r["campaign_id"], "name": r["name"],
              "product": r["product"], "status": r["status"],
+             "lifecycle": r["lifecycle"], "countries": list(r["countries"] or []),
+             "deadline": r["deadline"].isoformat() if r["deadline"] else None,
              "affiliatePct": (float(r["affiliate_pct"])
                               if r["affiliate_pct"] is not None else None),
              "applicants": r["applicants"], "selected": r["selected"]}
@@ -114,7 +116,7 @@ def applicants(brand: str, campaign_id: str,
     return [{"creatorId": r["creator_id"], "handle": r["handle"],
              "platform": r["platform"], "verified": r["verified"],
              "appliedAt": r["applied_at"].isoformat(),
-             "termsState": r["terms_state"],
+             "status": r["status"], "termsState": r["terms_state"],
              "commissionPct": (float(r["commission_pct"])
                                if r["commission_pct"] is not None else None),
              "agreedCommissionPct": (float(r["agreed_commission_pct"])

@@ -17,6 +17,10 @@ def _creator_token(client, email):
         "country": "KR", "languages": ["ko"], "ship_countries": ["KR"],
         "consent_terms": True, "consent_privacy": True},
         headers={"Authorization": "Bearer " + token})  # 신규 여정: 온보딩 선행
+    from conftest import tiktok_connect
+    from uuid import uuid4
+    tiktok_connect(client, {"Authorization": "Bearer " + token},
+                   "oid-" + uuid4().hex[:12])  # 신규 필수: TikTok 소유 인증
     return token
 
 

@@ -1224,3 +1224,29 @@ Claude의 62f9c1d UI 가이드·개편을 인수한 뒤 직접 검수하여 다�
 검사 근거: 격리 API·청구 258개 통과(기존 5개 브랜드/크리에이터 여정 포함), UI·가입 48개 통과, 4개 앱 빌드 성공. 실제 브라우저로 새 가입 폼의 빈 필드 오류 → 수동 입력 신청 접수, 키보드 비밀번호 찾기/돌아가기/Enter 로그인, 제품 등록·프로필 저장·캠페인 개설·후보 조회, 크리에이터 매직링크 로그인·브랜드 합류·캠페인 지원·담당자 DM 게시·브랜드 수신을 확인했다. 모바일 랜딩 375, 콘솔·크리에이터 390, 관리자 375, 콘솔 대화 768 화면을 직접 확인했다. 외부 메일·실결제·실제 고객 가입은 수행하지 않았다.
 
 운영 계정: 비밀번호 재설정 메일의 실제 수신까지 확인했다. 새 비밀번호 입력과 로그인은 사용자 대기다. Google gmail.readonly는 사용자 승인 후 기존 세 범위를 유지하여 저장 완료 메시지를 확인했다. 이어진 Google Cloud 본인 인증은 사용자 대기다. 공개 OAuth 게시·검증 승인, 신규 브랜드 실메일 왕복은 완료되지 않았다.
+
+## 2026-10-17 — theprlist 실서비스 전환 1차 (claude/theprlist-service)
+
+기준 d3886a9 → c867f9a(서버 핵심) → f0a37a1(독립 검토 3건 수정) → 이번 커밋.
+
+- 서버: 044/045 마이그레이션(스레드·고정·읽음커서·creator_profiles·XP·팀·
+  lifecycle·정지·전환이벤트·legacy_creators·tiktok_open_id·알림 target),
+  routes_service 신규. 입장 게이트 = 프로필 온보딩 + TikTok 소유 인증
+  (connected+open_id, 신규만 — legacy 고정분은 재연결 안내로 통과),
+  /me/join·초대신청·커뮤니티 쓰기·캠페인 신청에 서버 강제. 정지 브랜드는
+  require_brand·커뮤니티·가입·모집 링크에서 일관 차단. XP는 서버 검증
+  이벤트 유니크 1회. 알림은 target(brandId/campaignId/cellId/msgId) 포함.
+- UI: 크리에이터 앱 Slack-v3 Aubergine 셸(탑바 #350D36 · rail #3F0E40 ·
+  사이드 #F9EDFF · active #1264A3 · 버튼 #007A5A, 모바일 4열 하단네비+
+  브랜드 스트립), 채널 미읽음 배지·스레드 패널·공지 고정 표시·채널 검색·
+  알림 패널(딥링크, 강제 이동 없음)·온보딩/TikTok 상태 4종·XP/미션/랭킹.
+  콘솔: 공지 채널 게시·고정/해제, 캠페인 초안→발행(알림)→수정→마감·반려,
+  팀(owner/manager) 화면, 홈 알림 카드. 어드민: 브랜드 정지/재개 + 감사
+  로그 화면(/admin/brands, /admin/audit).
+- 테스트: API pytest 230(코덱스 인수 3개 포함, fake provider OAuth 여정),
+  tests_billing 95(격리 스키마에 실제 DB 주입 — 정지 검사 실쿼리),
+  tests_ui 70, Playwright e2e 기존 7종 + 신규 creator-service.mjs 14
+  단언(데스크톱 1440/모바일 390 스크린샷 tests_e2e/shots/).
+- 미검증/blocker: TikTok provider 키(신규 가입 검수 외부 승인 대기),
+  Shop 자격 실연동, 실제 대량 발송, 아웃리치 최종 계약(초안만), 운영
+  도메인 연결·배포(소유자/Codex), 디자인 픽셀 대조(Codex).

@@ -91,6 +91,13 @@ INBOUND_REPLY, AI_MATCH_*.
 ## 이번 구현에서 하지 않는 것 (pending/blocker)
 
 1. TikTok 실제 OAuth 승인·키 발급(외부) — 상태 모델·화면·콜백 자리만.
+   **신규 회원 입장(합류/초대 신청/쓰기/신청)은 서버에서 프로필 온보딩
+   + TikTok 소유 인증(connected + 불변 open_id)을 모두 요구한다**
+   (legacy_creators 고정분만 재연결 안내로 통과). 따라서 provider 키가
+   없는 운영 환경에서는 **신규 가입 검수 자체가 외부 승인 대기
+   blocker**이며, 수동 확인으로 대체해 통과시키지 않는다. 통합 테스트는
+   로컬 fake provider(tests/conftest.py `tiktok_connect`)로 OAuth 성공
+   여정을 재현한다.
 2. TikTok Shop 어필리에이트 자격 실연동(외부 계약) — 별개 상태 표시만.
 3. 실제 대량 이메일 발송·3만 명 처리 검증(금지 유지).
 4. 외부 아웃리치 시스템과의 최종 계약 확정(협의 중) —

@@ -45,12 +45,19 @@ def box(client):
             "cell_b": f"cell-{b}-main", "sfx": sfx}
 
 
-def _onboard(client, ch, country="KR", ships=("KR",)):
+def _onboard(client, ch, country="KR", ships=("KR",), tiktok=True):
+    """신규 여정: 프로필 온보딩(+기본으로 fake provider TikTok 소유 인증)."""
     r = client.put("/me/profile", json={
         "country": country, "languages": ["ko"],
         "ship_countries": list(ships), "consent_terms": True,
         "consent_privacy": True}, headers=ch)
     assert r.status_code == 200, r.text
+    if tiktok and client.get("/me/tiktok",
+                             headers=ch).json()["ownerState"] != "connected":
+        from uuid import uuid4
+
+        from conftest import tiktok_connect
+        tiktok_connect(client, ch, "oid-" + uuid4().hex[:12])
     return r.json()
 
 
@@ -129,6 +136,33 @@ def test_onboarding_gate_blocks_new_join_and_fixes_legacy(client, box):
                        headers=ch).status_code == 200
     with connect() as c:
         assert require_onboarded(c, cid, "테스트")["onboarded"] is True
+
+
+def test_profile_alone_cannot_enter_tiktok_required(client, box):
+    """국가·배송·동의만 저장한 신규(tiktokOwner=none)는 여전히 합류 403."""
+    ch = _h(_creator(client, f"ttgate-{box['sfx']}@ex.com"))
+    _onboard(client, ch, tiktok=False)
+    p = client.get("/me/profile", headers=ch).json()
+    assert p["onboarded"] is True and p["entryReady"] is False
+    r = client.post("/me/join", json={"brand_id": box["a"]}, headers=ch)
+    assert r.status_code == 403 and "TikTok" in r.json()["detail"]
+    # fake provider로 소유 인증을 마치면 입장 가능
+    _onboard(client, ch)
+    assert client.get("/me/profile", headers=ch).json()["entryReady"] is True
+    assert client.post("/me/join", json={"brand_id": box["a"]},
+                       headers=ch).status_code == 200
+
+
+def test_stale_onboarded_at_does_not_pass_gate(client, box):
+    """프로필 실데이터가 비면 과거 onboarded_at만으로 통과하지 않는다."""
+    ch = _h(_creator(client, f"stale-{box['sfx']}@ex.com"))
+    _onboard(client, ch)
+    cid = client.get("/me/profile", headers=ch).json()["creatorId"]
+    with connect() as c:
+        c.execute("UPDATE creator_profiles SET country=NULL WHERE"
+                  " creator_id=%s", (cid,))
+    r = client.post("/me/join", json={"brand_id": box["b"]}, headers=ch)
+    assert r.status_code == 403  # onboarded_at은 있어도 실데이터 불충족
 
 
 # ── TikTok: 성공 가장 금지·정직한 미연결 표시 ────────────────────

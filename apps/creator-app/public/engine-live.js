@@ -1253,18 +1253,89 @@
       .then(function(){prodNotice='협업 완료 처리됐어요.';window.collabShow(cid);})
       .catch(function(){toast('완료 불가','콘텐츠 제출 이후에 완료할 수 있어요.');});
   };
+  var campBusy=false, campEditOpen=null;
+  function campLifecyclePill(lc){return '<span class="pill'+(lc==='published'?' ok':lc==='draft'?' warn':'')+'">'+({draft:'초안(비노출)',published:'발행됨',closed:'마감'}[lc]||mailEscape(lc||'발행됨'))+'</span>';}
+  window.campCreate=function(){
+    if(campBusy)return;
+    function v(id){var el=document.getElementById(id);return el?el.value.trim():'';}
+    if(!v('campName')||v('campName').length<2)return toast('캠페인 이름','이름을 2자 이상 입력해 주세요.');
+    var countries=v('campCountries').split(',').map(function(x){return x.trim().toUpperCase();}).filter(Boolean);
+    campBusy=true;render();
+    req('POST','/brands/'+BRAND()+'/campaigns',{name:v('campName'),product:v('campProduct'),usp:v('campUsp'),reward_type:v('campReward')||'affiliate',affiliate_pct:parseFloat(v('campPct'))||null,deadline:v('campDeadline'),countries:countries})
+      .then(function(r){prodNotice='캠페인 초안이 저장됐어요('+r.campaignId+'). 내용 확인 후 발행하면 멤버에게 알림이 갑니다.';loadProducts();})
+      .catch(function(e){toast('초안 저장 실패',mailEscape((e&&e.message)||'입력을 확인해 주세요.'));})
+      .finally(function(){campBusy=false;render();});
+  };
+  window.campPublish=function(cid){
+    if(campBusy)return;campBusy=true;render();
+    req('POST','/brands/'+BRAND()+'/campaigns/'+encodeURIComponent(cid)+'/publish',{})
+      .then(function(r){prodNotice='캠페인 발행 완료 — 멤버 '+(r.notified||0)+'명에게 알림(배지+카드)을 보냈어요. 강제 이동은 없습니다.';loadProducts();})
+      .catch(function(e){toast('발행 실패',mailEscape((e&&e.message)||'초안 상태에서만 발행할 수 있어요.'));})
+      .finally(function(){campBusy=false;render();});
+  };
+  window.campClose=function(cid){
+    if(campBusy)return;campBusy=true;render();
+    req('POST','/brands/'+BRAND()+'/campaigns/'+encodeURIComponent(cid)+'/close',{})
+      .then(function(){prodNotice='캠페인을 마감했어요 — 신규 신청이 차단됩니다.';collabOpen=null;loadProducts();})
+      .catch(function(e){toast('마감 실패',mailEscape((e&&e.message)||'잠시 후 다시.'));})
+      .finally(function(){campBusy=false;render();});
+  };
+  window.campEditToggle=function(cid){campEditOpen=campEditOpen===cid?null:cid;render();};
+  window.campEditSave=function(cid){
+    if(campBusy)return;
+    function v(id){var el=document.getElementById(id);return el?el.value.trim():'';}
+    var body={};
+    if(v('ce_name_'+cid))body.name=v('ce_name_'+cid);
+    if(v('ce_usp_'+cid))body.usp=v('ce_usp_'+cid);
+    if(v('ce_deadline_'+cid))body.deadline=v('ce_deadline_'+cid);
+    var ctry=v('ce_countries_'+cid);
+    if(ctry!=='')body.countries=ctry.split(',').map(function(x){return x.trim().toUpperCase();}).filter(Boolean);
+    if(!Object.keys(body).length)return toast('수정','변경할 항목을 입력해 주세요.');
+    campBusy=true;render();
+    req('PATCH','/brands/'+BRAND()+'/campaigns/'+encodeURIComponent(cid),body)
+      .then(function(){prodNotice='캠페인 수정 저장 완료.';campEditOpen=null;loadProducts();})
+      .catch(function(e){toast('수정 실패',mailEscape((e&&e.message)||'마감된 캠페인은 수정할 수 없어요.'));})
+      .finally(function(){campBusy=false;render();});
+  };
+  window.collabReject=function(cid,creatorId){
+    if(campBusy)return;
+    var reason=((document.getElementById('rej_'+creatorId)||{}).value||'').trim();
+    campBusy=true;render();
+    req('POST','/brands/'+BRAND()+'/campaigns/'+encodeURIComponent(cid)+'/applicants/'+encodeURIComponent(creatorId)+'/reject',{reason:reason})
+      .then(function(){prodNotice='지원을 반려했어요'+(reason?' — 사유 기록됨.':'.');window.collabShow(cid);})
+      .catch(function(e){toast('반려 실패',mailEscape((e&&e.message)||'이미 선정/반려된 지원일 수 있어요.'));})
+      .finally(function(){campBusy=false;render();});
+  };
+  function campDraftFormHtml(){
+    return '<div class="cc"><h2>새 캠페인 초안</h2><p style="font-size:13px">초안은 크리에이터에게 보이지 않아요 — 발행하면 멤버 전원에게 알림이 갑니다.</p>'
+      +'<div class="live-grid"><label>캠페인 이름<input id="campName" maxlength="120" placeholder="신제품 앰배서더 모집"></label><label>연결 제품(표기용)<input id="campProduct" maxlength="200" placeholder="세럼 30ml"></label></div>'
+      +'<label>소개 · 조건 요약<input id="campUsp" maxlength="500" placeholder="비건 인증 세럼 — 사용 2주 후기 영상"></label>'
+      +'<div class="live-grid"><label>보상 유형<select id="campReward"><option value="affiliate">어필리에이트 커미션</option><option value="gifted">제품 제공(기프트)</option><option value="paid">고정 보상</option></select></label><label>커미션 % (어필리에이트)<input id="campPct" type="number" min="0" max="90" step="0.5" placeholder="15"></label></div>'
+      +'<div class="live-grid"><label>신청 마감일 (YYYY-MM-DD)<input id="campDeadline" placeholder="2026-11-30"></label><label>대상 국가 (ISO 2자리, 쉼표)<input id="campCountries" placeholder="KR, TH — 비우면 전체"></label></div>'
+      +'<button class="btn" onclick="campCreate()" '+(campBusy?'disabled':'')+'>'+(campBusy?'저장 중…':'초안 저장')+'</button></div>';
+  }
   function collabCard(){
-    if(!brandCampaigns||!brandCampaigns.length)return '';
-    var h='<div class="cc"><h2>캠페인 지원자 · 협업 진행</h2>';
+    var h=campDraftFormHtml();
+    if(!brandCampaigns||!brandCampaigns.length)return h;
+    h+='<div class="cc"><h2>캠페인 지원자 · 협업 진행</h2>';
     brandCampaigns.forEach(function(c){
-      h+='<p><b>'+mailEscape(c.name)+'</b> <span style="font-size:12px">'+mailEscape(c.campaignId)+' · 지원 '+c.applicants+' · 선정 '+c.selected+(c.affiliatePct!=null?' · 커미션 '+c.affiliatePct+'%':'')+'</span> <span class="cbt line" onclick="collabShow(\''+c.campaignId+'\')">지원자 보기</span></p>';
+      h+='<p>'+campLifecyclePill(c.lifecycle)+' <b>'+mailEscape(c.name)+'</b> <span style="font-size:12px">'+mailEscape(c.campaignId)+' · 지원 '+c.applicants+' · 선정 '+c.selected+(c.affiliatePct!=null?' · 커미션 '+c.affiliatePct+'%':'')+(c.deadline?' · 마감 '+mailEscape(c.deadline):'')+((c.countries||[]).length?' · 대상 '+mailEscape(c.countries.join(', ')):'')+'</span> '
+        +(c.lifecycle==='draft'?'<span class="cbt" onclick="campPublish(\''+c.campaignId+'\')" '+(campBusy?'disabled':'')+'>발행</span> ':'')
+        +(c.lifecycle!=='closed'?'<span class="cbt line" onclick="campEditToggle(\''+c.campaignId+'\')">수정</span> <span class="cbt no" onclick="campClose(\''+c.campaignId+'\')" '+(campBusy?'disabled':'')+'>마감</span> ':'')
+        +'<span class="cbt line" onclick="collabShow(\''+c.campaignId+'\')">지원자 보기</span></p>';
+      if(campEditOpen===c.campaignId&&c.lifecycle!=='closed'){
+        h+='<div style="border:1px dashed #c9c4b8;border-radius:8px;padding:12px;margin:6px 0"><div class="live-grid"><label>이름<input id="ce_name_'+c.campaignId+'" value="'+mailEscape(c.name)+'"></label><label>마감일<input id="ce_deadline_'+c.campaignId+'" value="'+mailEscape(c.deadline||'')+'" placeholder="YYYY-MM-DD"></label></div><div class="live-grid"><label>소개·조건<input id="ce_usp_'+c.campaignId+'" placeholder="변경 시에만 입력"></label><label>대상 국가(쉼표)<input id="ce_countries_'+c.campaignId+'" value="'+mailEscape((c.countries||[]).join(', '))+'"></label></div><button class="btn" onclick="campEditSave(\''+c.campaignId+'\')" '+(campBusy?'disabled':'')+'>수정 저장</button></div>';
+      }
       if(collabOpen&&collabOpen.campaignId===c.campaignId){
         if(!collabOpen.rows.length)h+='<p style="font-size:13px">아직 지원자가 없어요.</p>';
         collabOpen.rows.forEach(function(a){
           var st=a.termsState||'미선정';
           h+='<div style="border-top:1px solid #eee;padding:10px 0;margin-top:6px"><b>@'+mailEscape(a.handle)+'</b> <span style="font-size:12px">'+(a.verified?'검증됨':'미검증')+' · 상태: '+mailEscape(st)+(a.tiktokHandle?' · 핸들 '+mailEscape(a.tiktokHandle):'')+'</span>';
-          if(!a.termsState){
-            h+='<div style="display:flex;gap:6px;margin-top:6px"><input id="sel_'+a.creatorId+'" placeholder="제안 수수료 % (소수 가능)" style="flex:1;padding:8px"><span class="cbt" onclick="collabSelect(\''+c.campaignId+'\',\''+a.creatorId+'\')">선정 + 수수료 제안</span></div>';
+          if(!a.termsState&&a.status==='rejected'){
+            h+='<p style="font-size:12px;margin:6px 0;color:#a2372b">반려된 지원입니다.</p>';
+          }else if(!a.termsState){
+            h+='<div style="display:flex;gap:6px;margin-top:6px"><input id="sel_'+a.creatorId+'" placeholder="제안 수수료 % (소수 가능)" style="flex:1;padding:8px"><span class="cbt" onclick="collabSelect(\''+c.campaignId+'\',\''+a.creatorId+'\')">선정 + 수수료 제안</span></div>'
+              +'<div style="display:flex;gap:6px;margin:4px 0"><input id="rej_'+a.creatorId+'" placeholder="반려 사유 (선택)" style="flex:1;padding:8px"><span class="cbt no" onclick="collabReject(\''+c.campaignId+'\',\''+a.creatorId+'\')">반려</span></div>';
           }else if(a.termsState==='selected'){
             h+='<p style="font-size:12px;margin:6px 0">제안 수수료 '+(a.commissionPct!=null?a.commissionPct+'%':'-')+' — 크리에이터 합의 대기 중.</p>';
           }else if(a.termsState==='terms_agreed'||a.termsState==='sample_shipped'){
@@ -1441,11 +1512,25 @@
     }catch(e){if(version===brandConversationVersion)brandConversationError='번역 재시도 실패: '+e.message;}
     finally{delete translationRetryBusy[msgId];if(version===brandConversationVersion)render();}
   };
+  var brandComposeChannel='chat';
+  window.brandComposeChannelSet=function(v){brandComposeChannel=['chat','tips','notice'].indexOf(v)>=0?v:'chat';render();};
+  window.brandPinMsg=async function(msgId,pin){
+    if(brandConversationBusy||!brandConversation)return;
+    var version=brandConversationVersion,owner=BRAND(),token=jwtGet(),cell=brandConversation.cell;
+    var safeId=String(msgId).replace(/[^0-9]/g,'');if(!safeId)return;
+    brandConversationBusy=true;render();
+    try{await req('POST','/community/cells/'+encodeURIComponent(cell.cellId)+'/messages/'+safeId+'/'+(pin?'pin':'unpin'),{});
+      var rows=await req('GET','/community/cells/'+encodeURIComponent(cell.cellId)+'/messages');
+      if(version===brandConversationVersion&&owner===BRAND()&&token===jwtGet())brandConversation.messages=rows;
+    }catch(e){if(version===brandConversationVersion)brandConversationError=(e&&e.message)||'고정 처리에 실패했습니다';}
+    finally{if(version===brandConversationVersion){brandConversationBusy=false;render();}}
+  };
   window.brandCommunitySend=async function(){
     if(brandConversationBusy||!brandConversation||!brandConversationDraft.trim())return;
     var version=brandConversationVersion,owner=BRAND(),token=jwtGet(),cell=brandConversation.cell;
+    var channel=cell.kind==='dm'?'chat':brandComposeChannel;
     brandConversationBusy=true;brandConversationError='';render();
-    try{await req('POST','/community/cells/'+encodeURIComponent(cell.cellId)+'/messages',{text:brandConversationDraft.trim(),locale:'ko'});
+    try{await req('POST','/community/cells/'+encodeURIComponent(cell.cellId)+'/messages',{text:brandConversationDraft.trim(),locale:'ko',channel:channel});
       if(version!==brandConversationVersion||owner!==BRAND()||token!==jwtGet())return;
       brandConversationDraft='';var rows=await req('GET','/community/cells/'+encodeURIComponent(cell.cellId)+'/messages');
       if(version===brandConversationVersion&&owner===BRAND()&&token===jwtGet())brandConversation.messages=rows;
@@ -1463,11 +1548,51 @@
           var safeId=String(m.msgId).replace(/[^0-9]/g,'');
           retry='<div style="margin-top:4px"><small style="color:#8a6d3b">번역 실패 — 원문은 보존되어 있습니다.</small> <button class="btn line" style="font-size:11px;padding:2px 8px" onclick="brandTranslationRetry(\''+safeId+'\')" '+(busy?'disabled':'')+'>'+(busy?'재시도 중…':'번역 재시도')+'</button></div>';}
         else if(m.translationState==='pending'){retry='<div style="margin-top:4px"><small style="color:#8a6d3b">번역 준비 중 — 자동 재시도 대기</small></div>';}
-        return '<article class="cc"><small>'+mailEscape(m.author)+' · '+mailEscape(m.at)+'</small><p>'+mailEscape(translated||m.original)+'</p>'+(translated?'<small>원문 ('+mailEscape(m.originalLocale)+'): '+mailEscape(m.original)+'</small>':'')+retry+'</article>';}).join('')||'<p>아직 메시지가 없습니다.</p>';
-      h+='<label>담당자 답장<textarea maxlength="2000" oninput="brandCommunityDraft(this.value)" '+(brandConversationBusy?'disabled':'')+'>'+mailEscape(brandConversationDraft)+'</textarea></label><button class="btn" onclick="brandCommunitySend()" '+(brandConversationBusy?'disabled':'')+'>'+(brandConversationBusy?'전송 중…':'대화에 보내기')+'</button>';
+        var isLounge=brandConversation.cell.kind!=='dm';
+        var safeId=String(m.msgId==null?'':m.msgId).replace(/[^0-9]/g,'');
+        var chTag=m.channel&&m.channel!=='chat'?'<span class="pill'+(m.channel==='notice'?' warn':'')+'" style="margin-right:6px">'+({tips:'촬영 팁',notice:'공지'}[m.channel]||mailEscape(m.channel))+'</span>':'';
+        var pinned=m.pinnedAt?'<span style="font-size:11px;color:#8a6d3b;font-weight:700">📌 고정됨</span> ':'';
+        var pinBtn=isLounge&&safeId?' <button class="btn line" style="font-size:11px;padding:2px 8px" onclick="brandPinMsg(\''+safeId+'\','+(m.pinnedAt?'false':'true')+')" '+(brandConversationBusy?'disabled':'')+'>'+(m.pinnedAt?'고정 해제':'공지 고정')+'</button>':'';
+        var replies=m.replyCount?'<small style="color:#5a6560"> · 답글 '+m.replyCount+'개</small>':'';
+        return '<article class="cc"'+(m.pinnedAt?' style="border-color:#d9b96a;background:#fffaf0"':'')+'><small>'+chTag+pinned+mailEscape(m.author)+' · '+mailEscape(m.at)+replies+pinBtn+'</small><p>'+mailEscape(translated||m.original)+'</p>'+(translated?'<small>원문 ('+mailEscape(m.originalLocale)+'): '+mailEscape(m.original)+'</small>':'')+retry+'</article>';}).join('')||'<p>아직 메시지가 없습니다.</p>';
+      var lounge=brandConversation.cell.kind!=='dm';
+      h+=(lounge?'<label>게시 채널 <select onchange="brandComposeChannelSet(this.value)" '+(brandConversationBusy?'disabled':'')+' style="max-width:220px">'+[['chat','# 잡담'],['tips','# 촬영 팁'],['notice','◎ 공지 — 멤버 전원 알림']].map(function(c){return '<option value="'+c[0]+'" '+(brandComposeChannel===c[0]?'selected':'')+'>'+c[1]+'</option>';}).join('')+'</select></label>'+(brandComposeChannel==='notice'?'<p style="font-size:12px;color:#8a6d3b">공지를 게시하면 이 브랜드 멤버 전원에게 알림(배지+카드)이 갑니다. 현재 대화 강제 이동은 없습니다.</p>':''):'');
+      h+='<label>'+(lounge?(brandComposeChannel==='notice'?'공지 내용':'채널 메시지'):'담당자 답장')+'<textarea maxlength="2000" oninput="brandCommunityDraft(this.value)" '+(brandConversationBusy?'disabled':'')+'>'+mailEscape(brandConversationDraft)+'</textarea></label><button class="btn" onclick="brandCommunitySend()" '+(brandConversationBusy?'disabled':'')+'>'+(brandConversationBusy?'전송 중…':lounge&&brandComposeChannel==='notice'?'공지 게시':'대화에 보내기')+'</button>';
     }return h;
   }
 
+  /* ── 팀 권한(owner/manager)·콘솔 알림 ── */
+  var brandTeam=null, brandTeamError='', brandTeamBusy=false, brandNotifs=null;
+  window.loadTeam=function(){
+    var b=BRAND();if(!b)return;
+    brandTeamError='';
+    req('GET','/brands/'+b+'/team').then(function(r){if(BRAND()!==b)return;brandTeam=r;render();})
+      .catch(function(e){if(BRAND()!==b)return;brandTeam=[];brandTeamError=(e&&e.message)||'팀 목록을 불러오지 못했습니다';render();});
+  };
+  window.teamSetRole=function(userId,role){
+    if(brandTeamBusy)return;brandTeamBusy=true;render();
+    req('POST','/brands/'+BRAND()+'/team/role',{user_id:userId,role:role})
+      .then(function(){toast('역할 변경','저장됐어요.');window.loadTeam();})
+      .catch(function(e){toast('변경 불가',mailEscape((e&&e.message)||'역할 변경은 소유자(owner)만 할 수 있어요.'));})
+      .finally(function(){brandTeamBusy=false;render();});
+  };
+  function teamCard(){
+    if(brandTeam===null){window.loadTeam();return '<h1>팀</h1><p role="status">팀 목록을 불러오는 중…</p>';}
+    var h='<h1>팀</h1><p>같은 브랜드를 함께 운영하는 계정과 역할입니다. 역할 변경은 소유자(owner)만 저장할 수 있어요(서버에서 검증).</p>';
+    if(brandTeamError)h+='<p role="alert">'+mailEscape(brandTeamError)+' <button class="btn line" onclick="loadTeam()">다시 시도</button></p>';
+    h+=brandTeam.map(function(m){
+      return '<div class="cc"><b>'+mailEscape(m.email)+'</b> <span class="pill'+(m.role==='owner'?' ok':'')+'">'+(m.role==='owner'?'소유자':'매니저')+'</span> <span style="font-size:12px;color:#5a6560">'+mailEscape((m.joinedAt||'').slice(0,10))+' 합류 · '+mailEscape(m.state||'')+'</span>'
+        +' <span class="cbt line" onclick="teamSetRole(\''+String(m.userId).replace(/[^0-9a-f-]/g,'')+'\',\''+(m.role==='owner'?'manager':'owner')+'\')" '+(brandTeamBusy?'disabled':'')+'>'+(m.role==='owner'?'매니저로 변경':'소유자로 변경')+'</span></div>';
+    }).join('')||'<p>표시할 팀원이 없습니다.</p>';
+    h+='<div class="cc"><p style="font-size:13px">팀원 초대는 운영팀 승인·초대 메일로 진행됩니다. 전사 대량 발송 권한은 어떤 역할에도 부여되지 않아요 — 중앙 모집 발송은 운영 워크스페이스에서만 합니다.</p></div>';
+    return h;
+  }
+  function brandNotifsCard(){
+    if(!window.__ME)return '';
+    if(brandNotifs===null){brandNotifs=false;req('GET','/me/notifications?limit=10').then(function(n){brandNotifs=n;render();}).catch(function(){brandNotifs={items:[],unreadCount:0};});return '';}
+    if(!brandNotifs||!(brandNotifs.items||[]).length)return '';
+    return '<div class="cc"><h2>알림'+(brandNotifs.unreadCount?' · 안 읽음 '+brandNotifs.unreadCount:'')+'</h2>'+brandNotifs.items.slice(0,5).map(function(i){return '<p style="font-size:13px"><b>'+mailEscape(i.title)+'</b>'+(i.body?' — '+mailEscape(i.body):'')+' <small>'+mailEscape((i.at||'').slice(0,16).replace('T',' '))+'</small></p>';}).join('')+'</div>';
+  }
   var originalRender=window.render;
   /* 관리자 브랜드 선택 — 기존 관리자 권한 범위의 조회(/community/my-cells,
      admin은 전체 셀)만 사용해 브랜드 목록을 만든다. 신규 권한 없음. */
@@ -1516,7 +1641,7 @@
           '<span>'+mailEscape(bid.name||BRAND())+'</span>'+
           (window.__ME.kind==='admin'?'<small>관리자</small>':'')+'</span>';
       }
-      var nav='<header class="live-head"><a href="https://theprlist.net">theprlist<span> / brand console</span></a>'+chip+'<nav>'+[['home','홈'],['learn','브랜드 학습'],['products','제품·캠페인'],['community','커뮤니티·DM'],['mail','아웃리치·인박스'],['billing','월별 청구']].map(function(x){return '<button class="btn '+(livePage===x[0]?'':'line')+'" onclick="liveNav(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+(window.__ME&&window.__ME.kind==='admin'&&BRAND()?'<span style="font-size:12px;color:var(--ink-2,#566274)">관리자 · <b>'+mailEscape(BRAND())+'</b> <button class="btn line" onclick="adminSwitchBrand()">전환</button></span>':'')+'</nav></header>';
+      var nav='<header class="live-head"><a href="https://theprlist.net">theprlist<span> / brand console</span></a>'+chip+'<nav>'+[['home','홈'],['learn','브랜드 학습'],['products','제품·캠페인'],['community','커뮤니티·DM'],['mail','아웃리치·인박스'],['team','팀'],['billing','월별 청구']].map(function(x){return '<button class="btn '+(livePage===x[0]?'':'line')+'" onclick="liveNav(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+(window.__ME&&window.__ME.kind==='admin'&&BRAND()?'<span style="font-size:12px;color:var(--ink-2,#566274)">관리자 · <b>'+mailEscape(BRAND())+'</b> <button class="btn line" onclick="adminSwitchBrand()">전환</button></span>':'')+'</nav></header>';
       var preserved={};['outRecipients','outSubject','outBody','outBrief','outProduct','outSender','outTarget','bulkRows','bulkKey','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)preserved[id]=el.value;});
       var body='';
       if(!window.__ME){body='<h1>브랜드와 크리에이터,<br>함께 시작할 준비.</h1><p>승인된 브랜드 계정으로 로그인해 주세요.</p><button class="btn" onclick="document.getElementById(\'authChip\').click()">로그인</button> <a class="btn line" href="https://theprlist.net/signup">가입 신청</a>';}
@@ -1525,15 +1650,16 @@
       else if(livePage==='learn')body=liveLearningCard();
       else if(livePage==='products')body=productsCard();
       else if(livePage==='community')body=brandCommunityCard();
+      else if(livePage==='team')body=teamCard();
       else if(livePage==='mail')body='<h1>브랜드 메일링</h1>'+identityCard()+gmailCard()+outreachCard()+inboxCard();
       else if(livePage==='billing')body='<h1>월별 청구</h1><p>검증 가입 1명당 5,000원 · 부가세 포함 · 월 단위 합산</p><p>현재는 월별 합산 금액을 계산서(수기 청구) 방식으로 안내하는 운영입니다 — <b>카드 등록은 필수가 아닙니다.</b> 계산서 발행 여부·시점은 별도 이메일로 안내됩니다(이 화면은 발행 여부를 표시하지 않습니다).</p><p>카드 결제 최소금액은 1,000원입니다. 미만 청구서도 보관되며 자동 결제되지 않습니다.</p><button class="btn line" onclick="refreshBilling()">새로고침</button>'+window.billingCardHtml()+window.billingInvoicesHtml();
       else if(livePage==='status')body='<h1>서비스 상태</h1><div class="cc"><h2>이용 가능한 흐름</h2><p>브랜드 신청 → 운영자 승인 → 계정 생성 → 홈페이지 분석·프로필 저장 → 제품별 후보 추천 → Gmail 연결 → 아웃리치 초안 검토·발송 → 답장 수신(인박스 동기화) → 크리에이터 커뮤니티·캠페인 협업 → 월별 청구 확인</p></div><div class="cc"><h2>준비 중</h2><p>틱톡·인스타 계정 자동 검증과 자동 후보 수집(현재는 운영자 등록 후보 기준), 크리에이터 대금 지급 화면은 아직 공개 운영 대상이 아닙니다.</p><p>가입 과금은 실제 검증 가입이 기록될 때만 발생합니다.</p></div>';
-      else body='<p class="live-eyebrow">YOUR BRAND, IN GOOD COMPANY</p><h1>브랜드의 다음 연결을<br>만들어 보세요.</h1><p>'+(window.__ME.kind==='admin'?'관리자 ':'')+mailEscape(window.__ME.email)+' · 브랜드 <b>'+mailEscape(BRAND()||'')+'</b>'+(window.__ME.kind==='admin'?' <span class="cbt no" onclick="adminSwitchBrand()">브랜드 전환</span>':'')+'</p><div class="live-grid"><button class="cc" onclick="liveNav(\'learn\')"><h2>01. 브랜드 학습</h2><p>홈페이지 분석과 근거를 확인하고 저장하세요.</p></button><button class="cc" onclick="liveNav(\'mail\')"><h2>02. 메일링</h2><p>Gmail을 연결하고 초안을 검토한 뒤 발송하세요.</p></button></div><h2>theprlist에게 물어보세요</h2><p>저장된 브랜드 프로필을 참고해 답합니다. 대화로 메일을 발송하거나 결제를 실행하지 않습니다.</p>'+chatMessages.map(function(m){return '<div class="cc"><b>'+(m.role==='user'?'나':'theprlist')+'</b><p>'+mailEscape(m.content)+'</p></div>';}).join('')+'<form onsubmit="event.preventDefault();liveChat()"><input id="liveQuestion" maxlength="2000" placeholder="우리 브랜드를 소개하는 문구를 제안해 줘" required '+(chatBusy?'disabled':'')+'><button class="btn" '+(chatBusy?'disabled':'')+'>'+(chatBusy?'답변 중…':'질문하기')+'</button></form>';
+      else body='<p class="live-eyebrow">YOUR BRAND, IN GOOD COMPANY</p><h1>브랜드의 다음 연결을<br>만들어 보세요.</h1><p>'+(window.__ME.kind==='admin'?'관리자 ':'')+mailEscape(window.__ME.email)+' · 브랜드 <b>'+mailEscape(BRAND()||'')+'</b>'+(window.__ME.kind==='admin'?' <span class="cbt no" onclick="adminSwitchBrand()">브랜드 전환</span>':'')+'</p>'+brandNotifsCard()+'<div class="live-grid"><button class="cc" onclick="liveNav(\'learn\')"><h2>01. 브랜드 학습</h2><p>홈페이지 분석과 근거를 확인하고 저장하세요.</p></button><button class="cc" onclick="liveNav(\'mail\')"><h2>02. 메일링</h2><p>Gmail을 연결하고 초안을 검토한 뒤 발송하세요.</p></button></div><h2>theprlist에게 물어보세요</h2><p>저장된 브랜드 프로필을 참고해 답합니다. 대화로 메일을 발송하거나 결제를 실행하지 않습니다.</p>'+chatMessages.map(function(m){return '<div class="cc"><b>'+(m.role==='user'?'나':'theprlist')+'</b><p>'+mailEscape(m.content)+'</p></div>';}).join('')+'<form onsubmit="event.preventDefault();liveChat()"><input id="liveQuestion" maxlength="2000" placeholder="우리 브랜드를 소개하는 문구를 제안해 줘" required '+(chatBusy?'disabled':'')+'><button class="btn" '+(chatBusy?'disabled':'')+'>'+(chatBusy?'답변 중…':'질문하기')+'</button></form>';
       stage.innerHTML=nav+'<main class="live-main">'+body+'</main><footer class="live-footer"><a href="https://theprlist.net/privacy">개인정보처리방침</a> · <a href="https://theprlist.net/terms">이용약관</a> · <a href="mailto:chief@dinostudio.kr">문의</a></footer>';
       Object.keys(preserved).forEach(function(id){var el=document.getElementById(id);if(el)el.value=preserved[id];});
     };
     var previousReload=reloadBrand;
-    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','outSender','outTarget','bulkRows','bulkKey','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';bulkMappings=[];bulkInvalidate();outreachTargets=[];outreachTargetProducts=[];outreachTargetBrand='';outreachTargetVersion++;productsData=null;productsLoadError='';prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;candSelected={};prodEditOpen={};brandCampaigns=null;collabOpen=null;window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;inboxShowAll=false;previousReload();if(window.__ME&&BRAND()){loadProfile();loadProducts();loadIdentity();}};
+    reloadBrand=function(){['outRecipients','outSubject','outBody','outBrief','outProduct','outSender','outTarget','bulkRows','bulkKey','liveQuestion'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});brandConversationVersion++;brandCells=[];brandConversation=null;brandConversationError='';brandConversationBusy=false;brandConversationDraft='';gmailSyncNotice='';bulkMappings=[];bulkInvalidate();outreachTargets=[];outreachTargetProducts=[];outreachTargetBrand='';outreachTargetVersion++;productsData=null;productsLoadError='';prodNotice='';prodCandidates=null;candidateCountry='';candidateVersion++;candSelected={};prodEditOpen={};brandCampaigns=null;collabOpen=null;brandTeam=null;brandTeamError='';brandNotifs=null;campEditOpen=null;brandComposeChannel='chat';window.__BID=null;profileData=null;profileDraft=null;profileNotice='';profileUrl='';profileAnswers={};chatMessages=[];window.__GMAIL=null;window.__INBOX=null;inboxShowAll=false;previousReload();if(window.__ME&&BRAND()){loadProfile();loadProducts();loadIdentity();}};
     // 시각 정본은 live-theme.css(docs/UI_DESIGN_GUIDE.md) — 여기서는 표면
     // 활성 클래스만 부여한다.
     document.body.classList.add('live-surface');
@@ -1696,6 +1822,7 @@
       return h;
     }
     var commChannel='chat', commVersion=0, commLoading=false, commError='', commSending=false, commDrafts={};
+    var commUnread={}, commThread=null, commThreadBusy=false, commSearchQ='', commSearchRes=null, commSearchBusy=false;
     function commKey(){return commOpen?commOpen.cellId+':'+commChannel:'';}
     function commRemember(){var el=document.getElementById('commText');if(el&&el.getAttribute('data-draft-key'))commDrafts[el.getAttribute('data-draft-key')]=el.value;}
     function commSelected(){return (commCells||[]).find(function(c){return commOpen&&c.cellId===commOpen.cellId;});}
@@ -1705,10 +1832,14 @@
       var cell=(commCells||[]).find(function(c){return c.cellId===id;});
       commChannel=cell&&cell.kind==='dm'?'chat':(['chat','tips','notice'].indexOf(channel)>=0?channel:'chat');
       var version=++commVersion,token=jwtGet(),selectedChannel=commChannel;
-      commOpen={cellId:id,name:name,msgs:[]};commLoading=true;commError='';render();
+      commOpen={cellId:id,name:name,msgs:[]};commLoading=true;commError='';commThread=null;commSearchRes=null;render();
       return req('GET','/community/cells/'+encodeURIComponent(id)+'/messages?channel='+selectedChannel+'&limit=200').then(function(m){
         if(version!==commVersion||token!==jwtGet())return;
-        commOpen.msgs=m;commLoading=false;render();
+        commOpen.msgs=m;commLoading=false;
+        // 읽음 커서 저장 → 이 셀의 미읽음 배지 해제 (실패해도 열람은 유지)
+        var maxId=0;(m||[]).forEach(function(x){if(x.msgId&&x.msgId>maxId)maxId=x.msgId;});
+        if(maxId)req('POST','/community/cells/'+encodeURIComponent(id)+'/read',{last_msg_id:maxId}).then(function(){if(commUnread&&commUnread[id]){delete commUnread[id];render();}}).catch(function(){});
+        render();
       }).catch(function(e){if(version!==commVersion||token!==jwtGet())return;commLoading=false;commError=(e&&e.message)||'대화를 불러오지 못했습니다. 멤버십과 연결 상태를 확인하세요.';render();});
     };
     window.commChannelSelect=function(channel){if(commOpen)window.commOpenCell(commOpen.cellId,commOpen.name,channel);};
@@ -1724,34 +1855,92 @@
         if(commOpen&&commOpen.cellId===id&&commChannel===channel){var el=document.getElementById('commText');if(el)el.value='';return window.commOpenCell(id,name,channel);}
       }).catch(function(e){toast('게시 실패',mailEscape((e&&e.message)||'내용을 보관했습니다. 다시 시도하세요.'));}).finally(function(){commSending=false;render();});
     };
+    window.commThreadOpen=function(mid){
+      if(!commOpen)return;
+      var id=commOpen.cellId,version=commVersion,token=jwtGet();
+      commThread={rootId:mid,msgs:null};render();
+      return req('GET','/community/cells/'+encodeURIComponent(id)+'/messages/'+mid+'/thread').then(function(m){
+        if(version!==commVersion||token!==jwtGet())return;
+        commThread={rootId:mid,msgs:m};render();
+      }).catch(function(){if(version!==commVersion)return;commThread=null;toast('스레드','스레드를 불러오지 못했습니다.');render();});
+    };
+    window.commThreadClose=function(){commThread=null;render();};
+    window.commThreadReply=function(){
+      var el=document.getElementById('crThreadText'),v=((el||{}).value||'').trim();
+      if(!v||!commOpen||!commThread||commThreadBusy||v.length>2000)return;
+      var id=commOpen.cellId,mid=commThread.rootId,token=jwtGet();
+      commThreadBusy=true;render();
+      // 공지 스레드의 답글은 chat으로 저장 — 공지 게시 권한과 별개의 Q&A
+      return req('POST','/community/cells/'+encodeURIComponent(id)+'/messages',{text:v,channel:commChannel==='notice'?'chat':commChannel,locale:(window.__USER_LANG||'ko'),thread_parent:mid}).then(function(){
+        if(token!==jwtGet())return;
+        return window.commThreadOpen(mid);
+      }).catch(function(e){toast('답글 실패',mailEscape((e&&e.message)||'다시 시도해 주세요.'));})
+      .finally(function(){commThreadBusy=false;render();});
+    };
+    window.commSearchInput=function(v){commSearchQ=v;};
+    window.commSearchRun=function(){
+      var q=(commSearchQ||'').trim();
+      if(!commOpen||commSearchBusy)return;
+      if(q.length<2)return toast('검색','검색어는 2자 이상 입력해 주세요.');
+      var id=commOpen.cellId,token=jwtGet();
+      commSearchBusy=true;render();
+      return req('GET','/community/cells/'+encodeURIComponent(id)+'/search?q='+encodeURIComponent(q)).then(function(r){
+        if(token!==jwtGet())return;commSearchRes=r;
+      }).catch(function(e){commSearchRes=[];toast('검색 실패',mailEscape((e&&e.message)||'잠시 후 다시 시도해 주세요.'));})
+      .finally(function(){commSearchBusy=false;render();});
+    };
+    window.commSearchClear=function(){commSearchRes=null;commSearchQ='';render();};
     function esc(x){return mailEscape(x);}
+    function commMsgHtml(m,inThread){
+      var lang=window.__USER_LANG||'ko';
+      var shown=(m.translations&&m.translations[lang])||m.original,isTr=shown!==m.original;
+      var pending=m.translationState!=='done'&&m.originalLocale!==lang;
+      return '<article class="crmsg'+(m.pinnedAt?' pinned':'')+'"><span class="cravatar'+(m.authorKind==='brand'?' dark':'')+'">'+mailEscape((m.author||'?').slice(0,1))+'</span><div class="crmsg-b"><div class="crmsg-name"><b>'+mailEscape(m.author)+'</b>'
+        +(m.authorKind==='brand'?'<span class="crrole">브랜드</span>':m.authorKind==='ari'?'<span class="crrole">운영</span>':'')
+        +'<time>'+mailEscape((m.at||'').slice(0,16).replace('T',' '))+'</time>'
+        +(m.pinnedAt?'<span class="crpin">📌 고정됨</span>':'')+'</div><p>'+mailEscape(shown)+'</p>'
+        +(pending?'<small class="crmeta">'+(m.translationState==='failed'?'번역 실패 · 원문 표시':'번역 준비 중 · 원문 표시')+'</small>':'')
+        +(isTr?'<details class="crorig"><summary>원문 ('+mailEscape(m.originalLocale)+')</summary><p>'+mailEscape(m.original)+'</p></details>':'')
+        +(!inThread&&m.msgId?'<button class="crthread-btn" onclick="commThreadOpen('+m.msgId+')">'+(m.replyCount?'답글 '+m.replyCount+'개 보기':'스레드에 답글')+'</button>':'')
+        +'</div></article>';
+    }
+    function commThreadHtml(){
+      if(!commThread)return '';
+      var h='<aside class="crthreadp" role="dialog" aria-label="스레드"><header><b>스레드</b><button class="cbt no" onclick="commThreadClose()" aria-label="스레드 닫기">닫기 ×</button></header><div class="crthreadp-msgs">';
+      if(!commThread.msgs)h+='<p role="status">스레드를 불러오는 중…</p>';
+      else h+=commThread.msgs.map(function(m){return commMsgHtml(m,true);}).join('')||'<p>메시지가 없습니다.</p>';
+      h+='</div><form class="crcompose" onsubmit="event.preventDefault();commThreadReply()"><label for="crThreadText">스레드에 답글</label><textarea id="crThreadText" maxlength="2000" placeholder="답글을 남겨 주세요" '+(commThreadBusy?'disabled':'')+'></textarea><button class="btn" '+(commThreadBusy?'disabled':'')+'>'+(commThreadBusy?'게시 중…':'답글 보내기')+'</button></form></aside>';
+      return h;
+    }
     function commHtml(){
       if(creatorLoadErrors.community)return creatorLoadNotice('community','커뮤니티');
       if(!commCells)return '<p role="status">커뮤니티를 불러오는 중입니다…</p>';
       var selected=commSelected(),brand=selected&&selected.brandId;
       var lounges=commCells.filter(function(c){return c.kind!=='dm';});
-      var h='<section class="community-workspace" aria-label="브랜드 커뮤니티"><aside class="community-brands" aria-label="브랜드 방"><b>내 브랜드</b>';
-      h+=lounges.map(function(c){return '<button class="community-brand '+(c.brandId===brand?'active':'')+'" onclick="commOpenCell('+mailEscape(JSON.stringify(c.cellId))+','+mailEscape(JSON.stringify(c.name))+')">'+(c.logoUrl&&/^https:\/\//.test(c.logoUrl)?'<img src="'+mailEscape(c.logoUrl)+'" alt="">':'<span class="community-avatar">'+mailEscape((c.brandName||'?').slice(0,1))+'</span>')+'<span>'+mailEscape(c.brandName)+'<small>'+mailEscape(c.name)+'</small></span></button>';}).join('');
-      h+='<button class="community-brand" onclick="crTab(\'brand\')">＋ 브랜드 멤버십</button></aside><aside class="community-channels" aria-label="대화 채널"><h2>'+mailEscape(selected?selected.brandName:'브랜드 커뮤니티')+'</h2>';
-      h+='<p>'+(selected?(selected.kind==='dm'?'담당자와 나만 보는 대화':'멤버 '+selected.memberCount+' · 검증 '+(selected.verifiedCount||0)):'참여한 브랜드 방을 선택하세요.')+'</p>';
-      if(selected&&selected.kind!=='dm')h+=[['chat','# 잡담'],['tips','# 촬영 팁'],['notice','◎ 공지']].map(function(c){return '<button class="community-channel '+(commChannel===c[0]?'active':'')+'" aria-pressed="'+(commChannel===c[0])+'" onclick="commChannelSelect(\''+c[0]+'\')">'+c[1]+'</button>';}).join('');
-      if(selected)h+='<button class="community-channel" onclick="crDm('+mailEscape(JSON.stringify(brand))+')">◔ 담당자 DM</button><button class="community-channel" onclick="crTab(\'campaigns\')">▤ 캠페인</button><button class="community-channel" onclick="crTab(\'collabs\')">↑ 내 협업·제출</button>';
-      h+='</aside><div class="community-chat"><header><h2>'+mailEscape(selected?(selected.kind==='dm'?'담당자 DM':{'chat':'# 잡담','tips':'# 촬영 팁','notice':'◎ 공지'}[commChannel]):'브랜드와 함께하는 공간')+'</h2><p>내 언어로 대화하고, 원문도 확인하세요.</p>'+(commOpen?'<button class="cbt" onclick="commChannelSelect(\''+commChannel+'\')">새로고침</button>':'')+'</header><div class="community-messages" role="log" aria-label="대화 내용">';
-      if(!commOpen)h+='<div class="community-empty">'+(lounges.length?'왼쪽 브랜드 방을 선택해 대화를 시작하세요.':'아직 가입한 브랜드가 없습니다. 받은 브랜드 초대 링크로 합류하세요.')+'</div>';
+      var chLabel={'chat':'잡담','tips':'촬영-팁','notice':'공지'};
+      var h='<section class="crchat'+(commThread?' with-thread':'')+'" aria-label="브랜드 커뮤니티">';
+      // 모바일: 브랜드 방 가로 스트립 (데스크톱은 rail/사이드바에서 선택)
+      h+='<div class="crchat-brands" aria-label="브랜드 방">'+lounges.map(function(c){var un=(commUnread[c.cellId]||{}).unread||0;return '<button class="crchip '+(c.brandId===brand?'active':'')+'" onclick="commOpenCell('+mailEscape(JSON.stringify(c.cellId))+','+mailEscape(JSON.stringify(c.name))+')">'+mailEscape(c.brandName||c.name)+(un?'<em>'+un+'</em>':'')+'</button>';}).join('')+'<button class="crchip" onclick="crTab(\'brand\')">＋ 멤버십</button></div>';
+      // 채널 헤더
+      h+='<header class="crchat-head"><div><h1>'+(commOpen?(selected&&selected.kind==='dm'?'◔ 담당자 DM':'<span>#</span> '+mailEscape(chLabel[commChannel]||'잡담')):'커뮤니티')+'</h1><p>'+(selected?(selected.kind==='dm'?'담당자와 나만 보는 대화':mailEscape(selected.brandName)+' · 멤버 '+selected.memberCount+' · 검증 '+(selected.verifiedCount||0)+' · 내 언어로 대화하고 원문도 확인하세요'):'브랜드 방을 선택해 대화를 시작하세요.')+'</p></div>'
+        +(commOpen?'<div class="crchat-actions"><form class="crsearch" onsubmit="event.preventDefault();commSearchRun()"><input id="crSearchQ" value="'+mailEscape(commSearchQ)+'" oninput="commSearchInput(this.value)" placeholder="이 채널에서 검색" aria-label="채널 메시지 검색"><button class="cbt" '+(commSearchBusy?'disabled':'')+'>'+(commSearchBusy?'검색 중…':'검색')+'</button></form><button class="cbt no" onclick="commChannelSelect(\''+commChannel+'\')" aria-label="새로고침">↻</button></div>':'')+'</header>';
+      // 채널 탭
+      if(selected&&selected.kind!=='dm')h+='<nav class="crchat-tabs" aria-label="채널">'+[['chat','# 잡담'],['tips','# 촬영 팁'],['notice','◎ 공지']].map(function(c){return '<button class="'+(commChannel===c[0]?'active':'')+'" aria-pressed="'+(commChannel===c[0])+'" onclick="commChannelSelect(\''+c[0]+'\')">'+c[1]+'</button>';}).join('')+(brand?'<button onclick="crDm('+mailEscape(JSON.stringify(brand))+')">◔ 담당자 DM</button>':'')+'</nav>';
+      // 검색 결과
+      if(commSearchRes!==null)h+='<div class="crsearch-res" role="region" aria-label="검색 결과"><div class="crsearch-head"><b>검색 결과 '+commSearchRes.length+'건</b><button class="cbt no" onclick="commSearchClear()">닫기 ×</button></div>'+(commSearchRes.map(function(m){return '<article class="crsearch-item"><b>'+mailEscape(m.author)+'</b> <time>'+mailEscape((m.at||'').slice(0,16).replace('T',' '))+'</time><p>'+mailEscape(m.original)+'</p>'+(m.msgId&&!m.threadParent?'<button class="crthread-btn" onclick="commThreadOpen('+m.msgId+')">스레드 보기</button>':'')+'</article>';}).join('')||'<p>일치하는 메시지가 없습니다.</p>')+'</div>';
+      h+='<div class="crchat-body"><div class="crmsgs" role="log" aria-label="대화 내용">';
+      if(!commOpen)h+='<div class="crempty">'+(lounges.length?'브랜드 방을 선택해 대화를 시작하세요.':'아직 가입한 브랜드가 없습니다. 받은 브랜드 초대 링크로 합류하세요.')+'</div>';
       else if(commLoading)h+='<p role="status">대화를 불러오는 중입니다…</p>';
       else if(commError)h+='<p role="alert">'+mailEscape(commError)+'</p>';
       else{
-        var lang=window.__USER_LANG||'ko';
-        h+=(commOpen.msgs||[]).filter(function(m){return m.channel===commChannel;}).map(function(m){
-          var shown=(m.translations&&m.translations[lang])||m.original,isTr=shown!==m.original;
-          var pending=m.translationState!=='done'&&m.originalLocale!==lang;
-          return '<article class="community-message"><span class="community-avatar">'+mailEscape((m.author||'?').slice(0,1))+'</span><div><b>'+mailEscape(m.author)+'</b> <time>'+mailEscape((m.at||'').slice(0,16).replace('T',' '))+'</time><p>'+mailEscape(shown)+'</p>'+(pending?'<small>'+(m.translationState==='failed'?'번역 실패 · 원문 표시':'번역 준비 중 · 원문 표시')+'</small>':'')+(isTr?'<details><summary>원문 ('+mailEscape(m.originalLocale)+')</summary><p>'+mailEscape(m.original)+'</p></details>':'')+'</div></article>';
-        }).join('')||'<div class="community-empty">아직 메시지가 없습니다.</div>';
+        var visible=(commOpen.msgs||[]).filter(function(m){return m.channel===commChannel;});
+        var ordered=visible.filter(function(m){return m.pinnedAt;}).concat(visible.filter(function(m){return !m.pinnedAt;}));
+        h+=ordered.map(function(m){return commMsgHtml(m,false);}).join('')||'<div class="crempty">아직 메시지가 없습니다.</div>';
       }
-      h+='</div>';
-      if(commOpen&&commChannel!=='notice')h+='<form class="community-compose" onsubmit="event.preventDefault();commPost()"><label for="commText">'+(selected&&selected.kind==='dm'?'담당자에게 메시지':'채널에 메시지')+'</label><textarea id="commText" data-draft-key="'+mailEscape(commKey())+'" maxlength="2000" oninput="commDraft(this.value)" placeholder="내 언어로 메시지를 남겨 주세요" '+(commSending?'disabled':'')+'>'+mailEscape(commDrafts[commKey()]||'')+'</textarea><button class="btn" '+(commSending||commLoading||commError?'disabled':'')+'>'+(commSending?'게시 중…':'메시지 보내기')+'</button></form>';
-      else if(commOpen)h+='<p class="community-readonly">공지는 브랜드 담당자가 게시하는 읽기 전용 채널입니다.</p>';
-      return h+'</div></section>';
+      h+='</div>'+commThreadHtml()+'</div>';
+      if(commOpen&&commChannel!=='notice')h+='<form class="crcompose" onsubmit="event.preventDefault();commPost()"><label for="commText">'+(selected&&selected.kind==='dm'?'담당자에게 메시지':'채널에 메시지')+'</label><textarea id="commText" data-draft-key="'+mailEscape(commKey())+'" maxlength="2000" oninput="commDraft(this.value)" placeholder="내 언어로 메시지를 남겨 주세요" '+(commSending?'disabled':'')+'>'+mailEscape(commDrafts[commKey()]||'')+'</textarea><button class="btn" '+(commSending||commLoading||commError?'disabled':'')+'>'+(commSending?'게시 중…':'메시지 보내기')+'</button></form>';
+      else if(commOpen)h+='<p class="crreadonly">공지는 브랜드 담당자가 게시하는 읽기 전용 채널입니다 — 질문은 각 공지의 스레드에 남겨 주세요.</p>';
+      return h+'</section>';
     }
     var creatorMagicBusy=false;
     window.creatorMagic=function(){
@@ -1773,7 +1962,11 @@
       req('POST','/me/join',{brand_id:b}).then(function(r){
         toast(r.joined?'합류 완료 🎉':'이미 멤버예요',(r.joined?'<b>'+mailEscape(r.brandId)+'</b> PR 리스트에 등록됐어요.':'중복 가입은 다시 등록·과금되지 않습니다.')+(r.verified?'':' 계정 검증이 끝나면 브랜드에 정식 반영됩니다.'));
         loadCreatorData();
-      }).catch(function(e){toast('가입 실패',e===401?'이메일 로그인 후 시도해 주세요.':'잠시 후 다시.');});
+      }).catch(function(e){
+        var msg=(e&&e.message)||'';
+        if(msg.indexOf('온보딩')>=0){toast('온보딩이 먼저예요',mailEscape(msg));creatorTab='brand';render();return;}
+        toast('가입 실패',e===401?'이메일 로그인 후 시도해 주세요.':mailEscape(msg||'잠시 후 다시.'));
+      });
     };
     window.creatorApplyRecruitment=function(){
       if(applicationBusy||!applicationContext||applicationError)return;
@@ -1812,7 +2005,152 @@
       window.commClose();
     };
     function creatorNavHtml(){
-      return '<nav class="creator-app-nav" aria-label="주요 메뉴">'+[['community','◈','커뮤니티'],['campaigns','▦','캠페인'],['collabs','↗','내 협업'],['messages','◌','메시지'],['brand','◯','내 공간']].map(function(t){return '<button class="'+(creatorTab===t[0]?'active':'')+'" '+(creatorTab===t[0]?'aria-current="page"':'')+' onclick="crTab(\''+t[0]+'\')"><span aria-hidden="true">'+t[1]+'</span>'+t[2]+'</button>';}).join('')+'</nav>';
+      // 모바일 4열 하단 네비 (데스크톱은 rail+사이드바) — messages는 사이드바 DM에서
+      var unreadDot=crUnreadTotal()>0;
+      return '<nav class="crbottomnav" aria-label="주요 메뉴">'+[['community','◈','커뮤니티'],['campaigns','▦','캠페인'],['collabs','↗','내 협업'],['brand','◯','내 공간']].map(function(t){return '<button class="'+(creatorTab===t[0]?'active':'')+'" '+(creatorTab===t[0]?'aria-current="page"':'')+' onclick="crTab(\''+t[0]+'\')"><span aria-hidden="true">'+t[1]+(t[0]==='community'&&unreadDot?'<i class="crdot" aria-label="안 읽은 메시지"></i>':'')+'</span>'+t[2]+'</button>';}).join('')+'</nav>';
+    }
+    // ── Slack-v3(Aubergine) 셸 상태·헬퍼 — 알림/온보딩/TikTok/XP ──
+    var creatorNotifs=null,notifOpen=false,creatorProfile=null,profileBusy=false,tiktokInfo=null,tiktokBusy=false,myXp=null,spaceBrand=null,spaceMissions=null,spaceRanking=null,spaceBusy=false;
+    function crUnreadMap(){return (typeof commUnread==='object'&&commUnread)||{};}
+    function crUnreadCount(cellId){var u=crUnreadMap()[cellId];return (u&&u.unread)||0;}
+    function crUnreadTotal(){var t=0,m=crUnreadMap();Object.keys(m).forEach(function(k){t+=m[k].unread||0;});return t;}
+    window.crNotifToggle=function(){notifOpen=!notifOpen;render();};
+    window.crNotifReadAll=function(){
+      req('POST','/me/notifications/read',{all:true}).then(function(){return req('GET','/me/notifications?limit=30');})
+        .then(function(n){creatorNotifs=n;render();})
+        .catch(function(){toast('알림','읽음 처리에 실패했습니다 — 다시 시도해 주세요.');});
+    };
+    window.crNotifGo=function(idx){
+      // 딥링크: 알림 카드에서 명시적으로 눌렀을 때만 이동(강제 이동 없음).
+      var item=creatorNotifs&&creatorNotifs.items&&creatorNotifs.items[idx];if(!item)return;
+      var t=item.target||{};notifOpen=false;
+      req('POST','/me/notifications/read',{ids:[item.id]}).then(function(){return req('GET','/me/notifications?limit=30');}).then(function(n){creatorNotifs=n;render();}).catch(function(){});
+      if(t.cellId){creatorTab='community';history.replaceState(null,'','#community');var room=(commCells||[]).find(function(c){return c.cellId===t.cellId;});return window.commOpenCell(t.cellId,(room&&room.name)||'공지',t.channel||'notice');}
+      if(t.campaignId){window.crTab('campaigns');return;}
+      render();
+    };
+    function notifPanelHtml(){
+      var n=creatorNotifs;
+      return '<aside class="crnotif" role="dialog" aria-label="알림"><header><b>알림'+(n&&n.unreadCount?' · 안 읽음 '+n.unreadCount:'')+'</b><span><button class="cbt no" onclick="crNotifReadAll()">모두 읽음</button><button class="cbt no" onclick="crNotifToggle()" aria-label="알림 닫기">닫기 ×</button></span></header><div class="crnotif-list">'
+        +(!n?'<p role="status">알림을 불러오는 중…</p>':(n.items||[]).length?n.items.map(function(i,idx){
+          var t=i.target||{};
+          return '<article class="crnotif-item'+(i.read?'':' unread')+'"><b>'+mailEscape(i.title)+'</b>'+(t.brandId?'<small class="crnotif-brand">'+mailEscape(t.brandId)+'</small>':'')+(i.body?'<p>'+mailEscape(i.body)+'</p>':'')+'<time>'+mailEscape((i.at||'').slice(0,16).replace('T',' '))+'</time>'
+            +((t.cellId||t.campaignId)?'<button class="cbt" onclick="crNotifGo('+idx+')">'+(t.cellId?'공지 보기':'캠페인 보기')+'</button>':'')+'</article>';
+        }).join(''):'<p>새 알림이 없습니다.</p>')+'</div></aside>';
+    }
+    function crTopHtml(){
+      var unread=(creatorNotifs&&creatorNotifs.unreadCount)||0;
+      return '<header class="crtop"><span class="crtop-brand">theprlist <small>CREATOR</small></span>'
+        +'<button class="crtop-search" onclick="crTab(\'community\')">⌕ 채널에서 검색 — 2자 이상</button>'
+        +'<button class="crtop-bell" onclick="crNotifToggle()" aria-label="알림 '+unread+'건 열기">🔔'+(unread?'<em>'+(unread>99?'99+':unread)+'</em>':'')+'</button>'
+        +'<button class="crtop-me" onclick="crTab(\'settings\')" aria-label="계정과 언어 설정">'+mailEscape((window.__ME.email||'?').slice(0,1).toUpperCase())+'</button></header>';
+    }
+    function crRailHtml(){
+      var selected=commSelected(),cur=selected&&selected.brandId;
+      var brands={};
+      (myMemberships||[]).forEach(function(m){brands[m.brandId]={name:m.name||m.brandId,logoUrl:m.logoUrl};});
+      (commCells||[]).forEach(function(c){if(c.kind!=='dm'&&!brands[c.brandId])brands[c.brandId]={name:c.brandName||c.brandId,logoUrl:c.logoUrl};});
+      var h='<nav class="crrail" aria-label="브랜드">';
+      h+=Object.keys(brands).map(function(id){var b=brands[id];
+        var room=(commCells||[]).find(function(c){return c.kind!=='dm'&&c.brandId===id;});
+        var un=0;(commCells||[]).forEach(function(c){if(c.brandId===id)un+=crUnreadCount(c.cellId);});
+        return '<button class="crrail-brand'+(cur===id?' active':'')+'" aria-label="'+mailEscape(b.name)+'" onclick="'+(room?'crTab(\'community\');commOpenCell('+mailEscape(JSON.stringify(room.cellId))+','+mailEscape(JSON.stringify(room.name))+')':'crTab(\'brand\')')+'">'+(b.logoUrl&&/^https:\/\//.test(String(b.logoUrl))?'<img src="'+mailEscape(b.logoUrl)+'" alt="">':mailEscape((b.name||'?').slice(0,1)))+(un?'<i aria-hidden="true"></i>':'')+'</button>';
+      }).join('');
+      return h+'<button class="crrail-add" onclick="crTab(\'brand\')" aria-label="브랜드 멤버십 추가">＋</button></nav>';
+    }
+    function crSideHtml(){
+      var selected=commSelected();
+      var h='<aside class="crside" aria-label="워크스페이스 탐색"><div class="crside-head"><b>'+mailEscape(selected?selected.brandName:'theprlist')+'</b><small>'+(selected?'멤버 '+selected.memberCount+' · 검증 '+(selected.verifiedCount||0):'크리에이터 워크스페이스')+'</small></div><div class="crside-scroll">';
+      h+='<div class="crside-quick">'+[['brand','⌂','내 공간'],['campaigns','▦','캠페인'],['collabs','↗','내 협업'],['messages','◌','DM 메시지']].map(function(t){return '<button class="crside-item'+(creatorTab===t[0]?' active':'')+'" '+(creatorTab===t[0]?'aria-current="page"':'')+' onclick="crTab(\''+t[0]+'\')"><span class="hash" aria-hidden="true">'+t[1]+'</span>'+t[2]+'</button>';}).join('')+'</div>';
+      var lounges=(commCells||[]).filter(function(c){return c.kind!=='dm';});
+      h+='<div class="crside-label">채널</div>';
+      h+=lounges.map(function(c){var un=crUnreadCount(c.cellId);var act=creatorTab==='community'&&selected&&selected.cellId===c.cellId;
+        return '<button class="crside-item'+(act?' active':'')+'" onclick="crTab(\'community\');commOpenCell('+mailEscape(JSON.stringify(c.cellId))+','+mailEscape(JSON.stringify(c.name))+')"><span class="hash" aria-hidden="true">#</span>'+mailEscape(c.brandName||c.name)+(un?'<em>'+(un>99?'99+':un)+'</em>':'')+'</button>';}).join('')||'<p class="crside-empty">가입한 브랜드가 없습니다.</p>';
+      var dms=(commCells||[]).filter(function(c){return c.kind==='dm';});
+      if(dms.length)h+='<div class="crside-label">다이렉트 메시지</div>'+dms.map(function(c){var un=crUnreadCount(c.cellId);var act=creatorTab==='community'&&selected&&selected.cellId===c.cellId;
+        return '<button class="crside-item'+(act?' active':'')+'" onclick="crOpenConversation('+mailEscape(JSON.stringify(c.cellId))+','+mailEscape(JSON.stringify(c.name))+')"><span class="presence" aria-hidden="true">'+mailEscape((c.brandName||'?').slice(0,1))+'</span>'+mailEscape(c.brandName||c.cellId)+(un?'<em>'+(un>99?'99+':un)+'</em>':'')+'</button>';}).join('');
+      return h+'</div><div class="crside-bottom"><span class="crside-me">'+mailEscape((window.__ME&&window.__ME.email)||'')+'</span><a href="https://theprlist.net">theprlist</a> · <a href="https://theprlist.net/privacy">개인정보</a></div></aside>';
+    }
+    // ── 온보딩·TikTok 상태 (4개 상태는 서로 독립 — 성공 가장 금지) ──
+    window.crProfileSave=function(){
+      if(profileBusy)return;
+      function val(id){var el=document.getElementById(id);return el?el.value:'';}
+      function checked(id){var el=document.getElementById(id);return !!(el&&el.checked);}
+      var langs=[];['ko','en','th','vi','ja'].forEach(function(l){if(checked('crLang_'+l))langs.push(l);});
+      var ships=val('crShip').split(',').map(function(x){return x.trim();}).filter(Boolean);
+      profileBusy=true;render();
+      req('PUT','/me/profile',{country:val('crCountry').trim(),languages:langs,ship_countries:ships,tiktok_handle:val('crHandle').trim(),consent_terms:checked('crConsentTerms'),consent_privacy:checked('crConsentPrivacy')})
+        .then(function(r){toast(r.onboarded?'온보딩 완료 🎉':'저장됨',mailEscape(r.hint||'프로필이 저장되었습니다.'));return req('GET','/me/profile');})
+        .then(function(p){creatorProfile=p;})
+        .catch(function(e){toast('저장 실패',mailEscape((e&&e.message)||'입력값을 확인해 주세요.'));})
+        .finally(function(){profileBusy=false;render();if(window.creatorRetryMemberships)window.creatorRetryMemberships();});
+    };
+    window.crTiktokConnect=function(){
+      if(tiktokBusy)return;tiktokBusy=true;render();
+      req('POST','/me/tiktok/connect-start',{}).then(function(r){
+        if(r&&r.authUrl){toast('TikTok 소유 인증','TikTok 인증 창으로 이동합니다 — 완료 후 상태 새로고침을 눌러 주세요.');try{window.open(r.authUrl,'_blank','noopener');}catch(e){}}
+        return req('GET','/me/tiktok');
+      }).then(function(t){tiktokInfo=t;})
+        .catch(function(e){toast('연결 불가',mailEscape((e&&e.message)||'지금은 연결할 수 없습니다.'));return req('GET','/me/tiktok').then(function(t){tiktokInfo=t;}).catch(function(){});})
+        .finally(function(){tiktokBusy=false;render();});
+    };
+    window.crTiktokDisconnect=function(){
+      req('POST','/me/tiktok/disconnect',{}).then(function(){return req('GET','/me/tiktok');}).then(function(t){tiktokInfo=t;toast('연결 해제','TikTok 소유 인증을 해제했습니다.');render();}).catch(function(){toast('해제 실패','다시 시도해 주세요.');});
+    };
+    window.crTiktokRefresh=function(){Promise.all([req('GET','/me/tiktok'),req('GET','/me/profile')]).then(function(r){tiktokInfo=r[0];creatorProfile=r[1];render();}).catch(function(){toast('상태 확인 실패','잠시 후 다시 시도해 주세요.');});};
+    function crStateLabel(s){return ({none:'미연결',pending:'인증 진행 중',connected:'연결됨 ✓',failed:'인증 실패 — 다시 연결',expired:'만료 — 다시 연결',revoked:'해제됨',eligible:'자격 확인 ✓',rejected:'자격 미충족'})[s]||s||'미연결';}
+    function onboardingCardHtml(){
+      var p=creatorProfile;
+      if(!p)return '<div class="cc"><p role="status">프로필을 불러오는 중…</p></div>';
+      var st=p.states||{};
+      var states='<ul class="crstates" aria-label="연결 상태">'
+        +'<li><b>이메일 로그인</b><span class="pill ok">완료 ✓</span></li>'
+        +'<li><b>TikTok 계정 소유 인증</b><span class="pill'+(st.tiktokOwner==='connected'?' ok':'')+'">'+crStateLabel(st.tiktokOwner)+'</span></li>'
+        +'<li><b>TikTok Shop 어필리에이트 자격</b><span class="pill'+(st.tiktokShop==='eligible'?' ok':'')+'">'+crStateLabel(st.tiktokShop)+'</span></li>'
+        +'<li><b>운영팀 본인 확인</b><span class="pill'+(st.opsVerified?' ok':'')+'">'+(st.opsVerified?'확인됨 ✓':'확인 대기')+'</span></li></ul>';
+      var configured=!!(p.tiktokConfigured||(tiktokInfo&&tiktokInfo.configured));
+      var tiktokRow='<div class="crtiktok"><b>TikTok 소유 인증</b> '
+        +(configured
+          ?'<button class="cbt" onclick="crTiktokConnect()" '+(tiktokBusy?'disabled':'')+'>'+(tiktokBusy?'여는 중…':st.tiktokOwner==='connected'?'다시 연결':'TikTok으로 인증')+'</button>'+(st.tiktokOwner==='connected'?' <button class="cbt no" onclick="crTiktokDisconnect()">해제</button>':'')+' <button class="cbt no" onclick="crTiktokRefresh()">상태 새로고침</button>'
+          :'<p class="crhint">'+mailEscape((tiktokInfo&&tiktokInfo.hint)||'TikTok 공식 연동 승인 대기 중 — 연결 전까지 미연결로 표시됩니다. 핸들 입력만으로는 인증이 완료되지 않습니다.')+'</p>')+'</div>';
+      var form='<div class="crform">'
+        +'<label for="crCountry">국가 (ISO 2자리, 예: KR)</label><input id="crCountry" maxlength="2" value="'+mailEscape(p.country||'')+'" placeholder="KR" autocapitalize="characters">'
+        +'<label>사용 언어</label><div class="crlangs">'+['ko','en','th','vi','ja'].map(function(l){return '<label><input type="checkbox" id="crLang_'+l+'" '+((p.languages||[]).indexOf(l)>=0?'checked':'')+'> '+langLabel(l)+'</label>';}).join('')+'</div>'
+        +'<label for="crShip">배송 가능 국가 (쉼표 구분, 예: KR, TH)</label><input id="crShip" value="'+mailEscape((p.shipCountries||[]).join(', '))+'" placeholder="KR, TH">'
+        +'<label for="crHandle">TikTok 핸들</label><input id="crHandle" value="'+mailEscape(p.tiktokHandle||'')+'" placeholder="@myhandle"><p class="crhint">핸들 저장은 소유 인증이 아니에요 — 핸들을 바꾸면 소유 인증을 다시 진행해야 합니다.</p>'
+        +'<label><input type="checkbox" id="crConsentTerms" '+(p.consentedVersion?'checked':'')+'> 이용약관 동의 (필수)</label>'
+        +'<label><input type="checkbox" id="crConsentPrivacy" '+(p.consentedVersion?'checked':'')+'> 개인정보 처리방침 동의 (필수)</label>'
+        +(p.consentText?'<p class="crhint">'+mailEscape(p.consentText)+'</p>':'')
+        +'<button class="btn" onclick="crProfileSave()" '+(profileBusy?'disabled':'')+'>'+(profileBusy?'저장 중…':'프로필 저장')+'</button></div>';
+      var entryNote='';
+      if(p.entryReady)entryNote=p.onboarded?'<p class="crhint">✓ 입장 요건 충족 — 브랜드 합류와 캠페인 신청이 가능해요.</p>':'';
+      else if(p.onboarded)entryNote='<p class="crhint" role="status" style="color:#8a5a1b"><b>TikTok 계정 소유 인증이 남았어요.</b> 신규 회원은 인증 완료 전에는 브랜드 합류 · 캠페인 신청이 제한됩니다.'+(configured?'':' 공식 연동 승인 대기 중에는 인증을 완료할 수 없어 입장이 대기 상태로 남아요 — 승인되면 이 화면에서 바로 연결할 수 있습니다.')+'</p>';
+      return '<div class="cc cronboard"><h2>'+(p.onboarded?'내 프로필 · 연결 상태':'입장 준비 — 프로필 온보딩')+'</h2>'
+        +(p.onboarded?'':'<p>국가 · 배송 가능 국가 · 필수 동의 저장 후 <b>TikTok 계정 소유 인증</b>까지 완료해야 브랜드 합류와 캠페인 신청을 시작할 수 있어요.'+(p.legacyMember?' 기존 멤버는 이용을 계속하면서 아래 정보를 다시 연결해 주세요.':'')+'</p>')
+        +entryNote+states+tiktokRow+form+'</div>';
+    }
+    // ── XP·미션·랭킹 (내 공간) ──
+    window.crSpaceOpen=function(b){
+      if(spaceBusy)return;spaceBusy=true;spaceBrand=b;spaceMissions=null;spaceRanking=null;render();
+      Promise.all([
+        req('GET','/me/missions?brand='+encodeURIComponent(b)).catch(function(){return null;}),
+        req('GET','/brands/'+encodeURIComponent(b)+'/ranking').catch(function(){return null;})
+      ]).then(function(r){spaceMissions=r[0];spaceRanking=r[1];}).finally(function(){spaceBusy=false;render();});
+    };
+    function spaceXpHtml(){
+      var h='<div class="cc crxp"><h2>내 레벨 · XP</h2>';
+      if(!myXp)h+='<p role="status">XP를 불러오는 중…</p>';
+      else h+='<p class="crxp-total"><b>'+((myXp&&myXp.total)||0)+'</b> XP</p><p class="crhint">XP는 서버가 검증한 활동(합류 · 첫 인사 · 신청 · 합의 · 제출 · 완료)에만 1회 지급돼요 — 클릭이나 반복 제출로는 쌓이지 않습니다.</p>';
+      if(spaceBrand){
+        h+='<h3>'+mailEscape(spaceBrand)+' 미션</h3>';
+        if(spaceBusy)h+='<p role="status">불러오는 중…</p>';
+        else{
+          if(spaceMissions)h+='<ul class="crmissions">'+spaceMissions.map(function(m){return '<li class="'+(m.done?'done':'')+'"><span aria-hidden="true">'+(m.done?'✓':'·')+'</span>'+mailEscape(m.label)+'<em>+'+m.points+'</em></li>';}).join('')+'</ul>';
+          if(spaceRanking)h+='<h3>브랜드 랭킹 TOP</h3><ol class="crrank">'+(spaceRanking.map(function(r){return '<li><b>'+r.rank+'</b>'+mailEscape(r.handle||'크리에이터')+'<em>'+r.total+' XP</em></li>';}).join('')||'<li>아직 기록이 없어요.</li>')+'</ol>';
+          if(!spaceMissions&&!spaceRanking)h+='<p>미션 · 랭킹을 불러오지 못했습니다. <button class="cbt" onclick="crSpaceOpen(\''+mailEscape(spaceBrand)+'\')">다시 시도</button></p>';
+        }
+      }
+      return h+'</div>';
     }
     function creatorSettingsHtml(){
       return '<section class="cc creator-settings"><h2>계정과 언어</h2><dl><dt>로그인 이메일</dt><dd>'+mailEscape(window.__ME.email||'')+'</dd><dt>계정 유형</dt><dd>크리에이터</dd></dl><h3>대화·번역 언어</h3>'+conversationLanguageHtml()+'<p>번역이 준비되지 않으면 원문을 표시합니다. 계약 조건과 수수료는 원문도 함께 확인하세요.</p><button class="btn line" onclick="authLogout()">로그아웃</button></section>';
@@ -1847,27 +2185,30 @@
           '<form class="cc" onsubmit="event.preventDefault();creatorMagic()"><label for="crEmail">이메일 주소</label><input id="crEmail" type="email" required autocomplete="email" placeholder="you@email.com" style="width:100%;box-sizing:border-box;padding:12px;margin-bottom:10px"><button id="crLoginButton" type="submit" class="btn">로그인 링크 받기</button><p id="crLoginStatus" role="status" aria-live="polite"></p></form>';
       }else{
         var joinedIds=(myMemberships||[]).map(function(m){return m.brandId;});
-        var tabs=[['brand','내 공간'],['campaigns','캠페인'],['collabs','내 협업'],['community','커뮤니티']];
-        var tabNav='<div class="crtabs" role="tablist">'+tabs.map(function(t){return '<button role="tab" aria-selected="'+(creatorTab===t[0])+'" class="'+(creatorTab===t[0]?'on':'')+'" onclick="crTab(\''+t[0]+'\')">'+t[1]+'</button>';}).join('')+'</div>';
         var content='';
         if(creatorTab==='brand'){
           content=(joinTarget?brandCardHtml(joinBrandInfo,joinedIds.indexOf(joinTarget)>=0):'')+
-            '<section class="creator-page-intro"><span>MY SPACE</span><h1>나의 브랜드, 이어지는 협업.</h1><p>참여 중인 브랜드와 담당자, 내 활동을 확인하세요.</p></section><h2>내 브랜드 멤버십</h2>'+membershipNoticeHtml()+
+            '<section class="crpage-head"><h1>내 공간</h1><p>프로필 온보딩과 연결 상태, 브랜드 멤버십, 레벨 · 미션을 한곳에서 관리하세요.</p></section>'+
+            onboardingCardHtml()+
+            '<h2>내 브랜드 멤버십</h2>'+membershipNoticeHtml()+
             ((myMemberships&&myMemberships.length)?myMemberships.map(function(m){
               var lg=m.logoUrl?'<img src="'+m.logoUrl.replace(/"/g,'')+'" alt="" style="width:26px;height:26px;border-radius:6px;object-fit:cover;vertical-align:-7px;margin-right:8px">':'';
-              return '<div class="cc">'+lg+'<b>'+mailEscape(m.name||m.brandId)+'</b>'+(m.tagline?' · '+mailEscape(m.tagline):'')+' <button class="btn line" onclick="crDm(\''+esc(m.brandId)+'\')">담당자 DM</button></div>';}).join('')
-             :membershipState==='ready'?'<div class="cc"><p>아직 가입한 브랜드가 없어요. 브랜드의 초대 링크로 합류할 수 있습니다.</p></div>':'');
+              return '<div class="cc">'+lg+'<b>'+mailEscape(m.name||m.brandId)+'</b>'+(m.tagline?' · '+mailEscape(m.tagline):'')+' <button class="btn line" onclick="crDm(\''+esc(m.brandId)+'\')">담당자 DM</button> <button class="cbt" onclick="crSpaceOpen(\''+esc(m.brandId)+'\')">미션 · 랭킹</button></div>';}).join('')
+             :membershipState==='ready'?'<div class="cc"><p>아직 가입한 브랜드가 없어요. 브랜드의 초대 링크로 합류할 수 있습니다.</p></div>':'')+
+            spaceXpHtml();
         }else if(creatorTab==='campaigns'){
-          content=(joinTarget?brandCardHtml(joinBrandInfo,joinedIds.indexOf(joinTarget)>=0):'')+campHtml();
+          content='<section class="crpage-head"><h1>캠페인</h1><p>내 브랜드의 모집 소식과 참여 조건을 확인하세요.</p></section>'+(joinTarget?brandCardHtml(joinBrandInfo,joinedIds.indexOf(joinTarget)>=0):'')+campHtml();
         }else if(creatorTab==='collabs'){
-          content='<p style="font-size:13px;color:var(--ink-2,#566274)">진행 순서: 지원 → 선정 → 조건 확인(수수료 합의) → 샘플 배송 → 콘텐츠·Spark 코드 제출 → 완료. 각 협업 카드에 지금 할 다음 행동이 표시됩니다.</p>'+offersHtml()+
+          content='<section class="crpage-head"><h1>내 협업</h1><p>진행 순서: 지원 → 선정 → 조건 확인(수수료 합의) → 샘플 배송 → 콘텐츠 · Spark 코드 제출 → 완료. 각 협업 카드에 지금 할 다음 행동이 표시됩니다.</p></section>'+offersHtml()+
             '<div class="cc"><p style="font-size:12px">대금 지급(정산 송금) 화면은 공개 준비 중입니다.</p></div>';
-        }else if(creatorTab==='settings'){content=creatorSettingsHtml();
-        }else if(creatorTab==='messages'){content=creatorMessagesHtml();
+        }else if(creatorTab==='settings'){content='<section class="crpage-head"><h1>설정</h1><p>계정, 대화 언어, 프로필 연결 상태를 관리하세요.</p></section>'+creatorSettingsHtml();
+        }else if(creatorTab==='messages'){content='<section class="crpage-head"><h1>DM 메시지</h1><p>브랜드 담당자와의 1:1 대화 목록입니다.</p></section>'+creatorMessagesHtml();
         }else{
-          content='<p style="font-size:13px;color:var(--ink-2,#566274)">커뮤니티(라운지)는 브랜드 멤버가 함께 보는 공간, 담당자 DM은 1:1 대화입니다. 메시지는 원문과 함께 내 언어 번역이 표시됩니다.</p>'+commHtml();
+          content=(creatorTab==='community'?'<details class="creator-language"><summary>대화 언어 · '+mailEscape(langLabel(window.__USER_LANG||'ko'))+'</summary>'+conversationLanguageHtml()+'</details>':'')+commHtml();
         }
-        body='<header class="creator-app-header"><a class="creator-wordmark" href="/">theprlist<span>CREATOR CLUB</span></a>'+creatorHeadHtml()+'<button class="creator-account" onclick="crTab(\'settings\')" aria-label="계정과 언어 설정">'+mailEscape((window.__ME.email||'?').slice(0,1).toUpperCase())+'</button></header>'+creatorNavHtml()+'<section class="creator-page creator-page-'+creatorTab+'">'+(creatorTab==='community'?'<details class="creator-language"><summary>대화 언어 · '+mailEscape(langLabel(window.__USER_LANG||'ko'))+'</summary>'+conversationLanguageHtml()+'</details>':'')+content+'</section>';
+        body=crTopHtml()+'<div class="crshell">'+crRailHtml()+crSideHtml()+'<div class="crmain"><section class="creator-page creator-page-'+creatorTab+'">'+content+'</section></div></div>'+(notifOpen?notifPanelHtml():'')+creatorNavHtml();
+        document.getElementById('stage').innerHTML='<main class="crapp" aria-label="theprlist 크리에이터">'+body+'</main>';
+        return;
       }
       if(!window.__ME)body='<section class="community-workspace community-login"><aside class="community-login-intro"><a class="creator-wordmark" href="https://theprlist.net">theprlist<span>CREATOR CLUB</span></a><h1>브랜드와 만나고,<br>나의 콘텐츠로 연결해요.</h1><p>당신과 어울리는 브랜드 커뮤니티에 참여하고, 캠페인부터 콘텐츠 협업까지 한곳에서 이어가세요.</p><ul><li>브랜드별 커뮤니티와 담당자 대화</li><li>캠페인 신청과 참여 조건 확인</li><li>샘플 배송 · 콘텐츠 제출 · 진행 관리</li></ul></aside><div class="community-login-main">'+body+'</div></section>';
       document.getElementById('stage').innerHTML='<main class="live-main">'+body+'<p style="margin-top:34px"><a href="https://theprlist.net">서비스 소개</a> · <a href="https://theprlist.net/privacy">개인정보처리방침</a></p></main>';

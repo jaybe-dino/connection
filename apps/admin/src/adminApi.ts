@@ -123,6 +123,16 @@ export const adminApi = {
   pauseRecruitmentBatch: (id: string) => req<any>(`/brands/dino-recruitment/outreach/${encodeURIComponent(id)}/control`,{method:"POST",body:JSON.stringify({paused:true})}),
   reviewRecruitmentBatch: (id: string) => req<any>(`/brands/dino-recruitment/outreach/${encodeURIComponent(id)}/review`),
   gmailStatus: () => req<any>("/admin/gmail/status"),
+  brands: () => req<AdminBrand[]>("/admin/brands"),
+  suspendBrand: (id: string, reason: string) =>
+    req<{ ok: boolean; suspended: boolean; already?: boolean }>(
+      `/admin/brands/${encodeURIComponent(id)}/suspend`,
+      { method: "POST", body: JSON.stringify({ reason }) }),
+  resumeBrand: (id: string) =>
+    req<{ ok: boolean; suspended: boolean }>(
+      `/admin/brands/${encodeURIComponent(id)}/resume`, { method: "POST" }),
+  audit: (actor = "", event = "", limit = 100) =>
+    req<AuditRow[]>(`/admin/audit?actor=${encodeURIComponent(actor)}&event=${encodeURIComponent(event)}&limit=${limit}`),
   applications: (status = "pending") =>
     req<Application[]>(`/admin/applications?status=${status}`),
   approveApplication: (id: string) =>
@@ -158,3 +168,12 @@ export const adminApi = {
       body: JSON.stringify({ result, reviewer: ADMIN_ID, note }),
     }),
 };
+
+export interface AdminBrand {
+  brandId: string; name: string; demo: boolean;
+  members: number; team: number; suspendedAt: string | null;
+}
+export interface AuditRow {
+  actor: string; event: string; subject: string;
+  payload: Record<string, unknown>; at: string;
+}

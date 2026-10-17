@@ -56,6 +56,8 @@ def login(client,record,token):
     h=headers(verified.json()['token'])
     onboard=client.put('/me/profile',json={'country':'KR','languages':['ko'],'ship_countries':['KR'],'consent_terms':True,'consent_privacy':True},headers=h)  # 신규 여정: 온보딩 선행
     assert onboard.status_code==200,onboard.text
+    from conftest import tiktok_connect
+    tiktok_connect(client,h,'oid-'+uuid4().hex[:12])  # 신규 필수: TikTok 소유 인증
     return h
 
 

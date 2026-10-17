@@ -108,6 +108,10 @@ def test_legacy_boundary_allowlist(client, two_brands, monkeypatch):
         "country": "KR", "languages": ["ko"], "ship_countries": ["KR"],
         "consent_terms": True, "consent_privacy": True},
         headers={"Authorization": "Bearer " + ctok})  # 신규 여정: 온보딩 선행
+    from conftest import tiktok_connect
+    from uuid import uuid4
+    tiktok_connect(client, {"Authorization": "Bearer " + ctok},
+                   "oid-" + uuid4().hex[:12])
     monkeypatch.setenv("AUTH_REQUIRED", "1")
     ch = {"Authorization": f"Bearer {ctok}"}
 

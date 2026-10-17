@@ -219,3 +219,25 @@ def test_status_attributes_errors_to_correct_job(monkeypatch):
         "resume runa: RuntimeError", "scan: database unavailable"]
     assert jobs["sync"]["recentErrors"] == [
         "sync runb: HTTPException", "scan: database unavailable"]
+
+
+def test_scoped_resume_keeps_old_approvals_idle_and_visits_each_sender(client,monkeypatch):
+    from api import routes_outreach
+    _reset_runner(monkeypatch)
+    monkeypatch.setenv('GMAIL_SEND_RESUME_ENABLED','scoped')
+    calls=[]
+    monkeypatch.setattr(routes_outreach,'deliver_pending',lambda brand,batch:calls.append(str(batch)) or 0)
+    with _db() as conn:
+        _seed_brand(conn,'scoped-resume')
+        first=conn.execute("SELECT account_id FROM gmail_accounts WHERE brand_id='scoped-resume'").fetchone()['account_id']
+        second=conn.execute("INSERT INTO gmail_accounts(brand_id,email) VALUES('scoped-resume','second@scoped-resume.test') RETURNING account_id").fetchone()['account_id']
+        old,_=_seed_batch(conn,'scoped-resume')
+        a,_=_seed_batch(conn,'scoped-resume');b,_=_seed_batch(conn,'scoped-resume')
+        conn.execute('UPDATE outreach_batches SET gmail_account_id=%s WHERE batch_id=%s',(first,old))
+        conn.execute('UPDATE outreach_batches SET gmail_account_id=%s,auto_resume=true WHERE batch_id=%s',(first,a))
+        conn.execute('UPDATE outreach_batches SET gmail_account_id=%s,auto_resume=true WHERE batch_id=%s',(second,b))
+    try:
+        rd._gmail_ops_tick()
+        assert old not in calls and a in calls and b in calls
+        assert rd.RESUME_EVERY_SEC>=routes_outreach.gmail.SEND_INTERVAL_SECONDS
+    finally:_cleanup(['scoped-resume'])

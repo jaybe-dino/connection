@@ -150,9 +150,13 @@ def messages(cell_id: str, channel: str = "", limit: int = 50,
     with connect() as conn:
         cell = _cell(conn, cell_id)
         _member_or_owner(conn, claims, cell)
-        q = ("SELECT * FROM cell_messages WHERE cell_id=%s"
-             + (" AND channel=%s" if channel else "")
-             + " ORDER BY at DESC LIMIT %s")
+        # 스레드 답글은 기본 목록에서 제외(스레드 API로 조회), 고정/답글 수 동봉
+        q = ("SELECT m.*, (SELECT count(*) FROM cell_messages t"
+             "  WHERE t.thread_parent=m.msg_id) AS reply_count"
+             " FROM cell_messages m WHERE m.cell_id=%s"
+             " AND m.thread_parent IS NULL"
+             + (" AND m.channel=%s" if channel else "")
+             + " ORDER BY m.pinned_at DESC NULLS LAST, m.at DESC LIMIT %s")
         args = (cell_id, channel, limit) if channel else (cell_id, limit)
         rows = conn.execute(q, args).fetchall()
     return [{"msgId": r["msg_id"], "channel": r["channel"],
@@ -161,6 +165,8 @@ def messages(cell_id: str, channel: str = "", limit: int = 50,
              "translations": r["translations"],
              "translationState": r["translation_state"],
              "campaignId": r["campaign_id"],
+             "pinnedAt": r["pinned_at"].isoformat() if r["pinned_at"] else None,
+             "replyCount": r["reply_count"],
              "at": r["at"].isoformat()} for r in reversed(rows)]
 
 
@@ -168,6 +174,7 @@ class PostIn(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     channel: str = "chat"                  # chat | tips (브랜드는 notice 가능)
     locale: str = "ko"
+    thread_parent: int | None = None       # 스레드 답글이면 부모 msg_id
 
 
 @router.post("/cells/{cell_id}/messages")
@@ -182,6 +189,8 @@ def post_message(cell_id: str, body: PostIn,
         if claims.get("kind") == "creator":
             if body.channel not in ("chat", "tips"):
                 raise HTTPException(403, "공지는 브랜드·운영만 게시할 수 있습니다")
+            from .routes_service import require_onboarded
+            require_onboarded(conn, who, "커뮤니티 글 작성")
             author = conn.execute("SELECT handle FROM creators WHERE creator_id=%s",
                                   (who,)).fetchone()["handle"]
             author_kind = "creator"
@@ -192,15 +201,40 @@ def post_message(cell_id: str, body: PostIn,
             author_kind = "brand" if claims.get("kind") == "brand" else "ari"
         # 원문 선저장(pending) — 번역 API 장애에도 메시지는 잃지 않는다.
         # 이 블록이 커밋된 뒤에야 번역을 시도하고, 실패하면 러너가 재시도한다.
+        parent = None
+        if body.thread_parent:
+            parent = conn.execute(
+                "SELECT msg_id, thread_parent FROM cell_messages WHERE"
+                " msg_id=%s AND cell_id=%s",
+                (body.thread_parent, cell_id)).fetchone()
+            if not parent:
+                raise HTTPException(404, "스레드 원문을 찾을 수 없습니다")
+            if parent["thread_parent"]:
+                raise HTTPException(400, "답글에는 스레드를 달 수 없습니다 —"
+                                         " 원문 스레드에 남겨 주세요")
         m = conn.execute(
             "INSERT INTO cell_messages (cell_id, channel, author, author_kind,"
-            " original, original_locale, translations, translation_state)"
-            " VALUES (%s,%s,%s,%s,%s,%s,'{}','pending') RETURNING msg_id, at",
+            " original, original_locale, translations, translation_state,"
+            " thread_parent)"
+            " VALUES (%s,%s,%s,%s,%s,%s,'{}','pending',%s)"
+            " RETURNING msg_id, at",
             (cell_id, body.channel, author, author_kind, body.text,
-             body.locale)).fetchone()
+             body.locale, body.thread_parent)).fetchone()
+        if author_kind == "creator":
+            from .routes_service import award_xp
+            award_xp(conn, who, cell["brand_id"], "first_message",
+                     cell["brand_id"])
+        if body.channel == "notice" and not body.thread_parent:
+            # 공지 발행 → 브랜드 멤버 전원 알림(배지+카드, 강제 이동 없음)
+            from .routes_service import notify_brand_members
+            notify_brand_members(conn, cell["brand_id"], "notice",
+                                 "새 공지: " + body.text[:60],
+                                 "커뮤니티 공지 채널에서 전체 내용을 확인"
+                                 "하세요.")
         ledger_append(conn, f"{author_kind}:{author}", "CELL_MESSAGE_POSTED",
                       cell_id, {"channel": body.channel,
-                                "msgId": m["msg_id"]})
+                                "msgId": m["msg_id"],
+                                "thread": bool(body.thread_parent)})
     tr, state = {}, "pending"
     try:
         tr = ai.translate(body.text, body.locale, ALL_LOCALES) or {}

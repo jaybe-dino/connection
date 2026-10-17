@@ -123,6 +123,8 @@ def join_brand(body: JoinIn,
             "SELECT 1 FROM signup_usage WHERE brand_id=%s AND creator_id=%s",
             (body.brand_id, cid)).fetchone()
         if ins:
+            from .routes_service import award_xp
+            award_xp(conn, cid, body.brand_id, "join", body.brand_id)
             ledger_append(conn, f"creator:{cid}", "MEMBERSHIP_JOINED",
                           body.brand_id, {"verified": c["verified"],
                                           "demo": b["is_demo"]})
@@ -165,6 +167,12 @@ def verify_creator(creator_id: str,
         usage = conn.execute(
             "SELECT brand_id, unit_price FROM signup_usage WHERE creator_id=%s",
             (creator_id,)).fetchall()
+        # 중앙 모집 링크 경유 가입자면 verify 전환 기록 (과금은 기존 규칙 그대로)
+        from .routes_recruitment_links import record_event
+        for ra in conn.execute(
+                "SELECT link_id FROM recruitment_applications WHERE creator_id=%s",
+                (creator_id,)).fetchall():
+            record_event(conn, ra["link_id"], "verify", {"creatorId": creator_id})
         ledger_append(conn, f"admin:{admin_user.get('admin_id', 'jwt')}",
                       "CREATOR_VERIFIED", creator_id,
                       {"billedBrands": [u["brand_id"] for u in usage]})

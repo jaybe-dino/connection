@@ -31,6 +31,8 @@ def setup(learning_db,monkeypatch):
         c.execute('TRUNCATE brand_learning CASCADE')
         c.execute("INSERT INTO brands(brand_id,name) VALUES('learn-brand','Learn') ON CONFLICT DO NOTHING")
     monkeypatch.setattr(routes,'connect',db);monkeypatch.setattr(ops,'connect',db)
+    from api import db as dbmod
+    monkeypatch.setattr(dbmod,'connect',db)  # auth 정지 검사도 같은 격리 DB를 실조회
     monkeypatch.setenv('JWT_SECRET','test-learning-secret');monkeypatch.setenv('AUTH_REQUIRED','1')
     app=FastAPI();app.include_router(routes.router);app.include_router(ops.public);app.include_router(ops.admin)
     app.dependency_overrides[ops.require_admin]=lambda:{'admin_id':'qa'}

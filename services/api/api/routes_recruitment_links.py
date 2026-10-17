@@ -1,5 +1,6 @@
 """Opaque recipient invitation context: no mail, no implicit enrollment on GET/login."""
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -73,6 +74,14 @@ def resolve(conn, token, lock=False):
     return r
 
 
+def record_event(conn, link_id, kind, detail=None):
+    """전환 이벤트 — append-only, (link,kind) 유니크로 멱등 (OUTREACH_CONTRACT §3)."""
+    conn.execute(
+        'INSERT INTO recruitment_link_events(link_id,kind,detail)'
+        ' VALUES(%s,%s,%s) ON CONFLICT DO NOTHING',
+        (link_id, kind, json.dumps(detail or {})))
+
+
 def public_context(r):
     return {'brandId':r['target'],'brandName':r['brand_name'],
             'productId':str(r['product_id']) if r['product_id'] else None,'productName':r['product_name'],
@@ -84,7 +93,19 @@ def public_context(r):
 def context(token: str,response:Response):
     response.headers['Cache-Control']='no-store'
     response.headers['Referrer-Policy']='no-referrer'
-    with connect() as c:return public_context(resolve(c,token))
+    try:
+        with connect() as c:
+            r=resolve(c,token)
+            record_event(c,r['link_id'],'click')
+            return public_context(r)
+    except HTTPException as e:
+        # 만료/취소/수신거부는 blocked로 기록(계약 §3) — 거부 트랜잭션과 분리 커밋.
+        if e.status_code==410:
+            with connect() as c:
+                row=c.execute('SELECT link_id FROM recruitment_application_links WHERE token_hash=%s',
+                              (hashlib.sha256(token.encode()).hexdigest(),)).fetchone()
+                if row:record_event(c,row['link_id'],'blocked',{'status':e.status_code})
+        raise
 
 
 @router.post('/{token}/apply')
@@ -102,10 +123,13 @@ def apply(token: str, authorization: str=Header(default='')):
         if prior:return {**public_context(r),'applicationId':str(prior['application_id']),'alreadyApplied':True,'status':'applied'}
         # Same existing membership + verification billing triggers; no membership for workspace.
         member=c.execute('INSERT INTO memberships(creator_id,brand_id) VALUES(%s,%s) ON CONFLICT DO NOTHING RETURNING creator_id',(cid,r['target'])).fetchone()
-        if member:ledger_append(c,'creator:'+cid,'MEMBERSHIP_JOINED',r['target'],{'source':'recruitment_link'})
+        if member:
+            ledger_append(c,'creator:'+cid,'MEMBERSHIP_JOINED',r['target'],{'source':'recruitment_link'})
+            record_event(c,r['link_id'],'join',{'creatorId':cid})
         if r['campaign_id']:
             c.execute('INSERT INTO campaign_applications(campaign_id,creator_id) VALUES(%s,%s) ON CONFLICT DO NOTHING',(r['campaign_id'],cid))
         a=c.execute('INSERT INTO recruitment_applications(link_id,creator_id,brand_id,product_id,campaign_id) VALUES(%s,%s,%s,%s,%s) RETURNING application_id',(r['link_id'],cid,r['target'],r['product_id'],r['campaign_id'])).fetchone()
+        record_event(c,r['link_id'],'apply',{'creatorId':cid,'applicationId':str(a['application_id'])})
         ledger_append(c,'creator:'+cid,'RECRUITMENT_APPLIED',str(a['application_id']),{'brandId':r['target'],'batchId':str(r['batch_id']),'campaignId':r['campaign_id']})
         return {**public_context(r),'applicationId':str(a['application_id']),'alreadyApplied':False,'status':'applied'}
 

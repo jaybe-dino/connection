@@ -52,6 +52,8 @@ def _import_account(conn, brand, account, token):
             sender=parseaddr(headers.get('from',''))[1].lower()
             if '@' not in sender:continue
             content=text_body(payload) or '(본문이 없거나 지원하지 않는 형식입니다. Gmail에서 확인하세요.)'
+            from .mail_safety import verified_dsn
+            verified_dsn(conn,account,message,content)
             gmail.record_explicit_optout(conn,brand,sender,content)
             at=datetime.fromtimestamp(int(message['internalDate'])/1000,UTC)
             subject=headers.get('subject','').replace('\r',' ').replace('\n',' ')[:500]

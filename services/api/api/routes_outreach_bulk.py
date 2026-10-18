@@ -98,11 +98,12 @@ def prepare(conn, brand, body, authorization):
     emails = list(assignments)
     targets = sorted({brand} | {d['target'] for d in definitions.values()})
     suppressed = {(r['brand_id'],r['email']) for r in conn.execute("SELECT brand_id,email FROM outreach_optouts WHERE brand_id=ANY(%s) AND email=ANY(%s) AND opted_out_at IS NOT NULL",(targets,emails))}
+    global_blocks={r['email'] for r in conn.execute('SELECT email FROM outreach_contact_blocks WHERE email=ANY(%s)',(emails,))}
     history = conn.execute("SELECT DISTINCT r.email,b.brand_id,COALESCE(b.target_brand_id,b.brand_id) AS target,r.state,b.state AS batch_state FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE (b.brand_id=ANY(%s) OR b.target_brand_id=ANY(%s)) AND r.email=ANY(%s) AND ((r.state IN ('sent','sending','review') AND b.created_at>now()-interval '90 days') OR (r.state='pending' AND b.state IN ('draft','approved')))",(targets,targets,emails)).fetchall()
     history_by_email = defaultdict(list)
     for record in history:history_by_email[record['email']].append(record)
     prior_senders={}
-    for record in conn.execute("SELECT t.creator_email,m.gmail_account_id FROM mail_threads t JOIN mail_messages m USING(thread_id) WHERE t.brand_id=%s AND t.creator_email=ANY(%s) AND m.gmail_account_id IS NOT NULL AND m.state='sent' ORDER BY m.created_at DESC,m.msg_id DESC",(brand,emails)):
+    for record in conn.execute("SELECT t.creator_email,m.gmail_account_id FROM mail_threads t JOIN mail_messages m USING(thread_id) WHERE t.brand_id=%s AND t.creator_email=ANY(%s) AND m.gmail_account_id IS NOT NULL AND m.state='sent' AND m.direction='out' ORDER BY m.created_at DESC,m.msg_id DESC",(brand,emails)):
         prior_senders.setdefault(record['creator_email'],str(record['gmail_account_id']))
     excluded, eligible, seen = [], defaultdict(list), set()
     for number,email,row in normalized:
@@ -111,6 +112,7 @@ def prepare(conn, brand, body, authorization):
         relevant = [h for h in history_by_email[email] if h['brand_id'] in scope or h['target'] in scope]
         reason = ('mapping_conflict' if len(assignments[email])>1 else
                   'duplicate_row' if email in seen else
+                  'contact_blocked' if email in global_blocks else
                   'opted_out' if any((s,email) in suppressed for s in scope) else
                   'sender_mismatch' if email in prior_senders and prior_senders[email]!=str(definition['mapping'].gmail_account_id) else
                   'recent_contact' if any(h['state'] in ('sent','sending','review') for h in relevant) else
@@ -183,10 +185,13 @@ def save(brand: str, body: SavePlan, authorization: str = Header(default='')):
         for key, definition in definitions.items():
             mapping = definition['mapping']
             records = eligible[key]
+            context=conn.execute('SELECT mapping_id,revision FROM recruitment_mappings WHERE mapping_id::text=%s AND workspace_id=%s AND target_brand_id=%s AND product_id=%s',(key.split('_',1)[0],brand,definition['target'],mapping.product_id)).fetchone()
+            offer_code='O-'+str(context['mapping_id'])+'-R'+str(context['revision']) if context else ''
             for start in range(0,len(records),200):
                 chunk = records[start:start+200]
                 batch = conn.execute('INSERT INTO outreach_batches(brand_id,subject,body,created_by,gmail_account_id,target_brand_id,product_id,product_name,mapping_key,campaign_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING batch_id',(brand,mapping.subject,mapping.body,actor,mapping.gmail_account_id,definition['target'],mapping.product_id,definition['product']['name'],key,mapping.campaign_id)).fetchone()
                 bid = batch['batch_id']; ids.append(str(bid))
+                conn.execute('UPDATE outreach_batches SET offer_code=%s WHERE batch_id=%s',(offer_code or 'B-'+str(bid),bid))
                 for record in chunk:
                     conn.execute('INSERT INTO outreach_optouts(brand_id,email) VALUES(%s,%s) ON CONFLICT DO NOTHING',(brand,record['email']))
                     recipient=conn.execute('INSERT INTO outreach_recipients(batch_id,email,personalized_subject,personalized_body) VALUES(%s,%s,%s,%s) RETURNING recipient_id',(bid,record['email'],record['subject'],record['body'])).fetchone()

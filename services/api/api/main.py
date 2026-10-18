@@ -692,3 +692,6 @@ app.include_router(_recruitment_router)
 
 from .routes_recruitment_links import router as _recruitment_links_router
 app.include_router(_recruitment_links_router)
+
+from .routes_recruitment_ops import router as _recruitment_ops_router
+app.include_router(_recruitment_ops_router)

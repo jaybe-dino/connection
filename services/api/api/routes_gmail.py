@@ -338,6 +338,9 @@ def send_via_brand_gmail(conn, brand_id: str, to: str, subject: str,
 
     중지 또는 일일 한도 초과 시 None. 아웃리치는 다른 계정으로 우회하지 않고 대기한다.
     """
+    from .mail_safety import blocked
+    if blocked(conn,to):
+        raise HTTPException(409,'영구 반송·불만·연락 중지로 차단된 수신 주소입니다')
     r = conn.execute(
         "SELECT * FROM gmail_accounts WHERE brand_id=%s AND state='connected'"
         " AND (%s::uuid IS NULL OR account_id=%s::uuid) ORDER BY connected_at,account_id LIMIT 1 FOR UPDATE", (brand_id,account_id,account_id)).fetchone()
@@ -532,7 +535,8 @@ def reply_thread(thread_id: str, body: ReplyIn,
                          (thread_id,)).fetchone()
         if not t:
             raise HTTPException(404, "thread not found")
-        origin = conn.execute("SELECT * FROM mail_messages WHERE thread_id=%s AND gmail_account_id IS NOT NULL ORDER BY created_at DESC,msg_id DESC LIMIT 1", (thread_id,)).fetchone()
+        original=conn.execute("SELECT gmail_account_id FROM mail_messages WHERE thread_id=%s AND direction='out' AND state='sent' AND gmail_account_id IS NOT NULL ORDER BY created_at DESC,msg_id DESC LIMIT 1",(thread_id,)).fetchone()
+        origin = conn.execute("SELECT * FROM mail_messages WHERE thread_id=%s AND gmail_account_id IS NOT NULL AND (%s::uuid IS NULL OR gmail_account_id=%s::uuid) AND (direction='in' OR (direction='out' AND state='sent')) ORDER BY created_at DESC,msg_id DESC LIMIT 1", (thread_id,original['gmail_account_id'] if original else None,original['gmail_account_id'] if original else None)).fetchone()
         if not origin:
             accounts = conn.execute("SELECT account_id FROM gmail_accounts WHERE brand_id=%s AND state='connected' ORDER BY account_id", (t['brand_id'],)).fetchall()
             origin = {'gmail_account_id': accounts[0]['account_id'] if len(accounts)==1 else None, 'gmail_thread_id': None, 'rfc_message_id': None, 'subject': t['subject']}
@@ -568,10 +572,15 @@ def send_reply(thread_id: str, msg_id: int, authorization: str = Header(default=
         _guard(t['brand_id'], authorization, '')
         if conn.execute('SELECT 1 FROM outreach_optouts WHERE brand_id=%s AND email=%s AND opted_out_at IS NOT NULL',(t['brand_id'],t['creator_email'].lower())).fetchone():
             raise HTTPException(409,'수신거부한 연락처입니다. 발송할 수 없습니다.')
+        from .mail_safety import blocked
+        if blocked(conn,t['creator_email']):raise HTTPException(409,'차단된 연락처입니다. 발송할 수 없습니다.')
         m = conn.execute("UPDATE mail_messages SET state='sending' WHERE msg_id=%s AND thread_id=%s AND direction='out' AND state='pending_gate' RETURNING *", (msg_id,thread_id)).fetchone()
         if not m: raise HTTPException(409, '이미 발송했거나 확인이 필요한 메일입니다')
         if not m['gmail_account_id']:
             raise HTTPException(409, '발신 계정이 없는 이전 답장입니다. 초안을 다시 작성하세요.')
+        original=conn.execute("SELECT gmail_account_id FROM mail_messages WHERE thread_id=%s AND direction='out' AND state='sent' AND gmail_account_id IS NOT NULL ORDER BY created_at DESC,msg_id DESC LIMIT 1",(thread_id,)).fetchone()
+        if original and original['gmail_account_id']!=m['gmail_account_id']:
+            raise HTTPException(409,'기존 대화 발신 계정과 다릅니다. 원래 계정으로 초안을 다시 작성하세요.')
     try:
         with connect() as conn:
             extra={'account_id':m['gmail_account_id'],'reply_headers':m} if m['gmail_account_id'] else {}

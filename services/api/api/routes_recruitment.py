@@ -207,7 +207,7 @@ def batches(mapping_id:UUID,_admin:dict=Depends(require_admin)):
     with connect() as c:
         workspace(c)
         if not c.execute('SELECT 1 FROM recruitment_mappings WHERE mapping_id=%s AND workspace_id=%s',(mapping_id,WORKSPACE)).fetchone():raise HTTPException(404,'매핑을 찾을 수 없습니다')
-        rows=c.execute("""SELECT b.batch_id,b.target_brand_id,b.product_name,b.subject,b.state,b.sending_paused,b.created_at,g.email AS sender_email,
+        rows=c.execute("""SELECT b.batch_id,b.offer_code,b.target_brand_id,b.product_name,b.subject,b.state,b.sending_paused,b.created_at,g.email AS sender_email,
           count(r.recipient_id) AS recipient_count,
           count(*) FILTER(WHERE r.state='sent') AS sent_count,
           count(*) FILTER(WHERE r.state='review') AS review_count,
@@ -237,7 +237,7 @@ def distributed_plan(c,mapping_id,body):
         reserved=c.execute("SELECT count(*) AS n FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE b.gmail_account_id=%s AND b.state IN ('draft','approved') AND r.state IN ('pending','sending') AND NOT (b.batch_id=ANY(%s::uuid[]))",(aid,old)).fetchone()['n']
         senders[str(aid)]=max(0,remaining-reserved)
     emails=list({r.email.strip().lower() for r in body.rows})
-    history=c.execute("SELECT t.creator_email,m.gmail_account_id FROM mail_threads t JOIN mail_messages m USING(thread_id) WHERE t.brand_id=%s AND t.creator_email=ANY(%s) AND m.gmail_account_id IS NOT NULL AND m.state='sent' ORDER BY m.created_at DESC,m.msg_id DESC",(WORKSPACE,emails)).fetchall()
+    history=c.execute("SELECT t.creator_email,m.gmail_account_id FROM mail_threads t JOIN mail_messages m USING(thread_id) WHERE t.brand_id=%s AND t.creator_email=ANY(%s) AND m.gmail_account_id IS NOT NULL AND m.state='sent' AND m.direction='out' ORDER BY m.created_at DESC,m.msg_id DESC",(WORKSPACE,emails)).fetchall()
     pinned={}
     for r in history:pinned.setdefault(r['creator_email'],str(r['gmail_account_id']))
     assigned={};rows=[];unassigned=[];allocated={k:0 for k in senders}

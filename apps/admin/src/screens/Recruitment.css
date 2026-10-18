@@ -10,4 +10,26 @@
 .recruitment details {font-size:13px;padding:10px 0;border-bottom:1px solid var(--n200);overflow-wrap:anywhere}
 .recruitment summary {cursor:pointer;font-weight:700}
 .recruitment small {color:var(--n600)}
-@media(max-width:760px){.recruitment h1{font-size:22px}.recruitment button{min-height:40px}}
+.recruitment-ops{background:#fff;border:1px solid var(--n300);border-radius:14px;padding:22px;margin:20px 0}
+.ops-heading{display:flex;justify-content:space-between;align-items:start;gap:18px;flex-wrap:wrap}
+.ops-heading code{font-size:11px;overflow-wrap:anywhere;color:#6b4d3d;max-width:100%}
+.ops-eyebrow{font-size:10px;letter-spacing:.12em;color:#946146;font-weight:700}
+.ops-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--n300);padding-bottom:10px;margin-bottom:16px}
+.ops-tabs button[aria-selected=true]{background:#322922;color:#fff;border-color:#322922}
+.ops-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.recruitment-ops input:not([type=checkbox]),.recruitment-ops textarea,.recruitment-ops select{display:block;width:100%;box-sizing:border-box;min-height:44px;padding:9px;border:1px solid var(--n300);border-radius:6px}
+.recruitment-ops textarea{min-height:85px}
+.recruitment-ops .ops-check{display:flex;gap:8px;align-items:center;font-weight:400}
+.ops-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:16px 0}
+.ops-kpis div{padding:12px;border:1px solid #e4ddd6;border-radius:9px;font-size:12px;color:#6b6159;background:#fbf8f4}
+.ops-kpis b{display:block;font-size:24px;color:#332b24}
+.ops-table-wrap{overflow-x:auto;border:1px solid var(--n200);border-radius:8px;margin:12px 0}
+.ops-table-wrap table{border-collapse:collapse;width:100%;font-size:12px;min-width:680px}
+.ops-table-wrap th,.ops-table-wrap td{padding:11px;text-align:left;border-bottom:1px solid var(--n200);vertical-align:top;overflow-wrap:anywhere}
+.ops-table-wrap th{background:#f8f6f2}
+.ops-reply pre{white-space:pre-wrap;max-height:260px;overflow:auto;background:#f8f6f2;padding:12px;border-radius:6px}
+.ops-tag{display:inline-block;font-size:11px;padding:2px 6px;border-radius:5px;background:#f4ebe1}
+.recruitment .ops-error{color:#982626}.recruitment .ops-notice{background:#edf6ed;padding:12px;color:#245027;border-radius:6px}
+.sender-card{padding:10px;background:#fbf8f4;border:1px solid #e5ded6;border-radius:8px;cursor:grab}
+.sender-dropzone{padding:14px;border:2px dashed #c3a98f;border-radius:8px;background:#fffaf2;margin:10px 0}
+@media(max-width:760px){.recruitment h1{font-size:22px}.recruitment button{min-height:44px}.recruitment-ops{padding:14px}.ops-filters{grid-template-columns:1fr}.ops-tabs button{flex:1;min-width:40%}}

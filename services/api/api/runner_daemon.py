@@ -93,6 +93,9 @@ def _enroll_from_pool(runner) -> int:
             rows = conn.execute(
                 "SELECT email, handle, country FROM creator_pool"
                 " WHERE email IS NOT NULL AND email_status='valid'"
+                " AND state<>'EXCLUDED'"
+                " AND NOT EXISTS(SELECT 1 FROM outreach_contact_blocks x WHERE x.email=lower(trim(creator_pool.email)))"
+                " AND NOT EXISTS(SELECT 1 FROM outreach_optouts x WHERE x.email=lower(trim(creator_pool.email)) AND x.brand_id IN ('glowlab','dino-recruitment') AND x.opted_out_at IS NOT NULL)"
                 " LIMIT 200").fetchall()
     except Exception:                       # 테이블 없는 환경(부분 배포)도 계속 돈다
         return 0

@@ -114,7 +114,7 @@ def compose(brand: str, body: AIDraft, authorization: str = Header(default='')):
 
 def batch_out(conn, row):
     recipients = conn.execute('SELECT recipient_id,email,state,sent_at FROM outreach_recipients WHERE batch_id=%s ORDER BY email', (row['batch_id'],)).fetchall()
-    return {'id': str(row['batch_id']), 'subject': row['subject'], 'body': row['body'],
+    return {'id': str(row['batch_id']), 'offerCode':row.get('offer_code',''), 'subject': row['subject'], 'body': row['body'],
             'state': row['state'], 'productId': str(row['product_id']) if row.get('product_id') else None, 'productName':row.get('product_name'), 'campaignId':row.get('campaign_id'), 'mappingKey':row.get('mapping_key'), 'targetBrandId': row['target_brand_id'] or row['brand_id'], 'gmailAccountId': str(row['gmail_account_id']) if row['gmail_account_id'] else None, 'paused': row['sending_paused'], 'recipients': [{'id': str(r['recipient_id']), 'email': r['email'], 'state': r['state']} for r in recipients]}
 
 
@@ -151,6 +151,7 @@ def preview_recipients(brand: str, body: PreviewRecipients, authorization: str =
         target=proposal_brand(conn,brand,body.target_brand_id,authorization)
         scope=[brand,target]
         suppressed={r['email'] for r in conn.execute("SELECT email FROM outreach_optouts WHERE brand_id=ANY(%s) AND email=ANY(%s) AND opted_out_at IS NOT NULL",(scope,emails)).fetchall()}
+        suppressed|={r['email'] for r in conn.execute('SELECT email FROM outreach_contact_blocks WHERE email=ANY(%s)',(emails,))}
         previous={r['email'] for r in conn.execute("SELECT DISTINCT r.email FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE (b.brand_id=ANY(%s) OR b.target_brand_id=ANY(%s)) AND r.email=ANY(%s) AND r.state IN ('sent','review','sending') AND b.created_at>now()-interval '90 days'",(scope,scope,emails)).fetchall()}
         reserved={r['email'] for r in conn.execute("SELECT DISTINCT r.email FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE (b.brand_id=ANY(%s) OR b.target_brand_id=ANY(%s)) AND r.email=ANY(%s) AND r.state='pending' AND b.state='approved'",(scope,scope,emails)).fetchall()}
         quota=gmail._acct_out(gmail._with_delivery_usage(conn,account))
@@ -188,6 +189,8 @@ def create_batch(brand: str, body: Draft, authorization: str = Header(default=''
         if account_id and not conn.execute("SELECT 1 FROM gmail_accounts WHERE account_id=%s AND brand_id=%s AND state='connected'", (account_id,brand)).fetchone():
             raise HTTPException(409, '이 브랜드에 연결된 발신 계정을 선택하세요')
         r = conn.execute('INSERT INTO outreach_batches(brand_id,subject,body,created_by,gmail_account_id,target_brand_id,product_id,product_name,campaign_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *', (brand,body.subject.strip(),proposal_text,actor,account_id,target,body.product_id,product['name'] if product else None,body.campaign_id)).fetchone()
+        r['offer_code']='B-'+str(r['batch_id'])
+        conn.execute('UPDATE outreach_batches SET offer_code=%s WHERE batch_id=%s',(r['offer_code'],r['batch_id']))
         for e in emails:
             conn.execute('INSERT INTO outreach_optouts(brand_id,email) VALUES(%s,%s) ON CONFLICT DO NOTHING',(brand,e))
             recipient=conn.execute('INSERT INTO outreach_recipients(batch_id,email) VALUES(%s,%s) RETURNING recipient_id',(r['batch_id'],e)).fetchone()
@@ -269,7 +272,7 @@ def deliver_pending(brand: str, batch_id) -> int:
             if suspended and suspended['suspended_at']:
                 conn.execute('UPDATE outreach_batches SET sending_paused=true WHERE batch_id=%s',(batch_id,))
                 break
-            original=conn.execute("SELECT m.gmail_account_id FROM mail_threads t JOIN mail_messages m USING(thread_id) WHERE t.brand_id=%s AND t.creator_email=%s AND m.gmail_account_id IS NOT NULL AND m.state='sent' ORDER BY m.created_at DESC,m.msg_id DESC LIMIT 1",(brand,r['email'])).fetchone()
+            original=conn.execute("SELECT m.gmail_account_id FROM mail_threads t JOIN mail_messages m USING(thread_id) WHERE t.brand_id=%s AND t.creator_email=%s AND m.gmail_account_id IS NOT NULL AND m.state='sent' AND m.direction='out' ORDER BY m.created_at DESC,m.msg_id DESC LIMIT 1",(brand,r['email'])).fetchone()
             if original and original['gmail_account_id']!=b['gmail_account_id']:
                 conn.execute("UPDATE outreach_recipients SET state='blocked' WHERE recipient_id=%s",(r['recipient_id'],))
                 continue
@@ -277,7 +280,8 @@ def deliver_pending(brand: str, batch_id) -> int:
             target_optout=conn.execute('SELECT 1 FROM outreach_optouts WHERE brand_id=%s AND email=%s AND opted_out_at IS NOT NULL',(target,r['email'])).fetchone()
             opt=conn.execute('SELECT * FROM outreach_optouts WHERE brand_id=%s AND email=%s',(brand,r['email'])).fetchone()
             duplicate=conn.execute("SELECT 1 FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE (b.brand_id=ANY(%s) OR b.target_brand_id=ANY(%s)) AND r.email=%s AND r.recipient_id<>%s AND r.state IN ('sending','sent','review') AND b.created_at>now()-interval '90 days' LIMIT 1",([brand,target],[brand,target],r['email'],r['recipient_id'])).fetchone()
-            if opt['opted_out_at'] or target_optout or duplicate:
+            from .mail_safety import blocked
+            if (opt and opt['opted_out_at']) or target_optout or duplicate or blocked(conn,r['email']):
                 conn.execute("UPDATE outreach_recipients SET state='blocked' WHERE recipient_id=%s",(r['recipient_id'],));continue
             conn.execute("UPDATE outreach_recipients SET state='sending' WHERE recipient_id=%s",(r['recipient_id'],))
         try:

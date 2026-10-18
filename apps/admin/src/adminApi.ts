@@ -106,6 +106,14 @@ export interface Submission {
 }
 
 export const adminApi = {
+  recruitmentCohort:(id:string,body:unknown)=>req<any>(`/admin/recruitment/mappings/${encodeURIComponent(id)}/cohort`,{method:'POST',body:JSON.stringify(body)}),
+  recruitmentInbox:(label='')=>req<any>('/admin/recruitment/inbox?label='+encodeURIComponent(label)),
+  recruitmentTask:(id:string,body:unknown)=>req<any>('/admin/recruitment/inbox/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify(body)}),
+  recruitmentReplyDraft:(id:string,body:string)=>req<any>('/inbox/threads/'+encodeURIComponent(id)+'/reply',{method:'POST',body:JSON.stringify({body})}),
+  recruitmentSafety:()=>req<any>('/admin/recruitment/safety'),
+  recruitmentFeedback:(body:unknown)=>req<any>('/admin/recruitment/feedback',{method:'POST',body:JSON.stringify(body)}),
+  recruitmentMetrics:(start:string,end:string,brand='')=>req<any>('/admin/recruitment/metrics?start='+encodeURIComponent(start)+'&end='+encodeURIComponent(end)+'&brand='+encodeURIComponent(brand)),
+  recruitmentCost:(body:unknown)=>req<any>('/admin/recruitment/costs',{method:'POST',body:JSON.stringify(body)}),
   recruitmentApplications: (brand:string) => req<any>('/recruitment-links/brands/'+encodeURIComponent(brand)+'/applications'),
   base: BASE,
   summary: () => req<Summary>("/admin/summary"),

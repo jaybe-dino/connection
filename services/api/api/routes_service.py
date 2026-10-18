@@ -309,6 +309,7 @@ def tiktok_connect_start(authorization: str = Header(default="")) -> dict:
                               "https://api.theprlist.net/tiktok/callback")
     from urllib.parse import urlencode
     q = urlencode({"client_key": os.environ["TIKTOK_CLIENT_KEY"],
+                   "disable_auto_auth": "1",
                    "response_type": "code", "scope": "user.info.basic",
                    "redirect_uri": redirect, "state": row})
     return {"authUrl": f"https://www.tiktok.com/v2/auth/authorize/?{q}",

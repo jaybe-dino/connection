@@ -3,6 +3,7 @@ import { adminApi } from '../adminApi';
 import './Recruitment.css';
 import DistributedRecruitment from './DistributedRecruitment';
 import RecruitmentOps from './RecruitmentOps';
+import RecruitmentSetup from './RecruitmentSetup';
 
 type Workspace = {brandId:string;name:string;internal:boolean};
 type Form = {campaign_id:string|null;name:string;target_brand_id:string;product_id:string;gmail_account_id:string|null;owner_name:string;country:string;language:string;state:string;subject:string;body:string;note:string;revision:number};
@@ -40,6 +41,7 @@ export default function Recruitment(){
    {oauthUrl&&<p><a href={oauthUrl} target="_blank" rel="noopener noreferrer">Google에서 발신 계정 선택·연결 승인</a> · 승인 완료 후 새로고침하세요.</p>}
    {options.accounts.map((a:any)=><p key={a.account_id}>{a.email} · {a.state}{a.sending_paused?' · 발송 중지':''} · 24시간 발송 {a.sent_last_24h} / 시스템 상한 {a.today_cap} · 예약 {a.reserved} · 신규 배정 가능 {a.available} · 회신 읽기 {a.can_read?'연결됨':'권한 필요'} {a.pause_reason}</p>)}
    {options.creatorEntryReady===false&&<p role="alert">일반 신규 크리에이터의 TikTok 공식 인증이 승인 대기 상태입니다. 실제 모집 전 인증 승인과 가입·신청 여정을 검수하세요. 심사 전용 Sandbox 연결은 일반 입장 준비 완료가 아닙니다.</p>}<p>승인 후 자동 대기열: {options.queue?.enabled?'가동 중':options.queue?.reason||'확인 필요'} · 계정당 최소 60초 간격 · 기존 승인 배치는 자동 재개하지 않습니다.</p><button disabled={busy} onClick={()=>action(load)}>새로고침</button> <a href="https://console.theprlist.net" target="_blank" rel="noopener noreferrer">브랜드 콘솔</a></div>
+  <RecruitmentSetup mode="brands" />
   <details style={box}><summary>운영할 브랜드·제품 등록</summary><p>운영 목록과 제품을 등록합니다. 고객 로그인 계정·계약·결제·메일 발송은 생성하지 않습니다. 커미션과 출처를 입력하며, 최신 조건을 확인하기 전에는 매핑을 준비 상태로 유지하세요.</p>
    <fieldset disabled={busy} style={{border:0,padding:0}}>
     {(['brand_id','brand_name','product_name','commission_pct','source_note'] as const).map((k,i)=><label key={k}>{['브랜드 주소 (영문 소문자·숫자·하이픈)','브랜드 이름','제품 이름','자료상 커미션 (%)','출처·기준일·미확정 조건 메모'][i]}<input style={input} type={k==='commission_pct'?'number':'text'} min={k==='commission_pct'?0:undefined} max={k==='commission_pct'?80:undefined} step={k==='commission_pct'?'0.01':undefined} value={catalog[k]} onChange={e=>setCatalog(v=>({...v,[k]:e.target.value}))}/></label>)}

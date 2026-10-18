@@ -128,6 +128,8 @@ app.include_router(_billing_router)
 app.include_router(_payments_router)
 from .routes_pool import router as _pool_router
 app.include_router(_pool_router)
+from .routes_recruitment_setup import router as _recruitment_setup_router
+app.include_router(_recruitment_setup_router)
 from .routes_service import router as _service_router
 app.include_router(_service_router)
 

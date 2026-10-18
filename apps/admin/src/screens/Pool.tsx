@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card, SectionTitle } from "@connection/ui";
 import { adminApi } from "../adminApi";
+import RecruitmentSetup from './RecruitmentSetup';
 
 /** 후보 풀 — 운영자 수동/CSV 등록·미리보기·현황.
  *  이메일은 형식 검사만으로 '검증'이 되지 않는다: 등록분은 전부
@@ -63,6 +64,7 @@ export default function Pool() {
         <button onClick={() => void loadStatus()} style={{ marginTop: 8 }}>새로고침</button>
       </Card>
 
+      <RecruitmentSetup mode="pool" />
       <SectionTitle>CSV 등록 (헤더 필수 · 최대 500행/256KB)</SectionTitle>
       <Card>
         <div style={{ fontSize: 12, color: "var(--n500)", marginBottom: 6 }}>

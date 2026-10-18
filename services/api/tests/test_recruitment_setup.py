@@ -44,3 +44,12 @@ def test_managed_brand_accounts_isolate_and_do_not_create_credentials_or_mail(cl
         assert u['brand_id']==slug and u['password_hash'] is None
         assert c.execute('SELECT count(*) AS n FROM cells WHERE brand_id=%s',(slug,)).fetchone()['n']==1
         assert c.execute('SELECT count(*) AS n FROM auth_tokens WHERE user_id=%s',(u['user_id'],)).fetchone()['n']==0
+    from urllib.parse import parse_qs,urlparse
+    first=client.post(url+'/'+slug+'/activation-link',headers=h)
+    assert first.status_code==200 and first.json()['emailSent'] is False
+    old=parse_qs(urlparse(first.json()['url']).query)['invite'][0]
+    second=client.post(url+'/'+slug+'/activation-link',headers=h)
+    token=parse_qs(urlparse(second.json()['url']).query)['invite'][0]
+    assert client.post('/auth/accept',json={'token':old,'password':'Synthetic-only-Password'}).status_code==400
+    assert client.post('/auth/accept',json={'token':token,'password':'Synthetic-only-Password'}).status_code==200
+    assert client.post(url+'/'+slug+'/activation-link',headers=h).status_code==409

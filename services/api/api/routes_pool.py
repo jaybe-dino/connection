@@ -307,7 +307,7 @@ def pool_status(authorization: str = Header(default=""),
         },
         "byCountry": [{"country": r["c"], "count": r["n"]}
                       for r in by_country],
-        "note": "verified(검증 통과)만 '발송 적합'이며, unverified(미검증)"
-                " 후보는 추천에 미검증 표시와 함께 포함됩니다. 수신거부"
-                " 이메일은 해당 브랜드 추천·발송에서 제외됩니다.",
+        "note": "후보 레코드 수이며 고유 실인원·모집 신청·발송 가능량이 아닙니다. "
+                "주소 검증 상태와 발송 승인은 별개입니다. 미검증 포함 여부를 "
+                "선택해 집군을 검토하고 수신거부·반송·기존 접촉을 검수하세요.",
     }

@@ -122,6 +122,7 @@ export const adminApi = {
   recruitmentOptions: () => req<any>("/admin/recruitment/options"),
   setupBrands: () => req<any>('/admin/recruitment/setup/brands'),
   setupBrand: (body:unknown) => req<any>('/admin/recruitment/setup/brands',{method:'POST',body:JSON.stringify(body)}),
+  setupBrandActivation: (id:string) => req<any>(`/admin/recruitment/setup/brands/${encodeURIComponent(id)}/activation-link`,{method:'POST',body:'{}'}),
   poolImportJobs: () => req<any>('/admin/recruitment/setup/imports'),
   startPoolImport: (body:unknown) => req<any>('/admin/recruitment/setup/imports',{method:'POST',body:JSON.stringify(body)}),
   poolImportChunk: (id:string,index:number,rows:unknown[]) => req<any>(`/admin/recruitment/setup/imports/${id}/chunks/${index}`,{method:'POST',body:JSON.stringify({rows})}),

@@ -5,6 +5,7 @@ import {adminApi} from '../adminApi';
 export default function RecruitmentSetup({mode}:{mode:'brands'|'pool'}) {
  const [file,setFile]=useState<any>(null),[jobs,setJobs]=useState<any[]>([]),[brands,setBrands]=useState<any[]>([]);
  const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('');
+ const [activation,setActivation]=useState<Record<string,string>>({});
  const stopped=useRef(false);
  const refresh=async()=>{if(mode==='pool')setJobs((await adminApi.poolImportJobs()).jobs);else setBrands((await adminApi.setupBrands()).brands);};
  useEffect(()=>{void refresh().catch(e=>setError(e.message));},[mode]);
@@ -50,6 +51,6 @@ export default function RecruitmentSetup({mode}:{mode:'brands'|'pool'}) {
   <button disabled={busy} onClick={()=>void refresh().catch(e=>setError(e.message))}>저장 현황 새로고침</button>
   {message&&<p role="status">{message}</p>}{error&&<p role="alert">{error}</p>}
   {mode==='pool'&&jobs.map(j=><p key={j.job_id}>{j.source_name} · {j.state} · 처리 {j.processed_rows.toLocaleString()}/{j.expected_rows.toLocaleString()} · 등록 {j.inserted_rows.toLocaleString()} · 중복 {j.skipped_rows.toLocaleString()} · 오류 {j.error_rows.toLocaleString()} · 원본 SHA256 <code>{j.source_sha256.slice(0,16)}</code></p>)}
-  {mode==='brands'&&<table style={{width:'100%',fontSize:13}}><thead><tr><th>브랜드·커뮤니티</th><th>회사 관리 계정</th><th>준비 상태</th></tr></thead><tbody>{brands.map(b=><tr key={b.brand_id}><td><a href={'https://app.theprlist.net/?brand='+encodeURIComponent(b.brand_id)} target="_blank" rel="noreferrer">{b.name}</a><br/>{b.countries.join(', ')} · {b.owner_name}</td><td>{b.company_email}<br/>{b.login_ready?'비밀번호 설정됨':'별도 로그인 비밀번호 설정 대기'}</td><td>{b.missing_fields.join(' · ')||'조건 최종 검수 대기'}</td></tr>)}</tbody></table>}
+  {mode==='brands'&&<><p>공용 어드민에서는 바로 관리할 수 있습니다. 별도 브랜드 콘솔 로그인은 아래에서 초기 설정 링크를 만들고 계정 소유자가 직접 비밀번호를 입력하세요. 링크는 72시간 유효하며 외부로 발송하지 않습니다.</p><table style={{width:'100%',fontSize:13}}><thead><tr><th>브랜드·커뮤니티</th><th>회사 관리 계정</th><th>준비 상태</th></tr></thead><tbody>{brands.map(b=><tr key={b.brand_id}><td><a href={'https://app.theprlist.net/?brand='+encodeURIComponent(b.brand_id)} target="_blank" rel="noreferrer">{b.name}</a><br/>{b.countries.join(', ')} · {b.owner_name}</td><td>{b.company_email}<br/>{b.login_ready?'비밀번호 설정됨':<><span>별도 로그인 비밀번호 설정 대기</span><br/><button disabled={busy} onClick={async()=>{setBusy(true);setError('');try{const r=await adminApi.setupBrandActivation(b.brand_id);setActivation(v=>({...v,[b.brand_id]:r.url}));}catch(e:any){setError(e.message);}finally{setBusy(false);}}}>{b.name} 초기 설정 링크 준비</button>{activation[b.brand_id]&&<a href={activation[b.brand_id]} target="_blank" rel="noreferrer">비밀번호 직접 설정 열기</a>}</>}</td><td>{b.missing_fields.join(' · ')||'조건 최종 검수 대기'}</td></tr>)}</tbody></table></>}
  </section>;
 }

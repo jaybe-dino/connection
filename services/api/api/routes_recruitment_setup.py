@@ -160,3 +160,17 @@ def provision_brand(b:BrandSetup,actor:dict=Depends(require_admin_jwt)):
                 c.execute('INSERT INTO product_profile_versions(product_id,version,fields,note) VALUES(%s,1,%s,%s)',(product['product_id'],json.dumps(fields),b.source_note))
         ledger_append(c,str(actor['sub']),'COMPANY_MANAGED_BRAND_PREPARED',b.brand_id,{'companyEmail':b.company_email,'source':b.source_note,'sent':False,'termsConfirmed':False})
         return {'brandId':b.brand_id,'companyEmail':b.company_email,'productId':str(product['product_id']) if product else None,'communityUrl':'https://app.theprlist.net/?brand='+b.brand_id,'passwordSet':False,'emailSent':False}
+
+
+@router.post('/brands/{brand_id}/activation-link')
+def prepare_activation(brand_id:str,actor:dict=Depends(require_admin_jwt)):
+    """Operator-requested initial setup only. Never reset an existing password."""
+    from . import auth
+    with connect() as c:
+        u=c.execute("SELECT u.* FROM recruitment_brand_setup s JOIN users u ON u.brand_id=s.brand_id AND u.email=s.company_email WHERE s.brand_id=%s AND u.kind='brand' AND u.state='active' FOR UPDATE OF u",(brand_id,)).fetchone()
+        if not u:raise HTTPException(404,'회사 관리 브랜드 계정이 없습니다')
+        if u['password_hash']:raise HTTPException(409,'이미 비밀번호가 설정되어 있습니다. 기존 비밀번호는 변경하지 않습니다.')
+        c.execute("UPDATE auth_tokens SET used_at=now() WHERE user_id=%s AND kind='invite' AND used_at IS NULL",(u['user_id'],))
+        raw=auth.one_time_token(c,u['user_id'],'invite',60*72)
+        ledger_append(c,str(actor['sub']),'MANAGED_BRAND_ACTIVATION_PREPARED',brand_id,{'emailSent':False,'expiresHours':72})
+        return {'url':'https://console.theprlist.net/?invite='+raw,'emailSent':False,'expiresHours':72}

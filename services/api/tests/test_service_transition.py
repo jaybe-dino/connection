@@ -218,6 +218,53 @@ def test_tiktok_connect_flow_cannot_fake_success(client, box, monkeypatch):
         "ownerState"] == "revoked"
 
 
+def test_tiktok_sandbox_only_allows_named_reviewer(client, box, monkeypatch):
+    monkeypatch.setenv("TIKTOK_CLIENT_KEY", "sandbox-key")
+    monkeypatch.setenv("TIKTOK_CLIENT_SECRET", "sandbox-secret")
+    monkeypatch.setenv("TIKTOK_MODE", "sandbox")
+    email = f"review-{box['sfx']}@ex.com"
+    reviewer = _h(_creator(client, email))
+    other = _h(_creator(client, f"other-{box['sfx']}@ex.com"))
+    monkeypatch.setenv("TIKTOK_SANDBOX_ALLOWED_EMAILS", " " + email.upper() + " ")
+    assert client.get('/me/tiktok', headers=reviewer).json()['configured']
+    assert client.get('/me/profile', headers=reviewer).json()['tiktokConfigured']
+    assert client.post('/me/tiktok/connect-start', headers=reviewer).status_code == 200
+    assert not client.get('/me/tiktok', headers=other).json()['configured']
+    assert not client.get('/me/profile', headers=other).json()['tiktokConfigured']
+    assert client.post('/me/tiktok/connect-start', headers=other).status_code == 503
+    admin = _h(auth.issue_jwt({'sub': 'review-admin', 'kind': 'admin'}))
+    assert not client.get('/admin/recruitment/options', headers=admin).json()['creatorEntryReady']
+
+
+def test_tiktok_sandbox_allowlist_revoked_before_callback(client, box, monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+    monkeypatch.setenv('TIKTOK_CLIENT_KEY', 'sandbox-key')
+    monkeypatch.setenv('TIKTOK_CLIENT_SECRET', 'sandbox-secret')
+    monkeypatch.setenv('TIKTOK_MODE', 'sandbox')
+    email = f"revoke-review-{box['sfx']}@ex.com"
+    reviewer = _h(_creator(client, email))
+    monkeypatch.setenv('TIKTOK_SANDBOX_ALLOWED_EMAILS', email)
+    start = client.post('/me/tiktok/connect-start', headers=reviewer).json()
+    state = parse_qs(urlparse(start['authUrl']).query)['state'][0]
+    monkeypatch.setenv('TIKTOK_SANDBOX_ALLOWED_EMAILS', '')
+    def unexpected(*a, **k):
+        pytest.fail('Revoked reviewer must not contact TikTok')
+    monkeypatch.setattr('httpx.post', unexpected)
+    assert client.get(f'/tiktok/callback?state={state}&code=x').status_code == 403
+    assert client.get('/me/tiktok', headers=reviewer).json()['ownerState'] != 'connected'
+
+
+@pytest.mark.parametrize('mode', ['sandbox', 'invalid'])
+def test_tiktok_review_fails_closed_without_allowlist(client, box, monkeypatch, mode):
+    monkeypatch.setenv('TIKTOK_CLIENT_KEY', 'sandbox-key')
+    monkeypatch.setenv('TIKTOK_CLIENT_SECRET', 'sandbox-secret')
+    monkeypatch.setenv('TIKTOK_MODE', mode)
+    monkeypatch.delenv('TIKTOK_SANDBOX_ALLOWED_EMAILS', raising=False)
+    reviewer = _h(_creator(client, f"closed-{mode}-{box['sfx']}@ex.com"))
+    assert not client.get('/me/tiktok', headers=reviewer).json()['configured']
+    assert client.post('/me/tiktok/connect-start', headers=reviewer).status_code == 503
+
+
 def test_tiktok_open_id_stored_and_conflict_rejected(client, box, monkeypatch):
     """user.info.basic의 open_id로 소유 저장 — 같은 open_id 다중 계정 거절."""
     from urllib.parse import parse_qs, urlparse

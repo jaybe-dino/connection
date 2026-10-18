@@ -146,7 +146,7 @@ def my_profile(authorization: str = Header(default="")) -> dict:
         has_membership = bool(conn.execute(
             "SELECT 1 FROM legacy_creators WHERE creator_id=%s",
             (cid,)).fetchone())
-    tiktok_configured = bool(os.environ.get("TIKTOK_CLIENT_KEY"))
+        tiktok_configured = _tiktok_available_for(conn, claims["sub"])
     out = {
         "creatorId": cid,
         "country": p["country"] if p else None,
@@ -246,7 +246,28 @@ def save_profile(body: ProfileIn,
 
 def _tiktok_configured() -> bool:
     return bool(os.environ.get("TIKTOK_CLIENT_KEY")
-                and os.environ.get("TIKTOK_CLIENT_SECRET"))
+                and os.environ.get("TIKTOK_CLIENT_SECRET")
+                and os.environ.get("TIKTOK_MODE", "production")
+                in ("production", "sandbox"))
+
+
+def _tiktok_available_for(conn, user_id) -> bool:
+    """Sandbox keys never open onboarding for ordinary users.
+
+    The allowlist is checked when starting AND consuming OAuth, so removing a
+    reviewer immediately blocks an already issued, unfinished authorization.
+    Empty allowlists and unknown modes fail closed.
+    """
+    if not _tiktok_configured():
+        return False
+    if os.environ.get("TIKTOK_MODE", "production") == "production":
+        return True
+    allowed = {s.strip().lower() for s in
+               os.environ.get("TIKTOK_SANDBOX_ALLOWED_EMAILS", "").split(",")
+               if s.strip()}
+    row = conn.execute("SELECT email FROM users WHERE user_id=%s AND"
+                       " kind='creator' AND state='active'", (user_id,)).fetchone()
+    return bool(row and row["email"].strip().lower() in allowed)
 
 
 @router.get("/me/tiktok")
@@ -254,15 +275,16 @@ def tiktok_status(authorization: str = Header(default="")) -> dict:
     with connect() as conn:
         claims, cid = _me_creator(conn, authorization)
         p = _profile(conn, cid)
+        configured = _tiktok_available_for(conn, claims["sub"])
     state = p["tiktok_owner_state"] if p else "none"
-    return {"configured": _tiktok_configured(), "ownerState": state,
+    return {"configured": configured, "ownerState": state,
             "shopState": p["tiktok_shop_state"] if p else "none",
             "checkedAt": (p["tiktok_owner_checked_at"].isoformat()
                           if p and p["tiktok_owner_checked_at"] else None),
-            "hint": (None if _tiktok_configured() else
+            "hint": (None if configured else
                      "TikTok 공식 연동이 아직 승인 대기 상태입니다 — 연결"
-                     " 전까지 '미연결'로 표시되며, 캠페인 신청에는 핸들"
-                     " 입력과 운영팀 확인으로 진행됩니다.")}
+                     " 전까지 신규 계정의 브랜드 가입·캠페인 신청은"
+                     " 제한됩니다.")}
 
 
 @router.post("/me/tiktok/connect-start")
@@ -272,7 +294,7 @@ def tiktok_connect_start(authorization: str = Header(default="")) -> dict:
     키 미설정이면 503: 어떤 임의 입력으로도 인증 완료가 되지 않는다."""
     with connect() as conn:
         claims, cid = _me_creator(conn, authorization)
-        if not _tiktok_configured():
+        if not _tiktok_available_for(conn, claims["sub"]):
             raise HTTPException(503, "TikTok 연동 승인 대기 중 — 지금은"
                                      " 연결할 수 없고 '미연결'로 표시됩니다.")
         state_token = uuid.uuid4().hex
@@ -312,6 +334,9 @@ def tiktok_callback(code: str = "", state: str = "", error: str = ""):
         if not cid:
             return HTMLResponse("<h3>연결 실패</h3><p>크리에이터 계정이"
                                 " 아닙니다.</p>", 400)
+        if not _tiktok_available_for(conn, u["user_id"]):
+            return HTMLResponse("<h3>연결 제한</h3><p>현재 이 계정은"
+                                " TikTok 연결 대상이 아닙니다.</p>", 403)
         if error or not code:
             conn.execute("UPDATE creator_profiles SET tiktok_owner_state="
                          "'failed', tiktok_owner_checked_at=now(),"

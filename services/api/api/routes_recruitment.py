@@ -136,7 +136,7 @@ def options(_admin:dict=Depends(require_admin)):
         campaigns=c.execute("SELECT campaign_id,brand_id,product_id,name FROM campaigns WHERE status='open' AND product_id IS NOT NULL ORDER BY name").fetchall()
     from . import runner_daemon
     queue=runner_daemon.status()['jobs']['sendResume']
-    return {'creatorEntryReady':bool(os.environ.get('TIKTOK_CLIENT_KEY') and os.environ.get('TIKTOK_CLIENT_SECRET')),'queue':{'enabled':queue['enabled'],'reason':queue['reason']},'campaigns':[output(r) for r in campaigns],'brands':[output(r) for r in brands],'products':[output(r) for r in products],'accounts':[output(r) for r in accounts]}
+    return {'creatorEntryReady':bool(os.environ.get('TIKTOK_CLIENT_KEY') and os.environ.get('TIKTOK_CLIENT_SECRET') and os.environ.get('TIKTOK_MODE','production')=='production'),'queue':{'enabled':queue['enabled'],'reason':queue['reason']},'campaigns':[output(r) for r in campaigns],'brands':[output(r) for r in brands],'products':[output(r) for r in products],'accounts':[output(r) for r in accounts]}
 
 
 @router.get('/mappings')

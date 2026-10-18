@@ -185,6 +185,16 @@ def test_unstarted_feedback_and_foreign_brand_thread_cannot_be_used(client,ops):
     assert client.post('/admin/recruitment/feedback',headers=h,json={'recipient_id':str(uuid4()),'kind':'hard_bounce','source_key':'unknown','evidence':'No actual sending record exists.'}).status_code==404
 
 
+def test_operator_system_mail_without_sent_conversation_is_not_a_creator_reply(client,ops):
+    h,b,p,a,m,s=ops;email='security-notice-'+s+'@qa.example'
+    with connect() as c:
+        thread=c.execute("INSERT INTO mail_threads(brand_id,creator_email) VALUES('dino-recruitment',%s) RETURNING thread_id",(email,)).fetchone()['thread_id']
+        c.execute("INSERT INTO mail_messages(thread_id,direction,from_email,body,state,gmail_account_id) VALUES(%s,'in',%s,'New sign-in security notice','sent',%s)",(thread,email,a))
+    result=client.get('/admin/recruitment/inbox',headers=h).json()
+    assert str(thread) not in {t['thread_id'] for t in result['threads']}
+    assert result['unlinkedInboundThreads']>=1
+
+
 def test_finance_reply_is_attributed_once_to_latest_exact_thread_offer(client,ops):
     h,b,p,a,m,s=ops;other='ops-latest-'+s;email='same-thread-'+s+'@qa.example'
     with connect() as c:c.execute('INSERT INTO brands(brand_id,name) VALUES(%s,%s)',(other,'Latest '+s))

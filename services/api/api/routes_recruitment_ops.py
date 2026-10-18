@@ -136,9 +136,13 @@ def inbox(label:str='',owner:str='',limit:int=Query(default=100,ge=1,le=200),_ad
           LEFT JOIN LATERAL(SELECT gmail_account_id FROM mail_messages WHERE thread_id=t.thread_id AND direction='out' AND state='sent' AND gmail_account_id IS NOT NULL ORDER BY created_at DESC,msg_id DESC LIMIT 1)s ON true
           LEFT JOIN gmail_accounts g ON g.account_id=s.gmail_account_id
           WHERE t.brand_id=%s AND m.msg_id IS NOT NULL AND (%s='' OR coalesce(q.label,'unreviewed')=%s)
+          AND EXISTS(SELECT 1 FROM mail_messages prior WHERE prior.thread_id=t.thread_id AND prior.direction='out' AND prior.state='sent' AND prior.gmail_account_id IS NOT NULL)
           AND (%s='' OR coalesce(q.owner_name,'')=%s)
           ORDER BY q.due_at ASC NULLS LAST,t.last_message_at DESC,t.thread_id LIMIT %s""",(WORKSPACE,label,label,owner,owner,limit)).fetchall()
-    return {'threads':[{**output(r),'suggested_label':suggest_label(r['latest_reply'])} for r in rows],'limit':limit,'sent':False,'note':'규칙 기반 추천 분류입니다. 검토·저장 전에는 확정 분류가 아니며 자동 답장은 하지 않습니다.'}
+        unmatched=c.execute("""SELECT count(*) n FROM mail_threads t WHERE t.brand_id=%s
+          AND EXISTS(SELECT 1 FROM mail_messages i WHERE i.thread_id=t.thread_id AND i.direction='in')
+          AND NOT EXISTS(SELECT 1 FROM mail_messages o WHERE o.thread_id=t.thread_id AND o.direction='out' AND o.state='sent' AND o.gmail_account_id IS NOT NULL)""",(WORKSPACE,)).fetchone()['n']
+    return {'threads':[{**output(r),'suggested_label':suggest_label(r['latest_reply'])} for r in rows],'unlinkedInboundThreads':unmatched,'limit':limit,'sent':False,'note':'실제 발신 이력과 연결된 대화만 표시합니다. 규칙 기반 추천 분류는 확정 결과가 아니며 자동 답장은 하지 않습니다.'}
 
 
 class TaskIn(BaseModel):

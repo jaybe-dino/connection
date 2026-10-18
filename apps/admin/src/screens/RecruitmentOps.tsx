@@ -2,14 +2,13 @@ import {useEffect,useRef,useState} from 'react';
 import {adminApi} from '../adminApi';
 
 const labels:Record<string,string>={unreviewed:'미검토',interested:'관심',paid_only:'유료만',conditional:'조건부',wrong_country:'대상 국가 부적합',declined:'거절',optout:'수신거부',address_error:'주소 오류',question:'질문',other:'기타'};
-const languageCodes:Record<string,string>={english:'en',korean:'ko',thai:'th',vietnamese:'vi',japanese:'ja','한국어':'ko','영어':'en','태국어':'th','베트남어':'vi','일본어':'ja'};
 const split=(s:string)=>s.split(/[,;\n]/).map(x=>x.trim()).filter(Boolean);
 const show=(v:unknown)=>v===null||v===undefined?'미확인':Number(v).toLocaleString('ko-KR');
 const money=(v:unknown)=>v===null||v===undefined?'미기록':'₩'+show(v);
 const dateToday=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 type Props={mappingId:string;brandId:string;revision:number;dirty:boolean;country?:string;language?:string;onUseRows:(text:string)=>void};
 
-export default function RecruitmentOps({mappingId,brandId,revision,dirty,country='',language='',onUseRows}:Props){
+export default function RecruitmentOps({mappingId,brandId,revision,dirty,country='',onUseRows}:Props){
  const [tab,setTab]=useState('cohort'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [filters,setFilters]=useState({countries:'',languages:'',categories:'',tags:'',min_followers:'',max_followers:'',limit:'100',allow_unverified:false,audience:'new'});
  const [cohort,setCohort]=useState<any>(null),[checked,setChecked]=useState<string[]>([]);
@@ -19,7 +18,9 @@ export default function RecruitmentOps({mappingId,brandId,revision,dirty,country
  const [cost,setCost]=useState({category:'shipping',amount_krw:'',evidence:''});
  const generation=useRef(0),costRequest=useRef('');
  useEffect(()=>{generation.current++;setCohort(null);setChecked([]);setReport(null);setNotice('');costRequest.current='';return()=>{generation.current++;};},[mappingId,revision,dirty]);
- useEffect(()=>{setFilters(f=>({...f,countries:/^[A-Za-z]{2}$/.test(country)?country.toUpperCase():'',languages:/^[a-z]{2,3}$/.test(language)?language:languageCodes[language.trim().toLowerCase()]||''}));},[mappingId,country,language]);
+ // Proposal language is not evidence of a creator's language. Imported source
+ // rows have unknown language, so only an operator explicitly enables this filter.
+ useEffect(()=>{setFilters(f=>({...f,countries:/^[A-Za-z]{2}$/.test(country)?country.toUpperCase():'',languages:''}));},[mappingId,country]);
  async function act(fn:(seq:number)=>Promise<void>){if(busy)return;setBusy(true);setError('');setNotice('');const seq=generation.current;try{await fn(seq);}catch(e){if(seq===generation.current)setError(String(e));}finally{setBusy(false);}}
  function patchFilter(k:string,v:any){generation.current++;setFilters(f=>({...f,[k]:v}));setCohort(null);setChecked([]);}
  function editTask(id:string,k:string,v:string){setInbox(rows=>rows.map(r=>r.thread_id===id?{...r,[k]:v}:r));}

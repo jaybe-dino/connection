@@ -65,6 +65,8 @@ API·청구389개, UI96개, 관리자 빌드 통과. 계정/조직 격리, 폴�
 
 사용자 admin@dinocommerce.co.kr 로그인 후 8개 신규 Workspace 도메인(cresend.me, creve.co.kr, dinocommerce.co.kr, scenesmarket.kr, shortsc.co.kr, shortscommerce.co.kr, shortsshop.co.kr, shortsshop.kr) 전부 Google 관리자에서 `DKIM을 사용하여 이메일 인증 중입니다`를 확인했다. dncr.co.kr 및 cresend.co.kr도 별도 기존 Workspace에서 활성 확인. 신규 키 재생성 없이 기존 키 유지.
 
-사용자 추가 승인 후 dinostudio.kr Google DKIM 2048비트/선택자 google 키를 신규 생성했다. 닷홈 기존 도메인 DNS에 TXT 한 건만 추가했고 Google 인증 시작 후 활성 상태를 확인했다. 권한 DNS(ns1.dothome.co.kr) 공개키 410자 전체가 발급키와 정확히 일치했다. 기존 Google MX 5개·SPF의 Google/Stibee·DMARC·stb._domainkey CNAME·웹사이트 레코드 보존. 이 변경의 롤백은 Google DKIM 중지 후 새 google._domainkey TXT만 제거하는 것으로, 기존 TXT/MX/CNAME에는 손대지 않는다. 실제 새 메일 수신 헤더 DKIM PASS는 이번 작업에서 발송하지 않았으므로 미검수.
+사용자 추가 승인 후 dinostudio.kr Google DKIM 2048비트/선택자 google 키를 신규 생성했다. 닷홈 기존 도메인 DNS에 TXT 한 건만 추가했고 Google 인증 시작 후 활성 상태를 확인했다. 권한 DNS(ns1.dothome.co.kr) 공개키 410자 전체가 발급키와 정확히 일치했다. 기존 Google MX(ASPMX/ALT 계열 및 smtp.google.com)·SPF의 Google/Stibee·DMARC·stb._domainkey CNAME·웹사이트 레코드 보존. 이 변경의 롤백은 Google DKIM 중지 후 새 google._domainkey TXT만 제거하는 것으로, 기존 TXT/MX/CNAME에는 손대지 않는다. 실제 새 메일 수신 헤더 DKIM PASS는 이번 작업에서 발송하지 않았으므로 미검수.
 
 400px 모바일 시각 검수에서 상단 어드민 메뉴를 가로 스크롤 한 줄로 줄이고 메일함이 남은 높이를 사용하도록 보완했다. 목록→본문·목록 복귀 확인, 로컬 가상 메일 직접 작성→초안 저장→승인 대기→취소 확인. 실제 메일·유료 Claude 호출 없음.
+
+최종 운영 배포: admin dpl_8Qv3jYT9C1qxyQgkmbmhjUe5ZGUy, index-QrY9CQPc.js/index-DrwV7Ugg.css 운영 바이트 일치 확인. API eb7cab841db0 이후 모바일·기록 보완 커밋 b3fcd5e(서버 로직 동일). 서버/청구 391개, UI 96개 및 어드민 타입검사·빌드 통과. 롤백 태그 mail-ux-before-20261019. 운영 로그인 화면에서 계정별 목록·본문·읽음 처리 확인, 미분류 내부 테스트 메일은 크리에이터로 오분류하지 않음.

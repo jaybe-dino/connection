@@ -193,12 +193,13 @@ def approve_application(app_id: str, admin_user: dict = Depends(require_admin)) 
                 "INSERT INTO users (kind, email, brand_id)"
                 " VALUES ('brand',%s,%s) RETURNING *",
                 (contact, app_row["slug"])).fetchone()
+            conn.execute("INSERT INTO brand_team_roles(brand_id,user_id,role) VALUES(%s,%s,'owner') ON CONFLICT DO NOTHING", (app_row["slug"], target["user_id"]))
             raw = _auth.one_time_token(conn, target["user_id"], "invite",
                                        60 * 72)
             ledger_append(conn, "system", "BRAND_INVITED",
                           str(target["user_id"]),
                           {"email": contact, "brand": app_row["slug"]})
-            site = _os.environ.get("SITE_URL", "https://theprlist.net")
+            site = _os.environ.get("BRAND_CONSOLE_URL", "https://console.theprlist.net")
             invite_link = f"{site}/?invite={raw}"
     out = {"ok": True, "brandId": app_row["slug"]}
     if invite_link:

@@ -174,3 +174,35 @@ def prepare_activation(brand_id:str,actor:dict=Depends(require_admin_jwt)):
         raw=auth.one_time_token(c,u['user_id'],'invite',60*72)
         ledger_append(c,str(actor['sub']),'MANAGED_BRAND_ACTIVATION_PREPARED',brand_id,{'emailSent':False,'expiresHours':72})
         return {'url':'https://console.theprlist.net/?invite='+raw,'emailSent':False,'expiresHours':72}
+
+
+@router.get('/communities')
+def communities():
+    with connect() as c:
+        rows=c.execute("""SELECT b.brand_id,b.name,b.suspended_at,
+          s.company_email,s.owner_name,c.cell_id,c.name AS community_name,
+          (SELECT count(*) FROM memberships m WHERE m.brand_id=b.brand_id) AS members,
+          (SELECT count(*) FROM brand_products p WHERE p.brand_id=b.brand_id AND p.state='active') AS products
+          FROM brands b LEFT JOIN recruitment_brand_setup s USING(brand_id)
+          LEFT JOIN cells c ON c.cell_id='cell-'||b.brand_id||'-main' AND c.brand_id=b.brand_id
+          WHERE NOT b.is_internal AND NOT b.is_demo AND b.brand_id NOT LIKE 'qa-%%' ORDER BY b.name""").fetchall()
+        return {'brands':rows,'channels':['chat','tips','notice'],'emailSent':False}
+
+
+class CommunitySetup(BaseModel):
+    name:str=Field(min_length=1,max_length=100)
+
+
+@router.put('/brands/{brand_id}/community')
+def save_community(brand_id:str,b:CommunitySetup,actor:dict=Depends(require_admin_jwt)):
+    from .routes_community import ensure_default_cell
+    name=b.name.strip()
+    if not name:raise HTTPException(400,'방 이름을 입력하세요')
+    with connect() as c:
+        brand=c.execute('SELECT * FROM brands WHERE brand_id=%s FOR UPDATE',(brand_id,)).fetchone()
+        if not brand or brand['is_internal'] or brand['is_demo']:raise HTTPException(404,'고객 브랜드가 없습니다')
+        if brand['suspended_at']:raise HTTPException(409,'정지 브랜드는 먼저 운영 검토가 필요합니다')
+        cell=ensure_default_cell(c,brand_id,brand['name'])
+        c.execute('UPDATE cells SET name=%s WHERE cell_id=%s AND brand_id=%s',(name,cell,brand_id))
+        ledger_append(c,str(actor['sub']),'BRAND_COMMUNITY_CONFIGURED',brand_id,{'cellId':cell,'name':name,'membershipChanged':False})
+        return {'brandId':brand_id,'cellId':cell,'name':name,'communityUrl':'https://app.theprlist.net/?brand='+brand_id,'emailSent':False}

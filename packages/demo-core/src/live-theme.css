@@ -383,3 +383,30 @@ body.live-surface .stage{display:block!important;overflow:auto!important;height:
   .wk .live-main.wkpage h1{font-size:21px}
   .wkbare .live-main.wkentry{padding:28px 16px 50px}
 }
+
+/* Shared conversation controls: secondary settings stay inside the chat header. */
+.crchat-head{padding:16px 20px;gap:16px;align-items:flex-start}
+.crchat-head>div:first-child{flex:1 1 210px;min-width:0}
+.crchat-head h1{font-size:20px;line-height:1.4}
+.crchat-head p{margin-top:4px;line-height:1.5}
+.crchat-tools{display:flex;align-items:center;flex-wrap:wrap;gap:12px;min-width:0}
+.conversation-language{display:flex;align-items:center;flex-wrap:wrap;gap:8px;position:relative;min-width:0}
+.crapp .conversation-language label,.conversation-language label{font-size:12px;font-weight:600;margin:0;color:#616061}
+.crapp .conversation-language select,.conversation-language select{font:inherit;font-size:13px;min-height:44px;width:auto;max-width:160px;margin:0;padding:8px 30px 8px 12px;border:1px solid #d6d0db;border-radius:10px;background:#fff;color:#302b36}
+.conversation-language-help{position:relative;border:0!important;margin:0!important;padding:0!important}
+.conversation-language-help summary{font-size:12px;min-height:44px;display:flex;align-items:center;cursor:pointer;color:#6d597a;list-style:none;padding:0 8px;border-radius:8px}
+.conversation-language-help summary::-webkit-details-marker{display:none}
+.conversation-language-help[open] summary{background:#f4f0f7}
+.conversation-language-help p{position:absolute;right:0;top:100%;z-index:30;width:250px;max-width:calc(100vw - 50px);padding:14px!important;background:#fff;border:1px solid #ded7e4;border-radius:12px;box-shadow:0 8px 24px #30213d18;font-size:12px!important;color:#615768;line-height:1.7!important}
+.crchat-actions{margin-left:0;min-width:0}.crsearch{min-width:0}.crsearch input{width:160px;min-width:0;min-height:44px;border-radius:10px;font:inherit;font-size:13px}
+.crchat-actions button,.crchat-tabs button,.crchat .crchip{min-height:44px}.crchat-tabs{height:auto;min-height:45px}.crchat-tabs button{line-height:1.4}
+.crapp :is(button,input,select,textarea,a,summary):focus-visible{outline:3px solid #9678b8;outline-offset:3px}
+.crapp button:disabled{cursor:not-allowed}
+@media(max-width:760px){.crchat-head{padding:14px;gap:12px}.crchat-tools{width:100%;gap:8px}.conversation-language{gap:6px}.crchat-actions{flex:1;justify-content:flex-end}.crsearch{flex:1}.crsearch input{width:100%;max-width:180px}.crchat-head>div:first-child{flex-basis:100%}.conversation-language-help p{right:auto;left:-130px}.crchat-tabs{gap:16px;padding:0 14px}}
+/* Common interaction scale across creator destinations. */
+.crapp .btn,.crapp .cbt{min-height:44px;border-radius:10px;padding:9px 14px;justify-content:center}
+.crapp input:not([type=checkbox]):not([type=radio]),.crapp select{min-height:44px;border-radius:10px;border-color:#d6d0db}
+.crapp .cc{border-radius:12px;border-color:#e2dce7}
+.crapp .crcompose textarea{border-radius:10px;line-height:1.6}
+.crapp .crpage-head h1{line-height:1.35}
+@media(max-width:760px){.crchat-actions{flex:1 0 100%;width:100%;justify-content:stretch}.crchat-actions .crsearch{flex:1}.crchat-actions .crsearch input{flex:1;width:100%;max-width:none}.crchat-actions button{white-space:nowrap;flex-shrink:0}}

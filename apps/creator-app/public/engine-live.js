@@ -288,13 +288,13 @@
     var replacement = document.getElementById('commText');
     if (replacement && draft !== null) replacement.value = draft;
   };
-  function conversationLanguageHtml() {
+  function conversationLanguageHtml(compact) {
     var current = window.__USER_LANG || 'ko';
-    return '<label for="conversationLanguage">대화 언어 / Conversation language</label> ' +
-      '<select id="conversationLanguage" onchange="setConversationLang(this.value)">' +
+    return '<div class="conversation-language'+(compact?' is-compact':'')+'"><label for="conversationLanguage">대화 언어</label>' +
+      '<select id="conversationLanguage" aria-describedby="conversationLanguageHelp" onchange="setConversationLang(this.value)">' +
       LANGS.map(function (x) { return '<option value="' + x[0] + '"' +
         (current === x[0] ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') +
-      '</select><p style="font-size:12px">커뮤니티·담당자 DM의 표시·작성 언어입니다. 이 브라우저에 저장됩니다. 번역이 없으면 원문을 표시합니다.</p>';
+      '</select><details class="conversation-language-help"><summary aria-label="대화 언어 도움말">도움말</summary><p id="conversationLanguageHelp">선택한 언어로 대화와 담당자 DM을 표시합니다. 번역이 없으면 원문을 보여 줍니다. 이 기기에 저장됩니다.</p></details></div>';
   }
   window.langMenu = function () {
     var cur = window.__USER_LANG || "th";
@@ -2209,7 +2209,7 @@
       h+='<div class="crchat-brands" aria-label="브랜드 방">'+lounges.map(function(c){var un=(commUnread[c.cellId]||{}).unread||0;return '<button class="crchip '+(c.brandId===brand?'active':'')+'" onclick="commOpenCell('+mailEscape(JSON.stringify(c.cellId))+','+mailEscape(JSON.stringify(c.name))+')">'+mailEscape(c.brandName||c.name)+(un?'<em>'+un+'</em>':'')+'</button>';}).join('')+'<button class="crchip" onclick="crTab(\'brand\')">＋ 멤버십</button></div>';
       // 채널 헤더
       h+='<header class="crchat-head"><div><h1>'+(commOpen?(selected&&selected.kind==='dm'?'◔ 담당자 DM':'<span>#</span> '+mailEscape(chLabel[commChannel]||'잡담')):'커뮤니티')+'</h1><p>'+(selected?(selected.kind==='dm'?'담당자와 나만 보는 대화':mailEscape(selected.brandName)+' · 멤버 '+selected.memberCount+' · 검증 '+(selected.verifiedCount||0)+' · 내 언어로 대화하고 원문도 확인하세요'):'브랜드 방을 선택해 대화를 시작하세요.')+'</p></div>'
-        +(commOpen?'<div class="crchat-actions"><form class="crsearch" onsubmit="event.preventDefault();commSearchRun()"><input id="crSearchQ" value="'+mailEscape(commSearchQ)+'" oninput="commSearchInput(this.value)" placeholder="이 채널에서 검색" aria-label="채널 메시지 검색"><button class="cbt" '+(commSearchBusy?'disabled':'')+'>'+(commSearchBusy?'검색 중…':'검색')+'</button></form><button class="cbt no" onclick="commChannelSelect(\''+commChannel+'\')" aria-label="새로고침">↻</button></div>':'')+'</header>';
+        +'<div class="crchat-tools">'+conversationLanguageHtml(true)+(commOpen?'<div class="crchat-actions"><form class="crsearch" onsubmit="event.preventDefault();commSearchRun()"><input id="crSearchQ" value="'+mailEscape(commSearchQ)+'" oninput="commSearchInput(this.value)" placeholder="이 채널에서 검색" aria-label="채널 메시지 검색"><button class="cbt" '+(commSearchBusy?'disabled':'')+'>'+(commSearchBusy?'검색 중…':'검색')+'</button></form><button class="cbt no" onclick="commChannelSelect(\''+commChannel+'\')" aria-label="대화 새로고침">↻</button></div>':'')+'</div></header>';
       // 채널 탭
       if(selected&&selected.kind!=='dm')h+='<nav class="crchat-tabs" aria-label="채널">'+[['chat','# 잡담'],['tips','# 촬영 팁'],['notice','◎ 공지']].map(function(c){return '<button class="'+(commChannel===c[0]?'active':'')+'" aria-pressed="'+(commChannel===c[0])+'" onclick="commChannelSelect(\''+c[0]+'\')">'+c[1]+'</button>';}).join('')+(brand?'<button onclick="crDm('+mailEscape(JSON.stringify(brand))+')">◔ 담당자 DM</button>':'')+'</nav>';
       // 검색 결과
@@ -2528,7 +2528,7 @@
         }else if(creatorTab==='settings'){content='<section class="crpage-head"><h1>설정</h1><p>계정, 대화 언어, 프로필 연결 상태를 관리하세요.</p></section>'+creatorSettingsHtml();
         }else if(creatorTab==='messages'){content='<section class="crpage-head"><h1>DM 메시지</h1><p>브랜드 담당자와의 1:1 대화 목록입니다.</p></section>'+creatorMessagesHtml();
         }else{
-          content=(creatorTab==='community'?'<details class="creator-language"><summary>대화 언어 · '+mailEscape(langLabel(window.__USER_LANG||'ko'))+'</summary>'+conversationLanguageHtml()+'</details>':'')+commHtml();
+          content=commHtml();
         }
         body=crTopHtml()+'<div class="crshell">'+crRailHtml()+crSideHtml()+'<div class="crmain"><section class="creator-page creator-page-'+creatorTab+'">'+content+'</section></div></div>'+(notifOpen?notifPanelHtml():'')+creatorNavHtml();
         document.getElementById('stage').innerHTML='<main class="crapp" aria-label="theprlist 크리에이터">'+body+'</main>';

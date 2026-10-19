@@ -106,6 +106,19 @@ export interface Submission {
 }
 
 export const adminApi = {
+  crmList:(q='',status='',offset=0)=>req<any>('/admin/recruitment/contacts?'+new URLSearchParams({q,status,offset:String(offset)})),
+  crmRefresh:()=>req<any>('/admin/recruitment/contacts/refresh-records',{method:'POST'}),
+  crmUnlinked:()=>req<any>('/admin/recruitment/contacts/unlinked'),
+  crmUnlinkedThread:(id:string)=>req<any>('/admin/recruitment/contacts/unlinked/'+encodeURIComponent(id)),
+  crmRegister:(id:string)=>req<any>('/admin/recruitment/contacts/register-thread',{method:'POST',body:JSON.stringify({thread_id:id,confirmed_creator:true})}),
+  crmDetail:(id:string)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)),
+  crmMessages:(id:string,cursor:any)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/messages?'+new URLSearchParams(cursor)),
+  crmSave:(id:string,body:unknown)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify(body)}),
+  crmNote:(id:string,body:unknown)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/notes',{method:'POST',body:JSON.stringify(body)}),
+  crmDraft:(id:string,body:unknown)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/drafts',{method:'POST',body:JSON.stringify(body)}),
+  crmSend:(id:string,mid:number)=>req<any>(`/admin/recruitment/contacts/${encodeURIComponent(id)}/drafts/${mid}/send`,{method:'POST',body:JSON.stringify({confirmed:true})}),
+  crmCancel:(id:string,mid:number)=>req<any>(`/admin/recruitment/contacts/${encodeURIComponent(id)}/drafts/${mid}/cancel`,{method:'POST'}),
+  crmSync:()=>req<any>('/brands/dino-recruitment/gmail/sync',{method:'POST'}),
   recruitmentCohort:(id:string,body:unknown)=>req<any>(`/admin/recruitment/mappings/${encodeURIComponent(id)}/cohort`,{method:'POST',body:JSON.stringify(body)}),
   recruitmentInbox:(label='')=>req<any>('/admin/recruitment/inbox?label='+encodeURIComponent(label)),
   recruitmentTask:(id:string,body:unknown)=>req<any>('/admin/recruitment/inbox/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify(body)}),

@@ -97,6 +97,9 @@ def sync(brand):
                 msg=e.detail if isinstance(e,HTTPException) else f'동기화 실패({type(e).__name__}) — 연결 상태를 확인하세요'
                 conn.execute("UPDATE gmail_accounts SET sync_error=%s WHERE account_id=%s",(msg,account['account_id']))
                 per.append({'email':account['email'],'imported':0,'error':msg})
+        if brand=='dino-recruitment':
+            from .recruitment_crm import register_known_threads
+            register_known_threads(conn)
     # 여기서부터는 connect 블록 밖 = 트랜잭션 커밋 완료 — 전 계정 실패라도
     # 계정별 sync_error 기록은 영속화된 뒤에 실패를 응답한다(검수 반영).
     if all(p['error'] for p in per):

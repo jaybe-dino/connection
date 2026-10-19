@@ -6,12 +6,14 @@ from html import escape
 import logging
 import hmac
 import os
+import re
+from uuid import UUID
 from datetime import UTC, datetime, timedelta
 from email.mime.text import MIMEText
 
 from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .db import connect, ledger_append
 
@@ -514,7 +516,10 @@ def get_thread(thread_id: str,
 
 
 class ReplyIn(BaseModel):
-    body: str
+    body: str = Field(max_length=20000)
+    request_id: UUID | None = None
+    reply_to_msg_id: int | None = None
+    expected_account_id: UUID | None = None
 
 
 @router.post("/inbox/threads/{thread_id}/reply")
@@ -530,13 +535,29 @@ def reply_thread(thread_id: str, body: ReplyIn,
     """답장 작성 → OUTBOUND 게이트 접수. 승인되면 다음 조회 때 발송된다."""
     if not body.body.strip():
         raise HTTPException(400, "본문이 비어 있습니다")
+    from .auth import current_user
+    reply_actor=str((current_user(authorization) or {}).get('sub') or 'user:console')
     with connect() as conn:
-        t = conn.execute("SELECT * FROM mail_threads WHERE thread_id=%s",
+        t = conn.execute("SELECT * FROM mail_threads WHERE thread_id=%s FOR UPDATE",
                          (thread_id,)).fetchone()
         if not t:
             raise HTTPException(404, "thread not found")
+        import hashlib
+        digest=hashlib.sha256(json.dumps({'thread':str(thread_id),'body':body.body.strip(),'reply_to':body.reply_to_msg_id,'account':str(body.expected_account_id)},sort_keys=True).encode()).hexdigest()
+        if body.request_id:
+            previous=conn.execute('SELECT r.*,m.gate_id,m.state FROM mail_reply_draft_requests r JOIN mail_messages m USING(msg_id) WHERE request_id=%s',(body.request_id,)).fetchone()
+            if previous:
+                if previous['input_hash']!=digest:raise HTTPException(409,'같은 답장 요청의 내용이 다릅니다')
+                return {'msgId':previous['msg_id'],'gateId':str(previous['gate_id']),'state':previous['state'],'replayed':True}
         original=conn.execute("SELECT gmail_account_id FROM mail_messages WHERE thread_id=%s AND direction='out' AND state='sent' AND gmail_account_id IS NOT NULL ORDER BY created_at DESC,msg_id DESC LIMIT 1",(thread_id,)).fetchone()
         origin = conn.execute("SELECT * FROM mail_messages WHERE thread_id=%s AND gmail_account_id IS NOT NULL AND (%s::uuid IS NULL OR gmail_account_id=%s::uuid) AND (direction='in' OR (direction='out' AND state='sent')) ORDER BY created_at DESC,msg_id DESC LIMIT 1", (thread_id,original['gmail_account_id'] if original else None,original['gmail_account_id'] if original else None)).fetchone()
+        if body.reply_to_msg_id is not None:
+            origin=conn.execute("SELECT * FROM mail_messages WHERE msg_id=%s AND thread_id=%s AND direction='in' AND state='sent' AND gmail_account_id IS NOT NULL",(body.reply_to_msg_id,thread_id)).fetchone()
+            if not origin:raise HTTPException(409,'이 대화에서 받은 실제 Gmail 메일을 선택하세요')
+            if not conn.execute("SELECT 1 FROM gmail_accounts WHERE account_id=%s AND brand_id=%s AND state='connected'",(origin['gmail_account_id'],t['brand_id'])).fetchone():raise HTTPException(409,'원래 발신 계정의 Google 연결 상태를 확인하세요')
+            if original and original['gmail_account_id']!=origin['gmail_account_id']:raise HTTPException(409,'이 크리에이터의 원래 발신 계정과 다릅니다. 발신 이력을 확인하세요')
+        if body.expected_account_id is not None and (not origin or str(origin['gmail_account_id'])!=str(body.expected_account_id)):
+            raise HTTPException(409,'검토한 발신 계정과 달라졌습니다')
         if not origin:
             accounts = conn.execute("SELECT account_id FROM gmail_accounts WHERE brand_id=%s AND state='connected' ORDER BY account_id", (t['brand_id'],)).fetchall()
             origin = {'gmail_account_id': accounts[0]['account_id'] if len(accounts)==1 else None, 'gmail_thread_id': None, 'rfc_message_id': None, 'subject': t['subject']}
@@ -554,7 +575,9 @@ def reply_thread(thread_id: str, body: ReplyIn,
             " RETURNING msg_id",
             (thread_id, t["creator_email"], body.body.strip(),
              g["gate_id"],origin["gmail_account_id"],origin["gmail_thread_id"],origin["rfc_message_id"],origin["subject"])).fetchone()
-        ledger_append(conn, "user:console", "GATE_REQUESTED", str(g["gate_id"]),
+        if body.request_id:
+            conn.execute('INSERT INTO mail_reply_draft_requests(request_id,thread_id,input_hash,msg_id,created_by) VALUES(%s,%s,%s,%s,%s)',(body.request_id,thread_id,digest,m['msg_id'],reply_actor))
+        ledger_append(conn, reply_actor, "GATE_REQUESTED", str(g["gate_id"]),
                       {"kind": "OUTBOUND", "thread": str(thread_id)})
     return {"msgId": m["msg_id"], "gateId": str(g["gate_id"]),
             "state": "pending_gate"}
@@ -584,11 +607,13 @@ def send_reply(thread_id: str, msg_id: int, authorization: str = Header(default=
     try:
         with connect() as conn:
             extra={'account_id':m['gmail_account_id'],'reply_headers':m} if m['gmail_account_id'] else {}
-            sent = send_via_brand_gmail(conn,t['brand_id'],t['creator_email'],'Re: '+(m['subject'] or t['subject']),m['body'],**extra)
+            subject=m['subject'] or t['subject']
+            subject=subject if re.match(r'(?i)^re:',subject) else 'Re: '+subject
+            sent = send_via_brand_gmail(conn,t['brand_id'],t['creator_email'],subject,m['body'],**extra)
             if not sent:
                 conn.execute("UPDATE mail_messages SET state='pending_gate' WHERE msg_id=%s",(msg_id,))
                 return {'state':'pending_gate'}
-            conn.execute("UPDATE mail_messages SET state='sent',sent_via=%s,from_email=%s,gmail_message_id=%s,gmail_thread_id=%s WHERE msg_id=%s",(sent['via'],sent['fromEmail'],sent.get('messageId'),sent.get('threadId') or m['gmail_thread_id'],msg_id))
+            conn.execute("UPDATE mail_messages SET state='sent',sent_at=now(),sent_via=%s,from_email=%s,gmail_message_id=%s,gmail_thread_id=%s WHERE msg_id=%s",(sent['via'],sent['fromEmail'],sent.get('messageId'),sent.get('threadId') or m['gmail_thread_id'],msg_id))
             conn.execute("UPDATE mail_threads SET last_direction='out',last_message_at=now() WHERE thread_id=%s",(thread_id,))
             conn.execute("UPDATE gate_requests SET state='APPROVED',decided_by=%s,decided_at=now(),executed=true WHERE gate_id=%s",(str(u.get('sub') or u.get('kind')),m['gate_id']))
         return {'state':'sent'}

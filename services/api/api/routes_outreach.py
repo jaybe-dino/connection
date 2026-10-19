@@ -288,9 +288,10 @@ def deliver_pending(brand: str, batch_id) -> int:
             conn.execute("UPDATE outreach_recipients SET state='sending' WHERE recipient_id=%s",(r['recipient_id'],))
         try:
             subject=r['personalized_subject'] or b['subject']
-            message=(r['personalized_body'] or b['body'])+'\n\nUnsubscribe: https://api.theprlist.net/outreach/unsubscribe/'+str(opt['token'])
+            unsubscribe_url='https://api.theprlist.net/outreach/unsubscribe/'+str(opt['token'])
+            message=(r['personalized_body'] or b['body'])+'\n\nUnsubscribe: '+unsubscribe_url
             with connect() as conn:
-                sent=gmail.send_via_brand_gmail(conn,brand,r['email'],subject,message,account_id=b['gmail_account_id'])
+                sent=gmail.send_via_brand_gmail(conn,brand,r['email'],subject,message,account_id=b['gmail_account_id'],unsubscribe_url=unsubscribe_url)
                 if sent and sent['via']=='gmail':
                     delivered+=1
                     conn.execute("UPDATE outreach_recipients SET state='sent',sent_at=now(),provider_id=%s WHERE recipient_id=%s",(sent.get('messageId'),r['recipient_id']))

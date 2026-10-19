@@ -110,6 +110,8 @@ export const adminApi = {
   batchMailRecipient:(id:string,rid:string,cursor:any={})=>req<any>('/admin/recruitment/mail/batches/'+encodeURIComponent(id)+'/recipients/'+encodeURIComponent(rid)+'?'+new URLSearchParams(cursor)),
   crmMessage:(id:string,mid:number,account_id='')=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/message/'+mid+'?'+new URLSearchParams(account_id?{account_id}:{})),
   crmList:(q='',status='',offset=0,account_id='',folder='replied')=>req<any>('/admin/recruitment/contacts?'+new URLSearchParams({q,status,offset:String(offset),...(account_id?{account_id}:{}),folder})),
+  mailboxAuthentication:(aid:string)=>req<any>('/admin/recruitment/mailboxes/'+encodeURIComponent(aid)+'/authentication'),
+  mailboxMessages:(aid:string,folder:string,q:string,offset=0)=>req<any>('/admin/recruitment/mailboxes/'+encodeURIComponent(aid)+'/messages?'+new URLSearchParams({folder,q,offset:String(offset)})),
   crmMailboxes:()=>req<any>('/admin/recruitment/contacts/mailboxes'),
   crmRead:(id:string,account_id:string,through_msg_id:number)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/read',{method:'POST',body:JSON.stringify({account_id,through_msg_id})}),
   crmRefresh:()=>req<any>('/admin/recruitment/contacts/refresh-records',{method:'POST'}),

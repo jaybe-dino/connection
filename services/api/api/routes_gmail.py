@@ -10,6 +10,7 @@ import re
 from uuid import UUID
 from datetime import UTC, datetime, timedelta
 from email.mime.text import MIMEText
+from email.utils import format_datetime,make_msgid
 
 from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import HTMLResponse
@@ -335,7 +336,7 @@ def _refresh_if_needed(conn, r: dict) -> str:
 
 
 def send_via_brand_gmail(conn, brand_id: str, to: str, subject: str,
-                         body: str, *, account_id=None, reply_headers=None) -> dict | None:
+                         body: str, *, account_id=None, reply_headers=None, unsubscribe_url=None) -> dict | None:
     """연결된 지메일이 있으면 그 주소로 발송. 없으면 None(호출측이 폴백).
 
     중지 또는 일일 한도 초과 시 None. 아웃리치는 다른 계정으로 우회하지 않고 대기한다.
@@ -353,6 +354,8 @@ def send_via_brand_gmail(conn, brand_id: str, to: str, subject: str,
         return None
     if out['sendingPaused'] or out["sentLast24Hours"] >= out["todayCap"]:
         return None
+    if unsubscribe_url and not re.fullmatch(r'https://api\.theprlist\.net/outreach/unsubscribe/[0-9a-fA-F-]{36}',unsubscribe_url):
+        raise HTTPException(400,'수신거부 주소 형식 확인 필요')
     message_id = None
     if not _demo_mode():
         token = _refresh_if_needed(conn, r)
@@ -360,6 +363,11 @@ def send_via_brand_gmail(conn, brand_id: str, to: str, subject: str,
         msg["To"], msg["Subject"] = to, subject
         msg["From"] = r["email"]
         msg["Reply-To"] = out["replyTo"]
+        msg['Date']=format_datetime(datetime.now(UTC))
+        msg['Message-ID']=make_msgid(domain=r['email'].rsplit('@',1)[-1])
+        if unsubscribe_url:
+            msg['List-Unsubscribe']='<'+unsubscribe_url+'>'
+            msg['List-Unsubscribe-Post']='List-Unsubscribe=One-Click'
         if reply_headers and reply_headers.get('rfc_message_id'):
             mid=reply_headers['rfc_message_id']
             if '\r' not in mid and '\n' not in mid:

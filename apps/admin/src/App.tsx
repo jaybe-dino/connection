@@ -8,6 +8,7 @@ import Disputes from "./screens/Disputes";
 import Submissions from "./screens/Submissions";
 import GmailOps from "./screens/GmailOps";
 import Recruitment from "./screens/RecruitmentWorkspace";
+import AccountMailboxes from "./screens/AccountMailboxes";
 import Pool from "./screens/Pool";
 import Brands from "./screens/Brands";
 
@@ -19,6 +20,7 @@ const RAIL = [
   { to: "/submissions", label: "검수 현황", icon: "◑", badge: "inReviewSubmissions" },
   { to: "/recruitment", label: "디노 공용 모집", icon: "◈" },
   { to: "/brands", label: "브랜드 운영", icon: "◆" },
+  { to: "/mail", label: "계정별 메일함", icon: "✉" },
   { to: "/gmail", label: "Gmail 운영", icon: "✉" },
   { to: "/pool", label: "후보 풀", icon: "◎" },
 ] as const;
@@ -290,6 +292,7 @@ export default function App() {
           <Route path="/submissions" element={<Submissions onChange={refresh} />} />
           <Route path="/recruitment" element={<Recruitment />} />
           <Route path="/brands" element={<Brands />} />
+          <Route path="/mail" element={<AccountMailboxes />} />
           <Route path="/gmail" element={<GmailOps />} />
           <Route path="/pool" element={<Pool />} />
         </Routes>

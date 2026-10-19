@@ -368,3 +368,64 @@ def test_older_mail_cursor_keeps_selected_mailbox_scope(client,crm):
     assert older.status_code==200,older.text
     assert older.json()['messages'] and all(m['gmail_account_id']==aid for m in older.json()['messages'])
     assert 'Different mailbox private body' not in older.text
+
+
+def test_account_mailbox_message_folders_and_workspace_isolation(client,crm):
+    h,cid,aid,tid,mid,email=crm
+    base='/admin/recruitment/mailboxes/'+aid+'/messages'
+    assert client.get(base).status_code==401
+    r=client.get(base,headers=h);assert r.status_code==200,r.text
+    d=r.json();assert d['counts']['inbox']==1 and d['counts']['sent']==1
+    assert len(d['messages'])==1 and d['messages'][0]['msg_id']==mid
+    assert d['messages'][0]['contact_id']==cid and d['scope']=='synced_recruitment_correspondence'
+    assert all(k not in d['account'] for k in ('access_token','refresh_token','token_expiry'))
+    sent=client.get(base,headers=h,params={'folder':'sent'}).json()
+    assert sent['messages'][0]['direction']=='out'
+    assert client.get(base,headers=h,params={'q':'not-found'}).json()['messages']==[]
+    assert client.get(base,headers=h,params={'folder':'spam'}).status_code==400
+    with connect() as c:
+        other=c.execute("INSERT INTO gmail_accounts(brand_id,email,scopes) VALUES('glowlab',%s,%s) RETURNING account_id",('private-'+uuid4().hex+'@example.test',gmail.SCOPES)).fetchone()['account_id']
+    assert client.get('/admin/recruitment/mailboxes/'+str(other)+'/messages',headers=h).status_code==404
+
+
+def test_outreach_unsubscribe_headers_and_sender_identity(client,crm,monkeypatch):
+    import base64
+    from email import message_from_bytes
+    from types import SimpleNamespace
+    h,cid,aid,tid,mid,email=crm;captures=[]
+    monkeypatch.setattr(gmail,'_demo_mode',lambda:False)
+    monkeypatch.setattr(gmail,'_refresh_if_needed',lambda *args:'synthetic-token')
+    import httpx
+    def post(url,**kw):
+        captures.append(message_from_bytes(base64.urlsafe_b64decode(kw['json']['raw'])))
+        return SimpleNamespace(status_code=200,json=lambda:{'id':'qa-msg-'+uuid4().hex,'threadId':'qa-thread'})
+    monkeypatch.setattr(httpx,'post',post)
+    token=str(uuid4());link='https://api.theprlist.net/outreach/unsubscribe/'+token
+    with connect() as c:
+        gmail.send_via_brand_gmail(c,'dino-recruitment',email,'Real subject','Plain invitation',account_id=aid,unsubscribe_url=link)
+    m=captures[0];assert m['List-Unsubscribe'].strip()=='<'+link+'>' and m['List-Unsubscribe-Post']=='List-Unsubscribe=One-Click'
+    assert m['Date'] and m['Message-ID'] and m['From']==m['Reply-To']
+    # Previewing the landing page must never unsubscribe; RFC8058 POST must.
+    with connect() as c:c.execute("INSERT INTO outreach_optouts(brand_id,email,token) VALUES('dino-recruitment',%s,%s)",(email,token))
+    assert client.get('/outreach/unsubscribe/'+token).status_code==200
+    with connect() as c:assert c.execute('SELECT opted_out_at FROM outreach_optouts WHERE token=%s',(token,)).fetchone()['opted_out_at'] is None
+    assert client.post('/outreach/unsubscribe/'+token,data={'List-Unsubscribe':'One-Click'}).status_code==200
+    with connect() as c:assert c.execute('SELECT opted_out_at FROM outreach_optouts WHERE token=%s',(token,)).fetchone()['opted_out_at'] is not None
+
+
+def test_mailbox_dns_check_is_readonly_and_does_not_claim_delivery(client,crm,monkeypatch):
+    from api import routes_recruitment_mailboxes as mb
+    h,cid,aid,*_=crm;calls=[]
+    def txt(name):
+        calls.append(name)
+        if name.startswith('_dmarc.'):return ['v=DMARC1; p=none;']
+        if name.startswith('google.'):return []
+        return ['v=spf1 include:_spf.google.com ~all']
+    monkeypatch.setattr(mb,'dns_txt',txt)
+    r=client.get('/admin/recruitment/mailboxes/'+aid+'/authentication',headers=h)
+    assert r.status_code==200,r.text
+    d=r.json();assert len(calls)==3 and d['checks']['spf']['status']=='present' and d['checks']['googleDkim']['status']=='not_found'
+    assert d['actualMessageAuthentication']=='unverified' and d['dnsChanged'] is False and d['sent'] is False
+    monkeypatch.setattr(mb,'dns_txt',lambda n:(_ for _ in ()).throw(ValueError('unavailable')))
+    r=client.get('/admin/recruitment/mailboxes/'+aid+'/authentication',headers=h)
+    assert all(x['status']=='lookup_failed' for x in r.json()['checks'].values())

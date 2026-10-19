@@ -86,7 +86,7 @@ def message_page(c,p,before_at=None,before_id=None,account_id=None):
     if account_id is not None:
         extra+=' AND m.gmail_account_id=%s';args.append(account_id)
     if before_at is not None and before_id is not None:
-        extra=' AND (COALESCE(m.sent_at,m.created_at),m.msg_id)<(%s,%s)';args.extend([before_at,before_id])
+        extra+=' AND (COALESCE(m.sent_at,m.created_at),m.msg_id)<(%s,%s)';args.extend([before_at,before_id])
     rows=c.execute("SELECT m.msg_id,m.thread_id,m.direction,m.from_email,m.to_email,m.subject,m.body,m.state,COALESCE(m.sent_at,m.created_at) AS created_at,m.created_at AS draft_created_at,m.sent_at,m.gmail_account_id,m.gmail_thread_id,g.email AS account_email,u.email AS authored_by FROM mail_messages m JOIN mail_threads t USING(thread_id) LEFT JOIN gmail_accounts g ON g.account_id=m.gmail_account_id LEFT JOIN mail_reply_draft_requests d USING(msg_id) LEFT JOIN users u ON u.user_id::text=d.created_by WHERE t.brand_id=%s AND lower(trim(t.creator_email))=%s"+extra+' ORDER BY COALESCE(m.sent_at,m.created_at) DESC,m.msg_id DESC LIMIT 101',args).fetchall()
     more=len(rows)>100;rows=rows[:100];last=rows[-1] if rows else None
     return {'messages':[output(r) for r in reversed(rows)],'hasMore':more,'next':{'before_at':last['created_at'].isoformat(),'before_id':last['msg_id']} if more else None}

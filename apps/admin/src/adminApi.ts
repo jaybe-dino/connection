@@ -120,6 +120,7 @@ export const adminApi = {
   crmMessages:(id:string,cursor:any,account_id='')=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/messages?'+new URLSearchParams({...cursor,...(account_id?{account_id}:{})})),
   crmSave:(id:string,body:unknown)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify(body)}),
   crmNote:(id:string,body:unknown)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/notes',{method:'POST',body:JSON.stringify(body)}),
+  crmAIReply:(id:string,body:unknown)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/ai-reply',{method:'POST',body:JSON.stringify(body)}),
   crmDraft:(id:string,body:unknown)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/drafts',{method:'POST',body:JSON.stringify(body)}),
   crmSend:(id:string,mid:number)=>req<any>(`/admin/recruitment/contacts/${encodeURIComponent(id)}/drafts/${mid}/send`,{method:'POST',body:JSON.stringify({confirmed:true})}),
   crmCancel:(id:string,mid:number)=>req<any>(`/admin/recruitment/contacts/${encodeURIComponent(id)}/drafts/${mid}/cancel`,{method:'POST'}),

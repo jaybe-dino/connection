@@ -453,3 +453,24 @@ def test_received_message_authentication_is_account_scoped_and_readonly(client,c
     assert mb.authentication_summary([{'name':'Authentication-Results','value':'attacker.example; spf=pass'}])['results']['spf']==['not_reported']
     with connect() as c:c.execute("UPDATE mail_messages SET direction='out' WHERE msg_id=%s",(mid,))
     assert client.get(url,headers=h).status_code==404 and len(calls)==1
+
+
+def test_mailbox_read_cursor_is_account_scoped_and_unclassified_supported(client,crm,monkeypatch):
+    h,cid,aid,tid,mid,email=crm
+    monkeypatch.setattr(gmail,'send_via_brand_gmail',lambda *a,**k:pytest.fail('Read must never send'))
+    root='/admin/recruitment/mailboxes/'+aid
+    assert client.get(root+'/messages',params={'folder':'unread'},headers=h).json()['counts']['unread']==1
+    assert client.post(root+'/messages/'+str(mid)+'/read').status_code==401
+    with connect() as c:
+        aid2=c.execute("INSERT INTO gmail_accounts(brand_id,email,scopes) VALUES('dino-recruitment',%s,%s) RETURNING account_id",('other-'+uuid4().hex+'@example.test',gmail.SCOPES)).fetchone()['account_id']
+        mid2=c.execute("INSERT INTO mail_messages(thread_id,direction,body,state,gmail_account_id) VALUES(%s,'in','Other mailbox','sent',%s) RETURNING msg_id",(tid,aid2)).fetchone()['msg_id']
+    assert client.post(root+'/messages/'+str(mid2)+'/read',headers=h).status_code==404
+    result=client.post(root+'/messages/'+str(mid)+'/read',headers=h);assert result.status_code==200,result.text
+    assert result.json()['gmailChanged'] is False and result.json()['sent'] is False
+    assert client.get(root+'/messages',params={'folder':'unread'},headers=h).json()['messages']==[]
+    assert client.get('/admin/recruitment/mailboxes/'+str(aid2)+'/messages',params={'folder':'unread'},headers=h).json()['counts']['unread']==1
+    with connect() as c:
+        unknown=c.execute("INSERT INTO mail_threads(brand_id,creator_email,subject) VALUES('dino-recruitment',%s,'Unclassified') RETURNING thread_id",('unknown-'+uuid4().hex+'@example.test',)).fetchone()['thread_id']
+        new=c.execute("INSERT INTO mail_messages(thread_id,direction,body,state,gmail_account_id) VALUES(%s,'in','Unknown incoming','sent',%s) RETURNING msg_id",(unknown,aid)).fetchone()['msg_id']
+    assert client.post(root+'/messages/'+str(new)+'/read',headers=h).status_code==200
+    assert client.get(root+'/messages',params={'folder':'unread'},headers=h).json()['messages']==[]

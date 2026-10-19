@@ -111,6 +111,7 @@ export const adminApi = {
   crmMessage:(id:string,mid:number,account_id='')=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/message/'+mid+'?'+new URLSearchParams(account_id?{account_id}:{})),
   crmList:(q='',status='',offset=0,account_id='',folder='replied')=>req<any>('/admin/recruitment/contacts?'+new URLSearchParams({q,status,offset:String(offset),...(account_id?{account_id}:{}),folder})),
   mailboxMessageAuthentication:(aid:string,mid:number)=>req<any>('/admin/recruitment/mailboxes/'+encodeURIComponent(aid)+'/messages/'+mid+'/authentication'),
+  mailboxRead:(aid:string,mid:number)=>req<any>('/admin/recruitment/mailboxes/'+encodeURIComponent(aid)+'/messages/'+mid+'/read',{method:'POST'}),
   mailboxAuthentication:(aid:string)=>req<any>('/admin/recruitment/mailboxes/'+encodeURIComponent(aid)+'/authentication'),
   mailboxMessages:(aid:string,folder:string,q:string,offset=0)=>req<any>('/admin/recruitment/mailboxes/'+encodeURIComponent(aid)+'/messages?'+new URLSearchParams({folder,q,offset:String(offset)})),
   crmMailboxes:()=>req<any>('/admin/recruitment/contacts/mailboxes'),

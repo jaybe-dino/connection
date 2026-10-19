@@ -6,15 +6,15 @@ from .db import connect
 from .recruitment_mailboxes import account
 from .routes_recruitment import WORKSPACE,output
 router=APIRouter(prefix='/admin/recruitment/mailboxes',dependencies=[Depends(require_admin_jwt)])
-FOLDERS={'inbox':"m.direction='in' AND m.state='sent'",'sent':"m.direction='out' AND m.state='sent'",'drafts':"m.direction='out' AND m.state='pending_gate'",'review':"m.state IN ('sending','review')",'all':'true'}
+FOLDERS={'inbox':"m.direction='in' AND m.state='sent'",'unread':"m.direction='in' AND m.state='sent' AND m.msg_id>COALESCE(mr.last_read_msg_id,0)",'sent':"m.direction='out' AND m.state='sent'",'drafts':"m.direction='out' AND m.state='pending_gate'",'review':"m.state IN ('sending','review')",'all':'true'}
 @router.get('/{aid}/messages')
 def listing(aid:UUID,folder:str='inbox',q:str=Query(default='',max_length=120),offset:int=Query(default=0,ge=0,le=100000)):
     if folder not in FOLDERS:raise HTTPException(400,'메일함 폴더 확인 필요')
     with connect() as c:
         a=account(c,aid)
-        base=' FROM mail_messages m JOIN mail_threads t USING(thread_id) LEFT JOIN recruitment_contacts p ON p.email=lower(trim(t.creator_email)) WHERE t.brand_id=%s AND m.gmail_account_id=%s'
+        base=' FROM mail_messages m JOIN mail_threads t USING(thread_id) LEFT JOIN recruitment_contacts p ON p.email=lower(trim(t.creator_email)) LEFT JOIN recruitment_mailbox_reads mr ON mr.account_id=m.gmail_account_id AND mr.email=lower(trim(t.creator_email)) WHERE t.brand_id=%s AND m.gmail_account_id=%s'
         counts=c.execute('SELECT '+','.join('count(*) FILTER(WHERE '+v+') AS "'+k+'"' for k,v in FOLDERS.items())+base,(WORKSPACE,aid)).fetchone()
-        rows=c.execute('SELECT m.msg_id,m.thread_id,m.direction,m.subject,m.body,m.state,COALESCE(m.sent_at,m.created_at) AS created_at,t.creator_email,p.contact_id'+base+' AND ('+FOLDERS[folder]+") AND (%s='' OR t.creator_email ILIKE %s OR m.subject ILIKE %s) ORDER BY COALESCE(m.sent_at,m.created_at) DESC,m.msg_id DESC LIMIT 51 OFFSET %s",(WORKSPACE,aid,q,'%'+q+'%','%'+q+'%',offset)).fetchall()
+        rows=c.execute("SELECT m.msg_id,m.thread_id,m.direction,m.subject,m.body,m.state,COALESCE(m.sent_at,m.created_at) AS created_at,t.creator_email,p.contact_id,(m.direction='in' AND m.state='sent' AND m.msg_id>COALESCE(mr.last_read_msg_id,0)) AS is_unread"+base+' AND ('+FOLDERS[folder]+") AND (%s='' OR t.creator_email ILIKE %s OR m.subject ILIKE %s) ORDER BY COALESCE(m.sent_at,m.created_at) DESC,m.msg_id DESC LIMIT 51 OFFSET %s",(WORKSPACE,aid,q,'%'+q+'%','%'+q+'%',offset)).fetchall()
         return {'account':output(a),'messages':[output(r) for r in rows[:50]],'counts':dict(counts),'hasMore':len(rows)>50,'offset':offset,'limit':50,'scope':'synced_recruitment_correspondence','sent':False}
 
 
@@ -69,3 +69,13 @@ def message_authentication(aid:UUID,mid:int):
             r.raise_for_status();headers=r.json().get('payload',{}).get('headers',[])
         except Exception:raise HTTPException(502,'Gmail 원본 헤더를 읽지 못했습니다. 연결을 확인하세요.') from None
     return {**authentication_summary(headers),'source':'gmail_received_metadata','msgId':mid,'accountId':str(aid),'sent':False,'gmailChanged':False}
+
+
+@router.post('/{aid}/messages/{mid}/read')
+def mark_read(aid:UUID,mid:int,actor:dict=Depends(require_admin_jwt)):
+    with connect() as c:
+        account(c,aid)
+        m=c.execute("SELECT lower(trim(t.creator_email)) AS email FROM mail_messages m JOIN mail_threads t USING(thread_id) WHERE m.msg_id=%s AND m.gmail_account_id=%s AND t.brand_id=%s AND m.direction='in' AND m.state='sent'",(mid,aid,WORKSPACE)).fetchone()
+        if not m:raise HTTPException(404,'이 계정의 받은 메일이 아닙니다')
+        c.execute("INSERT INTO recruitment_mailbox_reads(account_id,email,last_read_msg_id,updated_by) VALUES(%s,%s,%s,%s) ON CONFLICT(account_id,email) DO UPDATE SET last_read_msg_id=GREATEST(recruitment_mailbox_reads.last_read_msg_id,EXCLUDED.last_read_msg_id),updated_by=EXCLUDED.updated_by,updated_at=now()",(aid,m['email'],mid,str(actor['sub'])))
+        return {'read':True,'scope':'operations_team','gmailChanged':False,'sent':False}

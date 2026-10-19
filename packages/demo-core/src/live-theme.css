@@ -410,3 +410,32 @@ body.live-surface .stage{display:block!important;overflow:auto!important;height:
 .crapp .crcompose textarea{border-radius:10px;line-height:1.6}
 .crapp .crpage-head h1{line-height:1.35}
 @media(max-width:760px){.crchat-actions{flex:1 0 100%;width:100%;justify-content:stretch}.crchat-actions .crsearch{flex:1}.crchat-actions .crsearch input{flex:1;width:100%;max-width:none}.crchat-actions button{white-space:nowrap;flex-shrink:0}}
+
+/* Mobile conversations prioritize messages; search stays available on demand. */
+.crchat-search{position:relative;border:0;margin:0;padding:0}
+.crchat-search>summary{display:flex;align-items:center;justify-content:center;min-height:44px;padding:8px 12px;border:1px solid #d6d0db;border-radius:10px;font-size:13px;cursor:pointer;list-style:none}
+.crchat-search:not([open])>.crchat-actions{display:none}
+.crchat-search[open]>.crchat-actions{display:flex;position:absolute;right:0;top:calc(100% + 6px);z-index:25;width:350px;max-width:calc(100vw - 24px);padding:10px;background:#fff;border:1px solid #ded7e4;border-radius:12px;box-shadow:0 8px 24px #30213d18}
+@media(max-width:760px){
+  .crtop .crtop-search{display:none}.crtop-brand{flex:1}
+  .crchat-brands{flex-shrink:0;padding:6px 12px;gap:6px;min-height:52px}
+  .crchat-brands .crchip{min-height:40px;padding:7px 12px;font-size:13px}
+  .crchat-head{padding:10px 12px;gap:4px;align-items:center}
+  .crchat-head>div:first-child{flex:1 1 100%;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+  .crchat-head h1{font-size:18px;line-height:26px}.crchat-head p{margin:0;font-size:11px;line-height:18px}
+  .crchat-tools{width:100%;gap:8px;flex-wrap:nowrap;justify-content:space-between}
+  .conversation-language{flex-wrap:nowrap;gap:6px}.crapp .conversation-language label{font-size:11px}
+  .crapp .conversation-language select{font-size:16px;max-width:145px;padding:7px 24px 7px 10px;min-height:44px}
+  .conversation-language-help summary{font-size:11px;padding:0 5px}
+  .crchat-search>summary{display:flex;align-items:center;justify-content:center;min-height:44px;padding:8px 12px;border:1px solid #d6d0db;border-radius:10px;font-size:13px;cursor:pointer;list-style:none;white-space:nowrap}
+  .crchat-search>summary::-webkit-details-marker{display:none}
+  .crchat-search:not([open])>.crchat-actions{display:none}
+  .crchat-search[open]>.crchat-actions{position:absolute;right:0;top:calc(100% + 6px);z-index:25;width:min(350px,calc(100vw - 24px));padding:10px;background:#fff;border:1px solid #ded7e4;border-radius:12px;box-shadow:0 8px 24px #30213d18}
+  .crapp .crsearch input{font-size:16px}.crchat-search[open]>summary{background:#f4f0f7;border-color:#9678b8}
+  .crchat-tabs{padding:0 12px;gap:16px;min-height:44px;height:auto}.crchat-tabs button{font-size:13px}
+  .crmsgs{padding:14px 12px;overscroll-behavior:contain}.crempty{padding:32px 12px;font-size:13px}
+  .crcompose{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 8px;padding:8px 12px 12px;background:#fff;border-top:1px solid #eee8f2}
+  .crcompose label{grid-column:1/-1;margin:0}.crcompose textarea{font-size:16px;min-height:46px;max-height:130px;resize:vertical;margin:0}
+  .crcompose .btn{align-self:end;margin:0;padding:9px 12px;max-width:90px;font-size:13px;line-height:1.4}
+  .crbottomnav button{min-height:44px}.crchat-body{min-height:80px}
+}

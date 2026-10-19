@@ -63,7 +63,7 @@ def _import_account(conn, brand, account, token):
         return added,page.get('nextPageToken','')
 
 
-def sync(brand):
+def sync(brand, account_id=None, include_sent=False):
     """브랜드의 '읽기 동의(gmail.readonly)가 있는 모든 연결 계정'을 동기화.
 
     검수 반영: 발송 전용(gmail.send) 계정이 먼저 연결돼 있어도 그 계정을
@@ -74,7 +74,7 @@ def sync(brand):
     with gmail.connect() as conn:
         if not conn.execute('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0)) AS locked',('gmail-sync:'+brand,)).fetchone()['locked']:
             raise HTTPException(409,'이미 동기화 중입니다.')
-        accounts=conn.execute("SELECT * FROM gmail_accounts WHERE brand_id=%s AND state='connected' ORDER BY connected_at,account_id FOR UPDATE",(brand,)).fetchall()
+        accounts=conn.execute("SELECT * FROM gmail_accounts WHERE brand_id=%s AND state='connected'"+(" AND account_id=%s" if account_id else "")+" ORDER BY connected_at,account_id FOR UPDATE",(brand,account_id) if account_id else (brand,)).fetchall()
         if not accounts:raise HTTPException(409,'Google 이메일을 먼저 연결하세요.')
         readable=[a for a in accounts if gmail.READ_SCOPE in a['scopes'].split()]
         if not readable:raise HTTPException(409,'받은 메일 권한이 필요합니다. Google 계정을 다시 연결하세요.')
@@ -90,8 +90,19 @@ def sync(brand):
                 with conn.transaction():
                     added,more=_import_account(conn,brand,account,token)
                     conn.execute("UPDATE gmail_accounts SET sync_page_token=%s,synced_at=now(),sync_error='' WHERE account_id=%s",(more,account['account_id']))
-                total+=added;has_more=has_more or bool(more)
-                per.append({'email':account['email'],'imported':added,'error':''})
+                sent_added,sent_more,sent_error=0,'',''
+                if include_sent:
+                    try:
+                        from .gmail_sent_sync import import_sent
+                        with conn.transaction():
+                            sent_added,sent_more=import_sent(conn,brand,account,token)
+                            conn.execute('UPDATE gmail_accounts SET sent_sync_page_token=%s WHERE account_id=%s',(sent_more,account['account_id']))
+                    except Exception as e:sent_error='보낸 메일 가져오기 실패 ('+type(e).__name__+') — 받은 메일은 보존했습니다'
+                    conn.execute('UPDATE gmail_accounts SET sent_sync_error=%s WHERE account_id=%s',(sent_error,account['account_id']))
+                total+=added+sent_added;has_more=has_more or bool(more) or bool(sent_more)
+                result={'email':account['email'],'imported':added+sent_added,'error':''}
+                if include_sent:result.update(inboundImported=added,sentImported=sent_added,sentError=sent_error)
+                per.append(result)
             except Exception as e:
                 # 이 계정만 오류 기록 — 다른 읽기 계정은 계속 진행 (계정별 격리)
                 msg=e.detail if isinstance(e,HTTPException) else f'동기화 실패({type(e).__name__}) — 연결 상태를 확인하세요'

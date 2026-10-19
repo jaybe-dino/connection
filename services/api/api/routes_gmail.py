@@ -522,6 +522,12 @@ class ReplyIn(BaseModel):
     expected_account_id: UUID | None = None
 
 
+def _same_sender_conversation(conn,thread_id,message):
+    # A creator record can contain several provider threads/mailboxes. Only
+    # an already established conversation permits an older sender to continue.
+    return bool(message.get('gmail_thread_id') and conn.execute("SELECT 1 FROM mail_messages WHERE thread_id=%s AND direction='out' AND state='sent' AND gmail_account_id=%s AND gmail_thread_id=%s LIMIT 1",(thread_id,message['gmail_account_id'],message['gmail_thread_id'])).fetchone())
+
+
 @router.post("/inbox/threads/{thread_id}/reply")
 def reply_thread(thread_id: str, body: ReplyIn,
                  authorization: str = Header(default=""),
@@ -555,7 +561,7 @@ def reply_thread(thread_id: str, body: ReplyIn,
             origin=conn.execute("SELECT * FROM mail_messages WHERE msg_id=%s AND thread_id=%s AND direction='in' AND state='sent' AND gmail_account_id IS NOT NULL",(body.reply_to_msg_id,thread_id)).fetchone()
             if not origin:raise HTTPException(409,'이 대화에서 받은 실제 Gmail 메일을 선택하세요')
             if not conn.execute("SELECT 1 FROM gmail_accounts WHERE account_id=%s AND brand_id=%s AND state='connected'",(origin['gmail_account_id'],t['brand_id'])).fetchone():raise HTTPException(409,'원래 발신 계정의 Google 연결 상태를 확인하세요')
-            if original and original['gmail_account_id']!=origin['gmail_account_id']:raise HTTPException(409,'이 크리에이터의 원래 발신 계정과 다릅니다. 발신 이력을 확인하세요')
+            if original and original['gmail_account_id']!=origin['gmail_account_id'] and not _same_sender_conversation(conn,thread_id,origin):raise HTTPException(409,'이 크리에이터의 원래 발신 계정과 다릅니다. 발신 이력을 확인하세요')
         if body.expected_account_id is not None and (not origin or str(origin['gmail_account_id'])!=str(body.expected_account_id)):
             raise HTTPException(409,'검토한 발신 계정과 달라졌습니다')
         if not origin:
@@ -602,7 +608,7 @@ def send_reply(thread_id: str, msg_id: int, authorization: str = Header(default=
         if not m['gmail_account_id']:
             raise HTTPException(409, '발신 계정이 없는 이전 답장입니다. 초안을 다시 작성하세요.')
         original=conn.execute("SELECT gmail_account_id FROM mail_messages WHERE thread_id=%s AND direction='out' AND state='sent' AND gmail_account_id IS NOT NULL ORDER BY created_at DESC,msg_id DESC LIMIT 1",(thread_id,)).fetchone()
-        if original and original['gmail_account_id']!=m['gmail_account_id']:
+        if original and original['gmail_account_id']!=m['gmail_account_id'] and not _same_sender_conversation(conn,thread_id,m):
             raise HTTPException(409,'기존 대화 발신 계정과 다릅니다. 원래 계정으로 초안을 다시 작성하세요.')
     try:
         with connect() as conn:

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { adminApi, authApi, setJwt, clearJwt, type Summary } from "./adminApi";
 import Dashboard from "./screens/Dashboard";
 import Applications from "./screens/Applications";
@@ -187,6 +187,7 @@ function TwoFA() {
 }
 
 export default function App() {
+  const mailLayout=useLocation().pathname==='/mail';
   const [summary, setSummary] = useState<Summary | null>(null);
   const [live, setLive] = useState(true);
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -222,7 +223,7 @@ export default function App() {
   if (authed === false) return <AuthGate onDone={() => setAuthed(true)} />;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", minHeight: "100dvh",
+    <div className={mailLayout?"admin-mail-layout":undefined} style={{ display: "flex", flexDirection: "column", minHeight: "100dvh",
       height: narrow ? "auto" : "100dvh", background: "var(--n50)" }}>
     <header className="wk-admin-top">
       theprlist <small>ADMIN · 전사 운영</small>
@@ -232,7 +233,7 @@ export default function App() {
     </header>
     <div style={{ display: "flex", flexDirection: narrow ? "column" : "row",
       flex: 1, minHeight: 0 }}>
-      <nav style={narrow ? {
+      <nav className="admin-app-nav" style={narrow ? {
         /* 모바일(≤760px): 좌측 고정 레일 대신 상단 랩 메뉴 — 본문 폭 확보 */
         width: "100%", boxSizing: "border-box", background: "var(--d800)",
         color: "var(--d400)", display: "flex", flexDirection: "row",
@@ -281,7 +282,7 @@ export default function App() {
           {!narrow && <>모든 조치는 원장에 기록됩니다.<br />기획: docs/ADMIN_PLAN.md</>}
         </div>
       </nav>
-      <main style={{ flex: 1, overflowY: "auto", minWidth: 0,
+      <main className="admin-app-main" style={{ flex: 1, overflowY: "auto", minWidth: 0,
         padding: narrow ? "14px 12px" : "20px 24px" }}>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />

@@ -60,3 +60,11 @@ API·청구389개, UI96개, 관리자 빌드 통과. 계정/조직 격리, 폴�
 공개 DNS 재점검: 연결된 9개 발송 도메인 모두 SPF·DMARC·google DKIM TXT가 각 1개씩 존재. 추가 cresend.co.kr도 3종 존재하며 Google 관리자에서 DKIM 활성 상태 확인. dncr.co.kr은 이번 수리 후 Google DKIM 활성 상태 확인. dinostudio.kr은 SPF·DMARC 존재, 자체 google DKIM TXT 없음 및 Google 관리자 인증 미시작 상태 확인. 다른 8개 발송 도메인은 신규 Workspace 관리자 로그인 전이므로 DNS 존재만 확인했으며 실제 Google 서명 활성 및 새 수신 메일 인증 PASS로 대신 표현하지 않는다.
 
 스팸으로 표시됐던 기존 chief 메일은 실제 수신 헤더 SPF·DKIM·DMARC PASS였다. 따라서 해당 메일의 스팸 원인을 인증 실패로 확정하지 않는다. 사용자가 받은편지함에서 신고했다는 Gmail 안내와 발신자 평판·수신자 반응을 함께 확인해야 한다. 인증만으로 스팸 미분류를 보장하지 않는다. 실제 신규 메일 발송·유료 AI 호출 없이 로컬 가상 데이터에서 답장 초안 저장·별도 승인·취소 검수.
+
+### 후속 확인·완료
+
+사용자 admin@dinocommerce.co.kr 로그인 후 8개 신규 Workspace 도메인(cresend.me, creve.co.kr, dinocommerce.co.kr, scenesmarket.kr, shortsc.co.kr, shortscommerce.co.kr, shortsshop.co.kr, shortsshop.kr) 전부 Google 관리자에서 `DKIM을 사용하여 이메일 인증 중입니다`를 확인했다. dncr.co.kr 및 cresend.co.kr도 별도 기존 Workspace에서 활성 확인. 신규 키 재생성 없이 기존 키 유지.
+
+사용자 추가 승인 후 dinostudio.kr Google DKIM 2048비트/선택자 google 키를 신규 생성했다. 닷홈 기존 도메인 DNS에 TXT 한 건만 추가했고 Google 인증 시작 후 활성 상태를 확인했다. 권한 DNS(ns1.dothome.co.kr) 공개키 410자 전체가 발급키와 정확히 일치했다. 기존 Google MX 5개·SPF의 Google/Stibee·DMARC·stb._domainkey CNAME·웹사이트 레코드 보존. 이 변경의 롤백은 Google DKIM 중지 후 새 google._domainkey TXT만 제거하는 것으로, 기존 TXT/MX/CNAME에는 손대지 않는다. 실제 새 메일 수신 헤더 DKIM PASS는 이번 작업에서 발송하지 않았으므로 미검수.
+
+400px 모바일 시각 검수에서 상단 어드민 메뉴를 가로 스크롤 한 줄로 줄이고 메일함이 남은 높이를 사용하도록 보완했다. 목록→본문·목록 복귀 확인, 로컬 가상 메일 직접 작성→초안 저장→승인 대기→취소 확인. 실제 메일·유료 Claude 호출 없음.

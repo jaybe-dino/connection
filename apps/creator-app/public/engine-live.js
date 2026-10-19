@@ -277,11 +277,13 @@
         "</b>로 보입니다. 원문은 언제든 칩으로 열려요.");
   }
   window.setMyLang = function (l) {
+    try { localStorage.setItem("CONNECTION_LANG_MODE", "manual"); } catch (e) {}
     applyLang(l, false);
     fire("PUT", "/me/c-mai/locale", { locale: l });
   };
   window.setConversationLang = function (l) {
     if (!LANGS.some(function (x) { return x[0] === l; })) return;
+    try { localStorage.setItem('CONNECTION_LANG_MODE', 'manual'); } catch (e) {}
     var input = document.getElementById('commText');
     var draft = input ? input.value : null;
     applyLang(l, true);
@@ -307,15 +309,36 @@
       " 바꾸면 저장되고 어디서 로그인해도 유지됩니다.<br><div style='margin-top:7px'>" +
       btns + "</div>");
   };
+  function requestConversationLocale() {
+    return location.hostname === 'app.theprlist.net'
+      ? fetch('/api/locale',{credentials:'omit',cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('locale');return r.json();}).catch(function(){return req('GET','/locale/detect');})
+      : req('GET','/locale/detect');
+  }
+  window.useAutomaticConversationLang = function () {
+    try { localStorage.setItem('CONNECTION_LANG_MODE','auto'); } catch(e) {}
+    return requestConversationLocale().then(function(r){
+      try { if(localStorage.getItem('CONNECTION_LANG_MODE')==='manual')return; } catch(e) {}
+      var l=r&&r.locale;
+      if(!LANGS.some(function(x){return x[0]===l;}))l='en';
+      applyLang(l,true);
+    }).catch(function(){if(window.toast)toast('언어 확인 필요','현재 언어를 유지했습니다. 잠시 후 다시 시도하세요.');});
+  };
   (function initLang() {
-    var saved = null;
-    try { saved = localStorage.getItem("CONNECTION_LANG"); } catch (e) {}
-    if (saved) return applyLang(saved, true);
-    req("GET", "/locale/detect").then(function (r) {
-      applyLang(r.locale || "en", true);
-    }).catch(function () {
-      var nav = ((navigator.language || "en").slice(0, 2));
-      applyLang(["th", "ko", "en", "vi", "ja"].indexOf(nav) >= 0 ? nav : "en", true);
+    var saved = null, mode = null;
+    try { saved = localStorage.getItem('CONNECTION_LANG'); mode = localStorage.getItem('CONNECTION_LANG_MODE'); } catch (e) {}
+    // Preserve older saved preferences. New automatic defaults are detected per visit.
+    if (saved && mode !== 'auto' && LANGS.some(function(x){return x[0]===saved;})) return applyLang(saved, true);
+    try { localStorage.setItem('CONNECTION_LANG_MODE', 'auto'); } catch (e) {}
+    function detected(r) {
+      try { if(localStorage.getItem('CONNECTION_LANG_MODE')==='manual')return; } catch(e) {}
+      var lang=r&&r.locale;
+      if(!LANGS.some(function(x){return x[0]===lang;}))lang='en';
+      applyLang(lang, true);
+    }
+    var lookup = requestConversationLocale();
+    lookup.then(detected).catch(function () {
+      var nav = ((navigator.language || 'en').slice(0, 2));
+      detected({locale:['th','ko','en','vi','ja'].indexOf(nav)>=0?nav:'en'});
     });
   })();
 
@@ -2179,8 +2202,10 @@
     function esc(x){return mailEscape(x);}
     function commMsgHtml(m,inThread){
       var lang=window.__USER_LANG||'ko';
-      var shown=(m.translations&&m.translations[lang])||m.original,isTr=shown!==m.original;
-      var pending=m.translationState!=='done'&&m.originalLocale!==lang;
+      var translated=m.translations&&m.translations[lang];
+      if(typeof translated!=='string'||!translated.trim()||/^\[[a-z]{2}·번역대기\]/.test(translated))translated='';
+      var shown=translated||m.original,isTr=!!translated&&shown!==m.original;
+      var pending=!translated&&m.originalLocale!==lang;
       return '<article class="crmsg'+(m.pinnedAt?' pinned':'')+'"><span class="cravatar'+(m.authorKind==='brand'?' dark':'')+'">'+mailEscape((m.author||'?').slice(0,1))+'</span><div class="crmsg-b"><div class="crmsg-name"><b>'+mailEscape(m.author)+'</b>'
         +(m.authorKind==='brand'?'<span class="crrole">브랜드</span>':m.authorKind==='ari'?'<span class="crrole">운영</span>':'')
         +'<time>'+mailEscape((m.at||'').slice(0,16).replace('T',' '))+'</time>'
@@ -2222,7 +2247,7 @@
       else{
         var visible=(commOpen.msgs||[]).filter(function(m){return m.channel===commChannel;});
         var ordered=visible.filter(function(m){return m.pinnedAt;}).concat(visible.filter(function(m){return !m.pinnedAt;}));
-        h+=ordered.map(function(m){return commMsgHtml(m,false);}).join('')||'<div class="crempty">아직 메시지가 없습니다.</div>';
+        h+=ordered.map(function(m){return commMsgHtml(m,false);}).join('')||'<div class="crempty crconversation-empty"><span aria-hidden="true">'+(commChannel==='notice'?'◎':'◌')+'</span><b>'+(commChannel==='notice'?'아직 공지가 없어요':'첫 대화를 시작해 보세요')+'</b><p>'+(commChannel==='notice'?'브랜드의 새 소식을 이곳에서 확인할 수 있어요.':'제품 질문이나 촬영 아이디어를 편하게 나눠 보세요. 대화는 내 언어로 자동 번역됩니다.')+'</p></div>';
       }
       h+='</div>'+commThreadHtml()+'</div>';
       if(commOpen&&commChannel!=='notice')h+='<form class="crcompose" onsubmit="event.preventDefault();commPost()"><label for="commText">'+(selected&&selected.kind==='dm'?'담당자에게 메시지':'채널에 메시지')+'</label><textarea id="commText" data-draft-key="'+mailEscape(commKey())+'" maxlength="2000" oninput="commDraft(this.value)" placeholder="내 언어로 메시지를 남겨 주세요" '+(commSending?'disabled':'')+'>'+mailEscape(commDrafts[commKey()]||'')+'</textarea><button class="btn" '+(commSending||commLoading||commError?'disabled':'')+'>'+(commSending?'전송 중…':'보내기')+'</button></form>';
@@ -2478,7 +2503,7 @@
       return h+'</div>';
     }
     function creatorSettingsHtml(){
-      return '<section class="cc creator-settings"><h2>계정과 언어</h2><dl><dt>로그인 이메일</dt><dd>'+mailEscape(window.__ME.email||'')+'</dd><dt>계정 유형</dt><dd>크리에이터</dd></dl><h3>대화·번역 언어</h3>'+conversationLanguageHtml()+'<p>번역이 준비되지 않으면 원문을 표시합니다. 계약 조건과 수수료는 원문도 함께 확인하세요.</p><button class="btn line" onclick="authLogout()">로그아웃</button></section>';
+      return '<section class="cc creator-settings"><h2>계정과 언어</h2><dl><dt>로그인 이메일</dt><dd>'+mailEscape(window.__ME.email||'')+'</dd><dt>계정 유형</dt><dd>크리에이터</dd></dl><h3>대화·번역 언어</h3>'+conversationLanguageHtml()+'<button class="btn line" onclick="useAutomaticConversationLang()">접속 국가에 맞춰 자동 선택</button><p>번역이 준비되지 않으면 원문을 표시합니다. 계약 조건과 수수료는 원문도 함께 확인하세요.</p><button class="btn line" onclick="authLogout()">로그아웃</button></section>';
     }
     function creatorMessagesHtml(){
       if(creatorLoadErrors.community)return creatorLoadNotice('community','메시지');

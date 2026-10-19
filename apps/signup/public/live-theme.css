@@ -444,3 +444,25 @@ body.live-surface .stage{display:block!important;overflow:auto!important;height:
 .crtop-brand{margin-right:auto}.crtop .crtop-me{width:auto;min-width:44px;min-height:44px;padding:6px 12px;border-radius:10px;font-size:12px;white-space:nowrap}
 .crchat-tools:empty{display:none}
 @media(max-width:760px){.crchat-head{flex-wrap:nowrap;gap:12px}.crchat-head>div:first-child{flex:1 1 auto;min-width:0}.crchat-tools{width:auto;flex:0 0 auto}.crchat-head p{font-size:11px}.crtop .crtop-me{min-height:44px}.creator-settings .conversation-language{align-items:center;gap:10px}.creator-settings .conversation-language select{max-width:180px}}
+/* Mobile-first reading rhythm across communities, campaigns and collaboration. */
+@media(max-width:760px){
+  .crapp{font-size:15px;line-height:1.55;height:100dvh}
+  .crtop-brand{font-size:18px}.crtop-brand small{font-size:10px;letter-spacing:.08em}
+  .crmain .creator-page:not(.creator-page-community){padding:16px 14px 28px;max-width:100%}
+  .crmain .crpage-head{margin-bottom:18px}.crmain .crpage-head h1{font-size:23px;letter-spacing:-.5px;margin:0 0 6px}
+  .crmain .crpage-head p{font-size:13px;line-height:1.65;color:#6c6472}
+  .crmain .cc{padding:16px;margin:12px 0;border-radius:14px;box-shadow:0 2px 8px #30213d04;overflow-wrap:anywhere}
+  .crmain .cc>p{font-size:14px;line-height:1.7}
+  .crmain .cc input:not([type=checkbox]):not([type=radio]),.crmain .cc select,.crmain .cc textarea{font-size:16px;max-width:100%;min-width:0}
+  .crmsg{gap:8px;margin-bottom:18px}.cravatar{width:28px;height:28px;font-size:11px;border-radius:9px}
+  .crmsg-name{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 6px;line-height:1.5}.crmsg-name time{font-size:10px;margin:0;color:#82788a}
+  .crmsg-b{min-width:0}.crmsg p{font-size:15px;line-height:1.65;margin-top:4px;word-break:break-word}
+  .crmeta,.crorig summary{font-size:11px;line-height:1.5;color:#82728e}.crorig{margin-top:5px}
+  .crcompose textarea{resize:none;max-height:120px}.crcompose .btn{min-width:60px}
+  .crbottomnav button{font-size:11px;line-height:1.4;border-radius:10px}.crbottomnav button.active{background:#f3eef7;color:#503669}
+  .crthreadp .crcompose{padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+  .creator-settings h2{font-size:20px}.creator-settings h3{font-size:15px;margin-top:22px}
+}
+.crconversation-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;max-width:320px;margin:28px auto;padding:24px 16px;text-align:center}
+.crconversation-empty>span{display:grid;place-items:center;background:#f4f0f7;color:#785b8a;border-radius:16px;width:48px;height:48px;font-size:28px;margin-bottom:6px}
+.crconversation-empty b{font-size:15px;color:#51435b}.crconversation-empty p{margin:0;font-size:13px;line-height:1.7;color:#81748a}

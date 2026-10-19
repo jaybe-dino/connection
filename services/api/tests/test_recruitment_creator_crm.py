@@ -353,3 +353,18 @@ def test_claude_prompt_validation_and_credit_error(client,crm,monkeypatch):
     monkeypatch.setattr(rai,'generate',lambda *a:(_ for _ in ()).throw(CreditError()))
     r=client.post('/admin/recruitment/contacts/'+cid+'/ai-reply',headers=h,json={'request_id':str(uuid4()),'reply_to_msg_id':mid,'expected_account_id':aid})
     assert r.status_code==503 and '잔액' in r.text
+
+
+def test_older_mail_cursor_keeps_selected_mailbox_scope(client,crm):
+    h,cid,aid,tid,mid,email=crm
+    with connect() as c:
+        other=c.execute("INSERT INTO gmail_accounts(brand_id,email,scopes) VALUES('dino-recruitment',%s,%s) RETURNING account_id",('cursor-'+uuid4().hex+'@example.test',gmail.SCOPES)).fetchone()['account_id']
+        c.execute("INSERT INTO mail_messages(thread_id,direction,body,state,gmail_account_id,created_at) VALUES(%s,'in','Different mailbox private body','sent',%s,now()-interval '2 days')",(tid,other))
+        for n in range(105):c.execute("INSERT INTO mail_messages(thread_id,direction,body,state,gmail_account_id,created_at) VALUES(%s,'in',%s,'sent',%s,now()-interval '1 day')",(tid,'Older selected '+str(n),aid))
+    url='/admin/recruitment/contacts/'+cid+'/messages'
+    page=client.get(url,headers=h,params={'account_id':aid}).json()
+    assert page['hasMore'] is True
+    older=client.get(url,headers=h,params={'account_id':aid,**page['next']})
+    assert older.status_code==200,older.text
+    assert older.json()['messages'] and all(m['gmail_account_id']==aid for m in older.json()['messages'])
+    assert 'Different mailbox private body' not in older.text

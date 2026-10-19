@@ -47,3 +47,6 @@ API·청구389개, UI96개, 관리자 빌드 통과. 계정/조직 격리, 폴�
 - 사용자 최종 약관 동의 승인 후 dncr.co.kr SPF와 _dmarc TXT 두 건 실제 등록 완료. ns1.whoisdomain.kr 권한 DNS에서 Google SPF 및 p=none DMARC 조회, 기존 google-site-verification과5개 Google MX 유지 확인. 원복은 이 두 신규 TXT만 제거하는 방식이며 기존 레코드/네임서버 변경 없음.
 - dncr의 도메인 DKIM은 별도 기존 Workspace 관리자 로그인 필요. 계정 복구/비밀번호 변경/새 DKIM 키 생성은 실행하지 않았음.
 - 실제 메일/답장/로그인메일 추가 발송 없음. Claude 결제 보류 유지.
+
+## dncr DKIM 완료 (최신 상태)
+사용자 관리자 로그인 및 새 키 생성·DNS 등록·인증 시작 승인 후 dncr의 2048비트 RSA 키(선택자 google) 생성. 후이즈에 google._domainkey TXT 신규 한 건 등록. ns1.whoisdomain.kr의 공개키가 Google 생성값과 바이트 일치함을 확인. Google 관리자 상태가 `DKIM을 사용하여 이메일 인증 중입니다.`로 변경되고 인증 중지 버튼 표시 확인. 기존 Google 인증 TXT, SPF, DMARC, MX 보존. 실제 발송·결제 없음. 신규 발신 메일의 실제 수신 인증 결과/스팸 도착은 아직 검수하지 않았음. 원복이 필요하면 Google에서 해당 도메인 인증 중지 후 새로 추가한 DKIM TXT만 제거하며 다른 도메인/기존 DNS는 유지.

@@ -39,3 +39,11 @@ API·청구389개, UI96개, 관리자 빌드 통과. 계정/조직 격리, 폴�
 미완료: DNS 관리자에서 실제 인증 보완, 문제 메일 원본(Authentication-Results와 DKIM-Signature), 실제 수신함 도착 검수, Claude 충전 후 실생성. DNS·실제 받은편지함 도착이 개선됐다고 표시하지 않음.
 
 추가: 개별 수신 메일에서 `이 메일의 인증 결과 보기`는 같은 계정·실제 받은 Gmail ID의 metadata만 읽는다. Gmail의 mx.google.com Authentication-Results에 보고된 SPF/DKIM/DMARC 및 DKIM 도메인/선택자/서명 헤더 이름만 반환하며 토큰·본문·DKIM 서명값은 반환하지 않는다. 발송·Gmail 상태 변경 없음. 전체 API389개 이후 이 기능 포함 CRM24개·UI96개 추가 통과.
+
+## 운영 확인 및 DNS 적용 결과 (이전 미완료 상태 대체)
+- 운영 관리자 로그인 후 9개 계정 카드와 실제 수신 메일 조회 확인.
+- chief@dinostudio.kr → cresenddino@dncr.co.kr, 10/19 22:31 테스트 회신의 Gmail metadata에서 SPF/DKIM/DMARC 모두 pass. DKIM 도메인은 dinostudio-kr.20251104.gappssmtp.com, 선택자20251104. 이 회신의 스팸을 인증 실패로 단정할 수 없으며 화면의 수신함 신고 이력을 우선 확인.
+- 사용자 지시에 따라 Slack 경영지원의 기존 후이즈 계정을 찾아 로그인. 실제 dncr 소유 확인. 비밀번호는 문서에 저장하지 않음.
+- 사용자 최종 약관 동의 승인 후 dncr.co.kr SPF와 _dmarc TXT 두 건 실제 등록 완료. ns1.whoisdomain.kr 권한 DNS에서 Google SPF 및 p=none DMARC 조회, 기존 google-site-verification과5개 Google MX 유지 확인. 원복은 이 두 신규 TXT만 제거하는 방식이며 기존 레코드/네임서버 변경 없음.
+- dncr의 도메인 DKIM은 별도 기존 Workspace 관리자 로그인 필요. 계정 복구/비밀번호 변경/새 DKIM 키 생성은 실행하지 않았음.
+- 실제 메일/답장/로그인메일 추가 발송 없음. Claude 결제 보류 유지.

@@ -2210,7 +2210,7 @@
       h+='<section class="crchat'+(commThread?' with-thread':'')+'" aria-label="'+mailEscape(selected?selected.brandName+' 커뮤니티':'브랜드 커뮤니티')+'">';
       // 채널 헤더
       h+='<header class="crchat-head"><div><h1>'+(commOpen?(selected&&selected.kind==='dm'?'◔ 담당자 DM':'<span>#</span> '+mailEscape(chLabel[commChannel]||'잡담')):'커뮤니티')+'</h1><p>'+(selected?(selected.kind==='dm'?'담당자와 나만 보는 대화':mailEscape(selected.brandName)+' · 멤버 '+selected.memberCount):'브랜드 방을 선택해 대화를 시작하세요.')+'</p></div>'
-        +'<div class="crchat-tools">'+conversationLanguageHtml(true)+(commOpen?'<details class="crchat-search"><summary aria-label="채널 검색 열기">검색</summary><div class="crchat-actions"><form class="crsearch" onsubmit="event.preventDefault();commSearchRun()"><input id="crSearchQ" value="'+mailEscape(commSearchQ)+'" oninput="commSearchInput(this.value)" placeholder="이 채널에서 검색" aria-label="채널 메시지 검색"><button class="cbt" '+(commSearchBusy?'disabled':'')+'>'+(commSearchBusy?'검색 중…':'검색')+'</button></form><button class="cbt no" onclick="commChannelSelect(\''+commChannel+'\')" aria-label="대화 새로고침">↻</button></div></details>':'')+'</div></header>';
+        +'<div class="crchat-tools">'+(commOpen?'<details class="crchat-search"><summary aria-label="채널 검색 열기">검색</summary><div class="crchat-actions"><form class="crsearch" onsubmit="event.preventDefault();commSearchRun()"><input id="crSearchQ" value="'+mailEscape(commSearchQ)+'" oninput="commSearchInput(this.value)" placeholder="이 채널에서 검색" aria-label="채널 메시지 검색"><button class="cbt" '+(commSearchBusy?'disabled':'')+'>'+(commSearchBusy?'검색 중…':'검색')+'</button></form><button class="cbt no" onclick="commChannelSelect(\''+commChannel+'\')" aria-label="대화 새로고침">↻</button></div></details>':'')+'</div></header>';
       // 채널 탭
       if(selected&&selected.kind!=='dm')h+='<nav class="crchat-tabs" aria-label="채널">'+[['chat','# 잡담'],['tips','# 촬영 팁'],['notice','◎ 공지']].map(function(c){return '<button class="'+(commChannel===c[0]?'active':'')+'" aria-pressed="'+(commChannel===c[0])+'" onclick="commChannelSelect(\''+c[0]+'\')">'+c[1]+'</button>';}).join('')+(brand?'<button onclick="crDm('+mailEscape(JSON.stringify(brand))+')">◔ 담당자 DM</button>':'')+'</nav>';
       // 검색 결과
@@ -2361,9 +2361,9 @@
     function crTopHtml(){
       var unread=(creatorNotifs&&creatorNotifs.unreadCount)||0;
       return '<header class="crtop"><span class="crtop-brand">theprlist <small>CREATOR</small></span>'
-        +'<button class="crtop-search" onclick="crTab(\'community\')">⌕ 채널에서 검색 — 2자 이상</button>'
+        
         +'<button class="crtop-bell" onclick="crNotifToggle()" aria-label="알림 '+unread+'건 열기">🔔'+(unread?'<em>'+(unread>99?'99+':unread)+'</em>':'')+'</button>'
-        +'<button class="crtop-me" onclick="crTab(\'settings\')" aria-label="계정과 언어 설정">'+mailEscape((window.__ME.email||'?').slice(0,1).toUpperCase())+'</button></header>';
+        +'<button class="crtop-me" onclick="crTab(\'settings\')" aria-label="계정과 언어 설정">설정</button></header>';
     }
     function crRailHtml(){
       var selected=commSelected(),cur=selected&&selected.brandId;

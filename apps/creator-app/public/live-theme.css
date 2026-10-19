@@ -439,3 +439,8 @@ body.live-surface .stage{display:block!important;overflow:auto!important;height:
   .crcompose .btn{align-self:end;margin:0;padding:9px 12px;max-width:90px;font-size:13px;line-height:1.4}
   .crbottomnav button{min-height:44px}.crchat-body{min-height:80px}
 }
+
+/* Infrequent preferences live in Settings, not in the conversation toolbar. */
+.crtop-brand{margin-right:auto}.crtop .crtop-me{width:auto;min-width:44px;min-height:44px;padding:6px 12px;border-radius:10px;font-size:12px;white-space:nowrap}
+.crchat-tools:empty{display:none}
+@media(max-width:760px){.crchat-head{flex-wrap:nowrap;gap:12px}.crchat-head>div:first-child{flex:1 1 auto;min-width:0}.crchat-tools{width:auto;flex:0 0 auto}.crchat-head p{font-size:11px}.crtop .crtop-me{min-height:44px}.creator-settings .conversation-language{align-items:center;gap:10px}.creator-settings .conversation-language select{max-width:180px}}

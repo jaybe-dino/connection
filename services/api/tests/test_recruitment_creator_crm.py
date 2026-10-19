@@ -429,3 +429,27 @@ def test_mailbox_dns_check_is_readonly_and_does_not_claim_delivery(client,crm,mo
     monkeypatch.setattr(mb,'dns_txt',lambda n:(_ for _ in ()).throw(ValueError('unavailable')))
     r=client.get('/admin/recruitment/mailboxes/'+aid+'/authentication',headers=h)
     assert all(x['status']=='lookup_failed' for x in r.json()['checks'].values())
+
+
+def test_received_message_authentication_is_account_scoped_and_readonly(client,crm,monkeypatch):
+    from api import routes_recruitment_mailboxes as mb
+    from types import SimpleNamespace
+    import httpx
+    h,cid,aid,tid,mid,email=crm
+    with connect() as c:c.execute('UPDATE mail_messages SET gmail_message_id=%s WHERE msg_id=%s',('actual-provider-id',mid))
+    calls=[]
+    monkeypatch.setattr(gmail,'_demo_mode',lambda:False)
+    monkeypatch.setattr(gmail,'_refresh_if_needed',lambda *a:'private-test-token')
+    def get(url,**kw):
+        calls.append((url,kw['params']))
+        return SimpleNamespace(raise_for_status=lambda:None,json=lambda:{'payload':{'headers':[{'name':'Authentication-Results','value':'mx.google.com; spf=pass smtp.mailfrom=example.test; dkim=pass; dmarc=pass'},{'name':'DKIM-Signature','value':'v=1; d=example.test; s=google; h=from:to:subject:list-unsubscribe:list-unsubscribe-post; b=publicsig'}]}})
+    monkeypatch.setattr(httpx,'get',get)
+    url='/admin/recruitment/mailboxes/'+aid+'/messages/'+str(mid)+'/authentication'
+    assert client.get(url).status_code==401
+    r=client.get(url,headers=h);assert r.status_code==200,r.text
+    d=r.json();assert d['results']['dmarc']==['pass'] and d['gmailChanged'] is False and d['sent'] is False
+    assert len(calls)==1 and 'private-test-token' not in r.text and 'publicsig' not in r.text
+    assert d['dkimSignatures'][0]['selector']=='google'
+    assert mb.authentication_summary([{'name':'Authentication-Results','value':'attacker.example; spf=pass'}])['results']['spf']==['not_reported']
+    with connect() as c:c.execute("UPDATE mail_messages SET direction='out' WHERE msg_id=%s",(mid,))
+    assert client.get(url,headers=h).status_code==404 and len(calls)==1

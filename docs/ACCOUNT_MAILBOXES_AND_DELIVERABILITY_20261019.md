@@ -37,3 +37,5 @@ API·청구389개, UI96개, 관리자 빌드 통과. 계정/조직 격리, 폴�
 `account-mailbox-before-20261019` 태그가 이전 코드. 새 DB 마이그레이션 없음. 운영 Gmail 기록·기존 CRM 데이터는 삭제/복원하지 않음.
 
 미완료: DNS 관리자에서 실제 인증 보완, 문제 메일 원본(Authentication-Results와 DKIM-Signature), 실제 수신함 도착 검수, Claude 충전 후 실생성. DNS·실제 받은편지함 도착이 개선됐다고 표시하지 않음.
+
+추가: 개별 수신 메일에서 `이 메일의 인증 결과 보기`는 같은 계정·실제 받은 Gmail ID의 metadata만 읽는다. Gmail의 mx.google.com Authentication-Results에 보고된 SPF/DKIM/DMARC 및 DKIM 도메인/선택자/서명 헤더 이름만 반환하며 토큰·본문·DKIM 서명값은 반환하지 않는다. 발송·Gmail 상태 변경 없음. 전체 API389개 이후 이 기능 포함 CRM24개·UI96개 추가 통과.

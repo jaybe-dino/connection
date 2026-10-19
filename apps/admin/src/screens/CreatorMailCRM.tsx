@@ -5,11 +5,11 @@ const states:Record<string,string>={new:'새 연락처',in_progress:'진행 중'
 const mailStates:Record<string,string>={pending_gate:'승인 전 초안',sending:'전송 결과 확인 중',sent:'발신: Gmail 접수 / 수신: 가져옴',review:'결과 확인 필요 · 재전송 금지',cancelled:'취소한 초안'};
 const folders:Record<string,string>={replied:'회신 온 크리에이터',needs_reply:'답장 필요',unread:'새 수신',sent_only:'발송만 한 대상',drafts:'답장 초안',review:'결과 확인',all:'전체 기록'};
 const date=(s:string)=>s?new Date(s).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}):'미기록';
-export default function CreatorMailCRM(){
- const [account,setAccount]=useState(''),[folder,setFolder]=useState('replied'),[accounts,setAccounts]=useState<any[]>([]),[counts,setCounts]=useState<Record<string,number>>({});
+export default function CreatorMailCRM({initialEmail='',initialAccountId='',initialReplyId}:{initialEmail?:string,initialAccountId?:string,initialReplyId?:number}={}){
+ const [account,setAccount]=useState(initialAccountId),[folder,setFolder]=useState(initialEmail?'all':'replied'),[accounts,setAccounts]=useState<any[]>([]),[counts,setCounts]=useState<Record<string,number>>({});
  const [unlinkedPage,setUnlinkedPage]=useState(0),[unlinkedMore,setUnlinkedMore]=useState(false);
  const selectedAccount=accounts.find(a=>a.account_id===account);
- const [rows,setRows]=useState<any[]>([]),[q,setQ]=useState(''),[status,setStatus]=useState(''),[offset,setOffset]=useState(0),[more,setMore]=useState(false);
+ const [rows,setRows]=useState<any[]>([]),[q,setQ]=useState(initialEmail),[status,setStatus]=useState(''),[offset,setOffset]=useState(0),[more,setMore]=useState(false);
  const [id,setId]=useState(''),[data,setData]=useState<any>(null),[profile,setProfile]=useState<any>(null),[messages,setMessages]=useState<any[]>([]),[cursor,setCursor]=useState<any>(null);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[note,setNote]=useState(''),[body,setBody]=useState(''),[anchor,setAnchor]=useState<any>(null),[approval,setApproval]=useState<any>(null),[ack,setAck]=useState(false);
  const [unlinked,setUnlinked]=useState<any[]|null>(null),[confirmed,setConfirmed]=useState<Record<string,boolean>>({}),[syncResult,setSyncResult]=useState<any>(null),[unlinkedPreview,setUnlinkedPreview]=useState<Record<string,any>>({}),[uncertain,setUncertain]=useState(false);
@@ -17,10 +17,10 @@ export default function CreatorMailCRM(){
  useEffect(()=>{if(anchor)composerRef.current?.scrollIntoView({block:'center'});},[anchor]);
  useEffect(()=>{if(approval)approvalRef.current?.scrollIntoView({block:'center'});},[approval]);
  const request=useRef<any>(null),noteRequest=useRef<any>(null),active=useRef('');
- const loadList=async(page=offset,aid=account,box=folder)=>{const r=await adminApi.crmList(q,status,page,aid,box);setCounts(r.counts||{});setRows(r.contacts);setMore(r.hasMore);setOffset(page);};
+ const loadList=async(page=offset,aid=account,box=folder)=>{const r=await adminApi.crmList(q,status,page,aid,box);setCounts(r.counts||{});setRows(r.contacts);setMore(r.hasMore);setOffset(page);return r;};
  async function loadContact(cid:string,aid=account){const r=await adminApi.crmDetail(cid,aid);if(active.current!==cid+'|'+aid)return;setData(r);setProfile({...r.contact});setMessages(r.correspondence.messages);setCursor(r.correspondence.next);setApproval(null);setAck(false);}
  async function act(fn:()=>Promise<void>){if(busy)return;setBusy(true);setError('');setNotice('');try{await fn();}catch(e:any){setError(e.message||String(e));}finally{setBusy(false);}}
- useEffect(()=>{void act(async()=>{await adminApi.crmRefresh();setAccounts((await adminApi.crmMailboxes()).accounts);await loadList(0);});return()=>{active.current='';};},[]);
+ useEffect(()=>{void act(async()=>{await adminApi.crmRefresh();setAccounts((await adminApi.crmMailboxes()).accounts);const r=await loadList(0);if(initialEmail){const p=r.contacts.find((x:any)=>x.email.toLowerCase()===initialEmail.toLowerCase());if(p){active.current=p.contact_id+'|'+account;setId(p.contact_id);await loadContact(p.contact_id);if(initialReplyId){const m=await adminApi.crmMessage(p.contact_id,initialReplyId,account);if(m.direction==='in'){setAnchor(m);}}}else setNotice('저장된 발송·회신 기록이 없습니다. 메일함 동기화 후 다시 확인하세요.');}});return()=>{active.current='';};},[]);
  function canLeave(){const dirtyProfile=profile&&data&&['owner_name','status','next_action','due_at'].some(k=>profile[k]!==data.contact[k]);return !uncertain&&(!(body.trim()||note.trim()||dirtyProfile)||window.confirm('저장하지 않은 답장·메모·운영 상태 변경이 있습니다. 내용을 버리고 이동할까요?'));}
  function resetContact(){active.current='';setId('');setData(null);setProfile(null);setBody('');setNote('');setAnchor(null);setApproval(null);setAck(false);request.current=null;noteRequest.current=null;}
  function changeView(aid:string,box:string){if(busy||!canLeave())return;resetContact();setAccount(aid);setFolder(box);setUnlinked(null);setUnlinkedPage(0);setUnlinkedMore(false);setUnlinkedPreview({});setConfirmed({});void act(()=>loadList(0,aid,box));}

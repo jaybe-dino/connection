@@ -106,6 +106,9 @@ export interface Submission {
 }
 
 export const adminApi = {
+  batchMail:(id:string,q='',view='all',offset=0)=>req<any>('/admin/recruitment/mail/batches/'+encodeURIComponent(id)+'?'+new URLSearchParams({q,view,offset:String(offset)})),
+  batchMailRecipient:(id:string,rid:string,cursor:any={})=>req<any>('/admin/recruitment/mail/batches/'+encodeURIComponent(id)+'/recipients/'+encodeURIComponent(rid)+'?'+new URLSearchParams(cursor)),
+  crmMessage:(id:string,mid:number,account_id='')=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/message/'+mid+'?'+new URLSearchParams(account_id?{account_id}:{})),
   crmList:(q='',status='',offset=0,account_id='',folder='replied')=>req<any>('/admin/recruitment/contacts?'+new URLSearchParams({q,status,offset:String(offset),...(account_id?{account_id}:{}),folder})),
   crmMailboxes:()=>req<any>('/admin/recruitment/contacts/mailboxes'),
   crmRead:(id:string,account_id:string,through_msg_id:number)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/read',{method:'POST',body:JSON.stringify({account_id,through_msg_id})}),

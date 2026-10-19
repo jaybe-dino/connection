@@ -201,3 +201,12 @@ def mark_read(cid:UUID,b:Read,actor:dict=Depends(require_admin_jwt)):
         if str(m['gmail_account_id'])!=str(b.account_id) or m['direction']!='in':raise HTTPException(409,'선택한 계정의 받은 메일만 읽음 처리할 수 있습니다')
         c.execute("INSERT INTO recruitment_mailbox_reads(account_id,email,last_read_msg_id,updated_by) VALUES(%s,%s,%s,%s) ON CONFLICT(account_id,email) DO UPDATE SET last_read_msg_id=GREATEST(recruitment_mailbox_reads.last_read_msg_id,EXCLUDED.last_read_msg_id),updated_by=EXCLUDED.updated_by,updated_at=now()",(b.account_id,p['email'],b.through_msg_id,str(actor['sub'])))
         return {'read':True,'scope':'operations_team','gmailChanged':False}
+
+@router.get('/{cid}/message/{mid}')
+def one_message(cid:UUID,mid:int,account_id:UUID|None=None):
+    with connect() as c:
+        boxes.account(c,account_id)
+        p=contact(c,cid);m=owned_message(c,p,mid)
+        if account_id and str(m['gmail_account_id'])!=str(account_id):raise HTTPException(404,'선택한 계정의 메일이 아닙니다')
+        a=boxes.account(c,m['gmail_account_id'])
+        return {**output({k:m[k] for k in ('msg_id','subject','body','direction','state','created_at','gmail_account_id')}),'account_email':a['email'] if a else None}

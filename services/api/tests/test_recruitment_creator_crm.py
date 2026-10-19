@@ -262,3 +262,38 @@ def test_sent_import_error_does_not_rollback_received_mail(client,crm,monkeypatc
     with connect() as c:
         assert c.execute("SELECT 1 FROM mail_messages WHERE thread_id=%s AND body='Received mail survives sent-sync error'",(tid,)).fetchone()
         assert c.execute('SELECT sent_sync_error FROM gmail_accounts WHERE account_id=%s',(aid,)).fetchone()['sent_sync_error']
+
+
+def test_batch_recipient_links_exact_sent_body_and_same_conversation_only(client,crm):
+    h,cid,aid,tid,mid,email=crm
+    with connect() as c:
+        c.execute("UPDATE mail_messages SET gmail_message_id='exact-outreach-message' WHERE thread_id=%s AND direction='out'",(tid,))
+        bid=c.execute("INSERT INTO outreach_batches(brand_id,target_brand_id,gmail_account_id,subject,body,created_by,state,offer_code) VALUES('dino-recruitment','glowlab',%s,'Planned subject','PLANNED BODY, NOT ACTUAL','qa','approved','QA-OFFER') RETURNING batch_id",(aid,)).fetchone()['batch_id']
+        rid=c.execute("INSERT INTO outreach_recipients(batch_id,email,state,provider_id,sent_at) VALUES(%s,%s,'sent','exact-outreach-message',now()) RETURNING recipient_id",(bid,email)).fetchone()['recipient_id']
+        pending=c.execute("INSERT INTO outreach_recipients(batch_id,email,state) VALUES(%s,%s,'pending') RETURNING recipient_id",(bid,uuid4().hex+'@example.test')).fetchone()['recipient_id']
+        c.execute("INSERT INTO mail_messages(thread_id,direction,body,state,gmail_account_id,gmail_thread_id) VALUES(%s,'in','OTHER THREAD PRIVATE REPLY','sent',%s,'other-thread')",(tid,aid))
+    base='/admin/recruitment/mail/batches/'+str(bid)
+    r=client.get(base,headers=h);assert r.status_code==200,r.text
+    assert r.json()['counts']['total']==2 and r.json()['counts']['replied']==1
+    rows=client.get(base,params={'view':'replied'},headers=h).json()['recipients'];assert len(rows)==1 and rows[0]['email']==email
+    r=client.get(base+'/recipients/'+str(rid),headers=h);assert r.status_code==200,r.text
+    d=r.json();assert d['original']['recorded'] is True and d['original']['body']=='Invitation body'
+    assert len(d['replies'])==1 and d['replies'][0]['msg_id']==mid
+    assert 'OTHER THREAD' not in str(d)
+    pending=client.get(base+'/recipients/'+str(pending),headers=h).json();assert pending['original']['recorded'] is False and pending['replies']==[]
+    assert client.get(base+'/recipients/'+str(uuid4()),headers=h).status_code==404
+    assert client.get(base).status_code==401
+    foreign={'Authorization':'Bearer '+auth.issue_jwt({'sub':'foreign','kind':'brand','brand_id':'glowlab'})}
+    assert client.get(base,headers=foreign).status_code==401
+    with connect() as c:
+        other=c.execute("INSERT INTO outreach_batches(brand_id,subject,body,created_by) VALUES('glowlab','Private','private','qa') RETURNING batch_id").fetchone()['batch_id']
+    assert client.get('/admin/recruitment/mail/batches/'+str(other),headers=h).status_code==404
+
+
+def test_exact_reply_entry_cannot_jump_to_other_mailbox(client,crm):
+    h,cid,aid,tid,mid,email=crm;base='/admin/recruitment/contacts/'+cid+'/message/'+str(mid)
+    r=client.get(base,headers=h,params={'account_id':aid});assert r.status_code==200,r.text
+    assert r.json()['direction']=='in' and r.json()['gmail_account_id']==aid and r.json()['account_email']
+    with connect() as c:
+        other=c.execute("INSERT INTO gmail_accounts(brand_id,email) VALUES('dino-recruitment',%s) RETURNING account_id",(uuid4().hex+'@example.test',)).fetchone()['account_id']
+    assert client.get(base,headers=h,params={'account_id':str(other)}).status_code==404

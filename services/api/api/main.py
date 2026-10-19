@@ -706,3 +706,5 @@ from .routes_recruitment_setup import public as _invitation_product_router
 app.include_router(_invitation_product_router)
 from .routes_recruitment_crm import router as _recruitment_crm_router
 app.include_router(_recruitment_crm_router)
+from .routes_recruitment_mail import router as _recruitment_mail_router
+app.include_router(_recruitment_mail_router)

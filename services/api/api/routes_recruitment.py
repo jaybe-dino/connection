@@ -219,7 +219,7 @@ def batches(mapping_id:UUID,_admin:dict=Depends(require_admin)):
     return {'batches':[output(r) for r in rows],'limit':100,'note':'최근 100개 배치. 수신 주소·발송 상태 기준이며 배달·고유 인원·회신·신청·판매 성과가 아닙니다.'}
 
 
-def distributed_plan(c,mapping_id,body):
+def distributed_plan(c,mapping_id,body,capacity_offsets=None,allow_empty=False):
     """Stable, capacity bounded allocation. Existing conversations never rotate senders."""
     from . import routes_gmail as gmail
     base=saved_plan(c,mapping_id,body).mappings[0]
@@ -235,7 +235,7 @@ def distributed_plan(c,mapping_id,body):
         if not a:raise HTTPException(409,'공용 공간의 연결·중지 상태를 확인하고 발신 계정을 다시 선택하세요')
         remaining=gmail._acct_out(gmail._with_delivery_usage(c,a))['remainingToday']
         reserved=c.execute("SELECT count(*) AS n FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE b.gmail_account_id=%s AND b.state IN ('draft','approved') AND r.state IN ('pending','sending') AND NOT (b.batch_id=ANY(%s::uuid[]))",(aid,old)).fetchone()['n']
-        senders[str(aid)]=max(0,remaining-reserved)
+        senders[str(aid)]=max(0,remaining-reserved-(capacity_offsets or {}).get(str(aid),0))
     emails=list({r.email.strip().lower() for r in body.rows})
     history=c.execute("SELECT t.creator_email,m.gmail_account_id FROM mail_threads t JOIN mail_messages m USING(thread_id) WHERE t.brand_id=%s AND t.creator_email=ANY(%s) AND m.gmail_account_id IS NOT NULL AND m.state='sent' AND m.direction='out' ORDER BY m.created_at DESC,m.msg_id DESC",(WORKSPACE,emails)).fetchall()
     pinned={}
@@ -253,7 +253,9 @@ def distributed_plan(c,mapping_id,body):
                 unassigned.append({'row':number,'reason':'sender_capacity_exhausted'});continue
             assigned[email]=aid;senders[aid]-=1;allocated[aid]+=1
         rows.append(bulk.Candidate(email=r.email,name=r.name,reason=r.reason,mapping_key=str(mapping_id)+'_'+str(ids.index(UUID(aid)))))
-    if not rows:raise HTTPException(409,'배정 가능한 발신 잔여량이 없습니다. 기존 대기열·원래 발신자·계정 연결을 확인하세요')
+    if not rows:
+        if allow_empty:return None,unassigned
+        raise HTTPException(409,'배정 가능한 발신 잔여량이 없습니다. 기존 대기열·원래 발신자·계정 연결을 확인하세요')
     mappings=[bulk.Mapping(**{**base.model_dump(),'key':str(mapping_id)+'_'+str(i),'gmail_account_id':aid}) for i,aid in enumerate(ids) if any(r.mapping_key==str(mapping_id)+'_'+str(i) for r in rows)]
     return bulk.Plan(mappings=mappings,rows=rows),unassigned
 

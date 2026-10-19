@@ -7,7 +7,7 @@ import Reports from "./screens/Reports";
 import Disputes from "./screens/Disputes";
 import Submissions from "./screens/Submissions";
 import GmailOps from "./screens/GmailOps";
-import Recruitment from "./screens/Recruitment";
+import Recruitment from "./screens/RecruitmentWorkspace";
 import Pool from "./screens/Pool";
 import Brands from "./screens/Brands";
 

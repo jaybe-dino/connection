@@ -35,7 +35,7 @@ class Candidate(BaseModel):
 
 
 class Plan(BaseModel):
-    mappings: list[Mapping] = Field(min_length=1, max_length=50)
+    mappings: list[Mapping] = Field(min_length=1, max_length=500)
     rows: list[Candidate] = Field(min_length=1, max_length=10000)
 
 
@@ -167,38 +167,42 @@ def preview(brand: str, body: Plan, authorization: str = Header(default='')):
 @router.post('/brands/{brand}/outreach/bulk/drafts')
 def save(brand: str, body: SavePlan, authorization: str = Header(default='')):
     actor = guard(brand,authorization)
-    input_hash = digest(plan_input(body))
     with connect() as conn:
-        # Serializes plans for the same recruitment workspace; atomic, no partial save.
-        conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('bulk-outreach:'+brand,))
-        prior = conn.execute('SELECT * FROM outreach_bulk_saves WHERE brand_id=%s AND request_id=%s',(brand,body.request_id)).fetchone()
-        if prior:
-            if prior['input_hash'] != input_hash:
-                raise HTTPException(409,'같은 저장 요청을 다른 내용으로 사용할 수 없습니다')
-            return {'batchIds':prior['batch_ids'],'replayed':True,'written':False,'sent':False}
-        result, definitions, eligible = prepare(conn,brand,body,authorization)
-        if result['reviewHash'] != body.review_hash:
-            raise HTTPException(409,'명단·매핑·수신거부·연결·잔여 한도가 바뀌었습니다. 다시 사전 검수하세요')
-        if not result['eligibleCount']:
-            raise HTTPException(409,'저장할 대상이 없습니다')
-        ids = []
-        for key, definition in definitions.items():
-            mapping = definition['mapping']
-            records = eligible[key]
-            context=conn.execute('SELECT mapping_id,revision FROM recruitment_mappings WHERE mapping_id::text=%s AND workspace_id=%s AND target_brand_id=%s AND product_id=%s',(key.split('_',1)[0],brand,definition['target'],mapping.product_id)).fetchone()
-            offer_code='O-'+str(context['mapping_id'])+'-R'+str(context['revision']) if context else ''
-            for start in range(0,len(records),200):
-                chunk = records[start:start+200]
-                batch = conn.execute('INSERT INTO outreach_batches(brand_id,subject,body,created_by,gmail_account_id,target_brand_id,product_id,product_name,mapping_key,campaign_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING batch_id',(brand,mapping.subject,mapping.body,actor,mapping.gmail_account_id,definition['target'],mapping.product_id,definition['product']['name'],key,mapping.campaign_id)).fetchone()
-                bid = batch['batch_id']; ids.append(str(bid))
-                conn.execute('UPDATE outreach_batches SET offer_code=%s WHERE batch_id=%s',(offer_code or 'B-'+str(bid),bid))
-                for record in chunk:
-                    conn.execute('INSERT INTO outreach_optouts(brand_id,email) VALUES(%s,%s) ON CONFLICT DO NOTHING',(brand,record['email']))
-                    recipient=conn.execute('INSERT INTO outreach_recipients(batch_id,email,personalized_subject,personalized_body) VALUES(%s,%s,%s,%s) RETURNING recipient_id',(bid,record['email'],record['subject'],record['body'])).fetchone()
-                    from .routes_recruitment_links import append_link
-                    personal=append_link(conn,bid,recipient['recipient_id'],record['body'])
-                    conn.execute('UPDATE outreach_recipients SET personalized_body=%s WHERE recipient_id=%s',(personal,recipient['recipient_id']))
-        conn.execute('INSERT INTO outreach_bulk_saves(brand_id,request_id,input_hash,batch_ids) VALUES(%s,%s,%s,%s)',(brand,body.request_id,input_hash,json.dumps(ids)))
+        return save_plan_in_conn(conn, brand, body, actor, authorization)
+
+
+def save_plan_in_conn(conn, brand: str, body: SavePlan, actor: str, authorization: str):
+    input_hash = digest(plan_input(body))
+    # Serializes plans for the same recruitment workspace; atomic, no partial save.
+    conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('bulk-outreach:'+brand,))
+    prior = conn.execute('SELECT * FROM outreach_bulk_saves WHERE brand_id=%s AND request_id=%s',(brand,body.request_id)).fetchone()
+    if prior:
+        if prior['input_hash'] != input_hash:
+            raise HTTPException(409,'같은 저장 요청을 다른 내용으로 사용할 수 없습니다')
+        return {'batchIds':prior['batch_ids'],'replayed':True,'written':False,'sent':False}
+    result, definitions, eligible = prepare(conn,brand,body,authorization)
+    if result['reviewHash'] != body.review_hash:
+        raise HTTPException(409,'명단·매핑·수신거부·연결·잔여 한도가 바뀌었습니다. 다시 사전 검수하세요')
+    if not result['eligibleCount']:
+        raise HTTPException(409,'저장할 대상이 없습니다')
+    ids = []
+    for key, definition in definitions.items():
+        mapping = definition['mapping']
+        records = eligible[key]
+        context=conn.execute('SELECT mapping_id,revision FROM recruitment_mappings WHERE mapping_id::text=%s AND workspace_id=%s AND target_brand_id=%s AND product_id=%s',(key.split('_',1)[0],brand,definition['target'],mapping.product_id)).fetchone()
+        offer_code='O-'+str(context['mapping_id'])+'-R'+str(context['revision']) if context else ''
+        for start in range(0,len(records),200):
+            chunk = records[start:start+200]
+            batch = conn.execute('INSERT INTO outreach_batches(brand_id,subject,body,created_by,gmail_account_id,target_brand_id,product_id,product_name,mapping_key,campaign_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING batch_id',(brand,mapping.subject,mapping.body,actor,mapping.gmail_account_id,definition['target'],mapping.product_id,definition['product']['name'],key,mapping.campaign_id)).fetchone()
+            bid = batch['batch_id']; ids.append(str(bid))
+            conn.execute('UPDATE outreach_batches SET offer_code=%s WHERE batch_id=%s',(offer_code or 'B-'+str(bid),bid))
+            for record in chunk:
+                conn.execute('INSERT INTO outreach_optouts(brand_id,email) VALUES(%s,%s) ON CONFLICT DO NOTHING',(brand,record['email']))
+                recipient=conn.execute('INSERT INTO outreach_recipients(batch_id,email,personalized_subject,personalized_body) VALUES(%s,%s,%s,%s) RETURNING recipient_id',(bid,record['email'],record['subject'],record['body'])).fetchone()
+                from .routes_recruitment_links import append_link
+                personal=append_link(conn,bid,recipient['recipient_id'],record['body'])
+                conn.execute('UPDATE outreach_recipients SET personalized_body=%s WHERE recipient_id=%s',(personal,recipient['recipient_id']))
+    conn.execute('INSERT INTO outreach_bulk_saves(brand_id,request_id,input_hash,batch_ids) VALUES(%s,%s,%s,%s)',(brand,body.request_id,input_hash,json.dumps(ids)))
     return {'batchIds':ids,'replayed':False,'written':True,'sent':False,'eligibleCount':result['eligibleCount']}
 
 

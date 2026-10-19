@@ -14,7 +14,7 @@ const exclusions:Record<string,string>={contact_blocked:'반송·불만·연락 
 const box={background:'white',border:'1px solid var(--n300)',borderRadius:12,padding:18,marginBottom:16};
 const input={width:'100%',padding:8,boxSizing:'border-box' as const,border:'1px solid var(--n300)',borderRadius:6};
 
-export default function Recruitment(){
+export default function Recruitment({settingsOnly=false}:{settingsOnly?:boolean}={}){
  const [workspace,setWorkspace]=useState<Workspace|null>(null),[loaded,setLoaded]=useState(false);
  const [options,setOptions]=useState<any>({brands:[],products:[],accounts:[],campaigns:[]}),[items,setItems]=useState<any[]>([]);
  const [selected,setSelected]=useState<string>(''),[form,setForm]=useState<Form>({...empty}),[dirty,setDirty]=useState(false);
@@ -69,7 +69,7 @@ export default function Recruitment(){
     <button onClick={()=>action(async()=>{const r=await adminApi.saveRecruitmentMapping(form,selected||undefined);await load();await select(r);setNotice('매핑을 저장했습니다. 발송하지 않았습니다.');})}>매핑 저장</button>
    </fieldset></div>
   </div>
-  <RecruitmentOps country={form.country} language={form.language} mappingId={selected} brandId={form.target_brand_id} revision={form.revision} dirty={dirty} onUseRows={text=>{setCohortRows(text);setRowsText(text);setPreview(null);requestId.current='';}}/>
+  {!settingsOnly&&<><RecruitmentOps country={form.country} language={form.language} mappingId={selected} brandId={form.target_brand_id} revision={form.revision} dirty={dirty} onUseRows={text=>{setCohortRows(text);setRowsText(text);setPreview(null);requestId.current='';}}/>
   {selected&&<><p><a href={'https://app.theprlist.net/?brand='+encodeURIComponent(form.target_brand_id)} target="_blank" rel="noopener noreferrer">이 고객 브랜드 커뮤니티 열기</a> · 실제 제안은 수신자별 신청 링크로 연결됩니다.</p><DistributedRecruitment incomingRows={cohortRows} onBusy={setBusy} mappingId={selected} revision={form.revision} dirty={dirty||form.state!=='active'} accounts={options.accounts} onSaved={async()=>{setBatches((await adminApi.recruitmentBatches(selected)).batches);await load();}}/><div style={box}><h2>이 제품의 대상 검수와 초안</h2><p>이메일 · 이름 · 선정 이유 3개 열을 탭으로 구분해 붙여넣으세요. 헤더 없이 입력하며 최대 10,000행을 검수할 수 있습니다. 검수는 발송이나 운영 DB 반입이 아닙니다.</p>
    <textarea aria-label="검수할 대상" style={input} rows={6} value={rowsText} disabled={busy} onChange={e=>{setRowsText(e.target.value);setPreview(null);requestId.current='';}}/>
    {dirty&&<p>수정한 매핑을 먼저 저장하세요.</p>}
@@ -85,7 +85,7 @@ export default function Recruitment(){
    {batches.map(b=><div key={b.batch_id} style={{borderTop:'1px solid #ddd',padding:10}}><b>{b.product_name}</b> · 제안 코드 {b.offer_code||"이전 배치 · 미기록"}<br/>{b.sender_email} · {deliveryStates[b.state]||b.state}{b.sending_paused?' · 중지':''}<br/>수신 주소 {b.recipient_count} · 발송 {b.sent_count} · 미발송 주소 {b.pending_count} · 확인 필요 {b.review_count} · 제외 {b.blocked_count}<br/><button disabled={busy} onClick={()=>action(async()=>{setSendConsent(false);setReview(await adminApi.reviewRecruitmentBatch(b.batch_id));})}>개별 수신자·문안 확인</button> {b.state==='draft'&&<button disabled={busy} onClick={()=>action(async()=>{await adminApi.cancelRecruitmentBatch(b.batch_id);setBatches((await adminApi.recruitmentBatches(selected)).batches);setReview(null);setNotice('초안을 취소했습니다. 발송하지 않았습니다.');})}>초안 취소</button>} {b.state==='approved'&&!b.sending_paused&&<button disabled={busy} onClick={()=>action(async()=>{await adminApi.pauseRecruitmentBatch(b.batch_id);setBatches((await adminApi.recruitmentBatches(selected)).batches);setNotice('배치를 중지했습니다. 이미 전송 중인 메일은 되돌릴 수 없습니다.');})}>이 배치 중지</button>}</div>)}
    {!batches.length&&<p>생성된 배치가 없습니다.</p>}
    {review&&<div><h3>제안 {review.offerCode||"이전 배치 · 코드 미기록"}</h3><p>배치 {review.id}</p><p>고객 브랜드 {review.targetBrandId} · 제품 {review.productName} · 고유 수신 주소 {review.messages.length}개 · 상태 {deliveryStates[review.state]||review.state}</p><p>제공자 한도와 계정 간격을 지키며 대기분만 발송합니다. 결과 확인 필요 건은 재전송하지 않습니다.</p><label><input type="checkbox" checked={sendConsent} disabled={busy} onChange={e=>setSendConsent(e.target.checked)}/>수신자·문안·신청 링크를 확인했으며 이 배치의 실제 발송을 승인합니다.</label><br/><button disabled={busy||!sendConsent||review.state==='cancelled'} onClick={()=>action(async()=>{await adminApi.sendRecruitmentBatch(review.id);setSendConsent(false);setReview(await adminApi.reviewRecruitmentBatch(review.id));setBatches((await adminApi.recruitmentBatches(selected)).batches);await load();setNotice('승인 배치의 발송을 요청했습니다. 실제 성공·대기·결과 확인 필요 상태를 확인하세요.');})}>이 배치 승인·실제 발송 시작 / 대기분 계속</button>{review.messages.map((m:any)=><details key={m.email}><summary>{m.email} · {deliveryStates[review.recipients.find((r:any)=>r.email===m.email)?.state]||'미확인'}</summary><b>{m.subject}</b><pre style={{whiteSpace:'pre-wrap'}}>{m.body}</pre></details>)}</div>}
-  </div></>}
+  </div></>}</>}
   </>}
  </section>;
 }

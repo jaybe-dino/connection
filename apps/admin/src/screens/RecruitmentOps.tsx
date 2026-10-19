@@ -6,10 +6,10 @@ const split=(s:string)=>s.split(/[,;\n]/).map(x=>x.trim()).filter(Boolean);
 const show=(v:unknown)=>v===null||v===undefined?'미확인':Number(v).toLocaleString('ko-KR');
 const money=(v:unknown)=>v===null||v===undefined?'미기록':'₩'+show(v);
 const dateToday=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-type Props={mappingId:string;brandId:string;revision:number;dirty:boolean;country?:string;language?:string;onUseRows:(text:string)=>void};
+type Props={mappingId:string;brandId:string;revision:number;dirty:boolean;country?:string;language?:string;initialTab?:string;showCohort?:boolean;onUseRows:(text:string)=>void};
 
-export default function RecruitmentOps({mappingId,brandId,revision,dirty,country='',onUseRows}:Props){
- const [tab,setTab]=useState('cohort'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+export default function RecruitmentOps({mappingId,brandId,revision,dirty,country='',initialTab='cohort',showCohort=true,onUseRows}:Props){
+ const [tab,setTab]=useState(initialTab),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [filters,setFilters]=useState({countries:'',languages:'',categories:'',tags:'',min_followers:'',max_followers:'',limit:'100',allow_unverified:false,audience:'new'});
  const [cohort,setCohort]=useState<any>(null),[checked,setChecked]=useState<string[]>([]);
  const [unlinkedInbox,setUnlinkedInbox]=useState<number|null>(null),[inbox,setInbox]=useState<any[]>([]),[label,setLabel]=useState(''),[replyText,setReplyText]=useState<Record<string,string>>({});
@@ -28,7 +28,7 @@ export default function RecruitmentOps({mappingId,brandId,revision,dirty,country
  const selected=cohort?.candidates.filter((c:any)=>checked.includes(c.candidateId))||[];
  return <section className="recruitment-ops" aria-label="모집 운영 도구">
   <div className="ops-heading"><div><span className="ops-eyebrow">RECRUITMENT OPERATIONS</span><h2>대상 선별부터 회신·성과까지</h2><p>초안 작업과 실제 발송 승인을 분리합니다. 기존 대화는 원래 발신 주소를 유지합니다.</p></div>{mappingId&&<code title="매핑과 개정별 제안 코드">O-{mappingId}-R{revision}</code>}</div>
-  <div className="ops-tabs" role="tablist" aria-label="운영 단계">{[['cohort','1. 집군 추천'],['inbox','2. 회신 작업함'],['safety','3. 반송·차단'],['metrics','4. 전환·원가']].map(([key,title])=><button key={key} role="tab" disabled={busy} aria-selected={tab===key} onClick={()=>setTab(key)}>{title}</button>)}</div>
+  <div className="ops-tabs" role="tablist" aria-label="운영 단계">{[['cohort','대상 추천'],['inbox','회신 작업함'],['safety','반송·차단'],['metrics','전환·원가']].filter(([key])=>showCohort||key!=='cohort').map(([key,title])=><button key={key} role="tab" disabled={busy} aria-selected={tab===key} onClick={()=>setTab(key)}>{title}</button>)}</div>
   {error&&<p role="alert" className="ops-error">{error}</p>}{notice&&<p role="status" className="ops-notice">{notice}</p>}
   {tab==='cohort'&&<div role="tabpanel" aria-label="집군 추천">
    {!mappingId?<p>먼저 고객 브랜드와 제품을 등록하고 매핑을 저장하세요. 준비 상태에서도 후보 집군을 검토할 수 있습니다.</p>:<>

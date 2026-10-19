@@ -181,7 +181,7 @@ def saved_plan(c,mapping_id,body):
     if not r:raise HTTPException(404,'매핑을 찾을 수 없습니다')
     if r['revision']!=body.revision:raise HTTPException(409,'매핑이 변경되었습니다. 다시 미리보기 하세요')
     if r['state']!='active':raise HTTPException(409,'활성 매핑에서만 초안을 만들 수 있습니다')
-    definition=bulk.Mapping(key=str(mapping_id),target_brand_id=r['target_brand_id'],product_id=r['product_id'],gmail_account_id=r['gmail_account_id'],subject=r['subject'],body=r['body'],campaign_id=r['campaign_id'])
+    definition=bulk.Mapping(key=str(mapping_id),target_brand_id=r['target_brand_id'],product_id=r['product_id'],gmail_account_id=r['gmail_account_id'],subject=r['subject'],body=r['body'],campaign_id=r['campaign_id'],language=r['language'])
     rows=[bulk.Candidate(email=x.email,name=x.name,reason=x.reason,mapping_key=str(mapping_id)) for x in body.rows]
     return bulk.Plan(mappings=[definition],rows=rows)
 

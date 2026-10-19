@@ -18,6 +18,20 @@ from .routes_products import _latest_fields, _fit_tokens, _norm, _tag_terms
 router=APIRouter(prefix='/admin/recruitment')
 
 
+def candidate_source_evidence(sources):
+    evidence=[]
+    for source in sources if isinstance(sources,list) else []:
+        if not isinstance(source,dict):continue
+        meta=source.get('source_meta')
+        if not isinstance(meta,dict):meta={}
+        row=meta.get('source_line')
+        evidence.append({'source':str(source.get('source_file') or source.get('vendor') or 'DB source')[:200],
+                         'row':row if isinstance(row,int) and row>0 else None,
+                         'asOf':str(meta.get('metrics_as_of') or '')[:200]})
+        if len(evidence)==10:break
+    return evidence
+
+
 class CohortIn(BaseModel):
     countries:list[str]=Field(default_factory=list,max_length=20)
     languages:list[str]=Field(default_factory=list,max_length=10)
@@ -89,6 +103,9 @@ def cohort(mapping_id:UUID,body:CohortIn,_admin:dict=Depends(require_admin_jwt))
             if email in emails or identity in identities:continue
             emails.add(email);identities.add(identity)
             selected.append({'candidateId':cid,'identityKey':identity,'email':email,'name':r['display_name'] or r['handle'] or '',
+                             'profileUrl':('https://www.tiktok.com/@'+r['handle'].lstrip('@')) if str(r['platform'])=='tiktok' and re.fullmatch(r'@?[A-Za-z0-9._]{1,80}',r['handle'] or '') else None,
+                             'sourceEvidence':candidate_source_evidence(r['sources']),
+                             'matchingTerms':sorted((keywords&_tag_terms((r['category'] or [])+(r['product_tags'] or []))[1])),'categories':r['category'],'productTags':r['product_tags'],
                              'platform':r['platform'],'handle':r['handle'],'country':r['country'],'languages':r['lang'],
                              'followers':r['followers'],'emailStatus':r['email_status'],'matchedTerms':score,
                              'reasons':reasons,'reason':'; '.join(reasons)[:1000]})

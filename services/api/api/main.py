@@ -702,3 +702,5 @@ app.include_router(_recruitment_ops_router)
 
 from .routes_recruitment_test import router as _recruitment_test_router
 app.include_router(_recruitment_test_router)
+from .routes_recruitment_setup import public as _invitation_product_router
+app.include_router(_invitation_product_router)

@@ -9,6 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from .outreach_locale import proposal_locale,join_label
 from .db import connect
 from . import routes_gmail as gmail
 from .routes_outreach import EMAIL, batch_out, guard, proposal_brand
@@ -23,6 +24,7 @@ class Mapping(BaseModel):
     product_id: UUID
     gmail_account_id: UUID
     campaign_id: str | None = Field(default=None,max_length=100)
+    language: str = Field(default='',max_length=80)
     subject: str = Field(min_length=1, max_length=150)
     body: str = Field(min_length=1, max_length=10000)
 
@@ -130,7 +132,7 @@ def prepare(conn, brand, body, authorization):
         validate_ctas(text,definition['target'])
         join_url = os.environ.get('CREATOR_APP_URL','https://app.theprlist.net').rstrip('/')+'/?brand='+definition['target']
         if join_url not in text:
-            text += '\n\n▶ 브랜드 PR 리스트 합류(무료): '+join_url
+            text += '\n\n▶ '+join_label(proposal_locale(mapping.body,mapping.language))+': '+join_url
         if not subject or not text or len(subject)>150 or len(text)>10000 or any(c in subject for c in '\r\n'):
             raise HTTPException(400, f'{number}행: 맞춤 적용 후 제목·본문 길이와 줄바꿈을 확인하세요')
         eligible[row.mapping_key].append({'email':email,'subject':subject,'body':text})
@@ -193,7 +195,7 @@ def save_plan_in_conn(conn, brand: str, body: SavePlan, actor: str, authorizatio
         offer_code='O-'+str(context['mapping_id'])+'-R'+str(context['revision']) if context else ''
         for start in range(0,len(records),200):
             chunk = records[start:start+200]
-            batch = conn.execute('INSERT INTO outreach_batches(brand_id,subject,body,created_by,gmail_account_id,target_brand_id,product_id,product_name,mapping_key,campaign_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING batch_id',(brand,mapping.subject,mapping.body,actor,mapping.gmail_account_id,definition['target'],mapping.product_id,definition['product']['name'],key,mapping.campaign_id)).fetchone()
+            batch = conn.execute('INSERT INTO outreach_batches(brand_id,subject,body,created_by,gmail_account_id,target_brand_id,product_id,product_name,mapping_key,campaign_id,proposal_locale) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING batch_id',(brand,mapping.subject,mapping.body,actor,mapping.gmail_account_id,definition['target'],mapping.product_id,definition['product']['name'],key,mapping.campaign_id,proposal_locale(mapping.body,mapping.language))).fetchone()
             bid = batch['batch_id']; ids.append(str(bid))
             conn.execute('UPDATE outreach_batches SET offer_code=%s WHERE batch_id=%s',(offer_code or 'B-'+str(bid),bid))
             for record in chunk:

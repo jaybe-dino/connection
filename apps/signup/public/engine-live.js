@@ -1113,6 +1113,11 @@
     try { loadOutreach(); loadBilling(); loadSenders(); loadGmail(); loadInbox(); loadDispatch(); loadIdentity(); } catch (e) {}
     if (window.render) try { render(); } catch (e) {}
   }
+  function creatorEntryLocale(){
+    var lang=new URLSearchParams(location.search).get('lang');
+    return lang==='ko'?'ko':lang==='en'?'en':window.__INVITATION_LOCALE||((typeof navigator!=='undefined'&&/^ko/i.test(navigator.language||''))?'ko':'en');
+  }
+  function entryText(ko,en){return creatorEntryLocale()==='en'?en:ko;}
   function authPanel(html) {
     var old = document.getElementById("authPanel");
     if (old) old.remove();
@@ -1126,7 +1131,7 @@
     d.setAttribute('role','dialog');
     d.setAttribute('aria-label',(d.querySelector('b')||{}).textContent||'계정');
     var close=document.createElement('button');close.type='button';close.className='auth-close';
-    close.textContent='닫기';close.onclick=function(){authPanel(null);var chip=document.getElementById('authChip');if(chip)chip.focus();};
+    close.textContent=window.__SURFACE==='creator'?entryText('닫기','Close'):'닫기';close.onclick=function(){authPanel(null);var chip=document.getElementById('authChip');if(chip)chip.focus();};
     d.appendChild(close);
     d.querySelectorAll('input').forEach(function(el){el.setAttribute('aria-label',el.placeholder||'입력');});
     d.onkeydown=function(e){if(e.key==='Escape'){e.preventDefault();close.click();}
@@ -1143,7 +1148,7 @@
     d.style.cssText = "position:fixed;bottom:14px;left:14px;z-index:9999;cursor:pointer;" +
       "background:#22272b;color:#fff;border-radius:999px;padding:7px 13px;" +
       "font-size:11px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.25)";
-    d.textContent = window.__ME ? "🔐 " + window.__ME.email : "🔐 로그인";
+    d.textContent = window.__ME ? "🔐 " + window.__ME.email : "🔐 "+(window.__SURFACE==="creator"?entryText("로그인","Sign in"):"로그인");
     // 워크스페이스 셸(브랜드/크리에이터)에서는 로그인 후 탑바 아바타가 계정
     // 진입점 — 플로팅 칩은 숨겨 모바일 하단 네비를 가리지 않는다(클릭은
     // 탑바 버튼이 d.click()으로 위임).
@@ -1155,10 +1160,10 @@
           (window.__ME.kind === "brand" ? "브랜드 · " + (window.__ME.brandId || "") : window.__ME.kind) +
           "</span><div style='margin-top:9px'><button type='button' class='cbt no' onclick=\"authLogout()\">로그아웃</button></div>");
       } else if (window.__SURFACE === "creator") {
-        authPanel("<b>이메일로 로그인</b><div style='margin-top:8px;display:flex;gap:5px'>" +
+        authPanel("<b>"+entryText("이메일로 로그인","Sign in or get started")+"</b><div style='margin-top:8px;display:flex;gap:5px'>" +
           "<input id='axEmail' placeholder='you@email.com' style='flex:1;padding:6px'>" +
-          "<button type='button' class='cbt' onclick='authMagic()'>보내기</button></div>" +
-          "<div style='margin-top:6px;color:#5a6560'>받은 링크를 누르면 바로 로그인돼요.</div>");
+          "<button type='button' class='cbt' onclick='authMagic()'>"+entryText('보내기','Send link')+"</button></div>" +
+          "<div style='margin-top:6px;color:#5a6560'>"+entryText('처음 이용하셔도 이메일을 입력해 시작할 수 있습니다.','New here? Enter your email to get started. Use the link in your inbox to sign in.')+"</div>");
       } else {
         authPanel("<b>브랜드 로그인</b><div style='margin-top:8px'>" +
           "<input id='axEmail' placeholder='이메일' style='width:100%;padding:6px;margin-bottom:5px;box-sizing:border-box'>" +
@@ -1241,12 +1246,12 @@
   };
   window.authMagic = function () {
     var em = (document.getElementById("axEmail") || {}).value || "";
-    req("POST", "/auth/magic", { email: em.trim() }).then(function (r) {
+    req("POST", "/auth/magic", { email: em.trim(),brand:new URLSearchParams(location.search).get("brand")||"",application:new URLSearchParams(location.search).get("application")||"",locale:creatorEntryLocale() }).then(function (r) {
       if(!r.demoLink&&r.sent!==true)throw new Error(r.hint||"로그인 메일을 발송하지 못했습니다.");
       authPanel(null);
       toast("메일을 확인하세요", r.demoLink
         ? "데모 모드 — <a href='" + r.demoLink.replace("https://theprlist.net/", location.origin + "/") + "'>이 링크로 로그인</a> (15분 유효)"
-        : "받은편지함의 로그인 링크를 눌러주세요 (15분 유효).");
+        : entryText("받은편지함의 로그인 링크를 눌러주세요 (15분 유효).","Check your inbox for your sign-in link (valid for 15 minutes)."));
     }).catch(function (e) { toast("전송 실패", mailEscape(e.message||"이메일 주소를 확인해 주세요.")); });
   };
 
@@ -1859,7 +1864,8 @@
     crStyle.textContent='.stage{height:auto!important;min-height:calc(100vh - 1px)}'
       +'#stage main.live-main{max-width:1180px;padding-top:20px}';
     document.head.appendChild(crStyle);
-    var joinTarget=null, joinBrandInfo=null, myMemberships=null, magicSent=false;
+    var joinTarget=null, joinBrandInfo=null, myMemberships=null, magicSent=false, invitationProduct=null,creatorEntryEmail='';
+    window.creatorEntryEmailSet=function(value){creatorEntryEmail=value;};
     var applicationToken=new URLSearchParams(location.search).get('application')||'', applicationContext=null, applicationError='', applicationBusy=false, applicationDone=false;
     var commCells=null, commOpen=null;   // {cellId, name, msgs}
     var myCampaigns=null, myOffers=null, creatorLoadErrors={};
@@ -1889,8 +1895,10 @@
     function loadCreatorData(){
       if(applicationToken)req('GET','/recruitment-links/'+encodeURIComponent(applicationToken)).then(function(r){
         if(joinTarget&&joinTarget!==r.brandId){applicationContext=null;applicationError='모집 링크와 브랜드가 다릅니다. 원래 제안 링크를 열어 주세요.';render();return;}
-        applicationContext=r;joinTarget=r.brandId;applicationError='';render();
+        applicationContext=r;joinTarget=r.brandId;if(r.locale)window.__INVITATION_LOCALE=r.locale;invitationProduct=r.product||null;applicationError='';render();
       }).catch(function(e){applicationContext=null;applicationError=(e&&e.message)||'모집 링크를 확인하지 못했습니다';render();});
+      var productQuery=new URLSearchParams(location.search).get('product');
+      if(joinTarget&&productQuery&&!applicationToken)req('GET','/brands/'+encodeURIComponent(joinTarget)+'/products/'+encodeURIComponent(productQuery)+'/invitation').then(function(p){invitationProduct=p;render();}).catch(function(){invitationProduct=null;});
       if(joinTarget)req('GET','/brands/'+joinTarget+'/identity').then(function(b){joinBrandInfo=b;render();}).catch(function(){joinBrandInfo={missing:true};render();});
       if(window.__ME&&window.__ME.kind==='creator'){
         window.creatorRetryMemberships();creatorLoadErrors={};
@@ -2226,14 +2234,14 @@
       var input=document.getElementById('crEmail'),v=((input||{}).value||'').trim();
       var status=document.getElementById('crLoginStatus'),button=document.getElementById('crLoginButton');
       function message(text){if(status)status.textContent=text;}
-      if(v.indexOf('@')<0){message('이메일 주소를 확인해 주세요.');return;}
+      if(v.indexOf('@')<0){message(entryText('이메일 주소를 확인해 주세요.','Please enter a valid email address.'));return;}
       creatorMagicBusy=true;magicSent=false;if(button)button.disabled=true;
-      message('로그인 링크를 요청하고 있습니다…');
-      return req('POST','/auth/magic',{email:v,brand:(typeof joinTarget!=='undefined'&&joinTarget)||'',application:applicationToken}).then(function(r){
+      message(entryText('로그인 링크를 요청하고 있습니다…','Requesting your sign-in link…'));
+      return req('POST','/auth/magic',{email:v,brand:(typeof joinTarget!=='undefined'&&joinTarget)||'',application:applicationToken,locale:creatorEntryLocale()}).then(function(r){
         if(!r.demoLink&&r.sent!==true)throw new Error(r.hint||'로그인 메일을 발송하지 못했습니다. 잠시 후 다시 시도해 주세요.');
         magicSent=!r.demoLink;render();
         if(r.demoLink)toast('데모 모드','<a href="'+r.demoLink.replace('https://app.theprlist.net/',location.origin+'/').replace('https://theprlist.net/',location.origin+'/')+'">이 링크로 로그인</a> (15분 유효)');
-      }).catch(function(e){message(e.message||'로그인 링크 요청에 실패했습니다. 연결 상태를 확인해 주세요.');})
+      }).catch(function(e){message(creatorEntryLocale()==='en'?'Unable to send the sign-in link. Use the email that received this invitation and try again.':e.message||'로그인 링크 요청에 실패했습니다. 연결 상태를 확인해 주세요.');})
       .finally(function(){creatorMagicBusy=false;if(button)button.disabled=false;});
     };
     window.creatorJoin=function(b){
@@ -2255,14 +2263,20 @@
       .catch(function(e){applicationError=(e&&e.message)||'이 제안을 받은 계정인지 확인해 주세요.';})
       .finally(function(){applicationBusy=false;render();});
     };
+    function invitationProductHtml(){
+      var p=invitationProduct;
+      if(!p)return '';
+      var image=p.imageUrl&&/^https:\/\//i.test(p.imageUrl)?'<img src="'+mailEscape(p.imageUrl)+'" alt="'+mailEscape(p.name)+'" referrerpolicy="no-referrer" style="max-width:100%;max-height:280px;object-fit:contain;border-radius:14px">':'';
+      return '<section class="cc invitation-product" aria-label="'+entryText('제품 소개','Product details')+'">'+image+'<h2>'+mailEscape(p.name)+'</h2>'+(p.summary?'<p style="white-space:pre-wrap">'+mailEscape(p.summary)+'</p>':'<p>'+entryText('자세한 제품·협업 조건은 제안 메일을 확인하세요.','Please check your invitation email for product and collaboration details.')+'</p>')+'</section>';
+    }
     function recruitmentCard(){
       if(!applicationToken)return '';
-      if(applicationError)return '<section class="cc" role="alert"><b>모집 링크 확인 필요</b><p>'+mailEscape(applicationError)+'</p><button class="btn line" onclick="creatorReload()">다시 확인</button></section>';
-      if(!applicationContext)return '<section class="cc" role="status">제안받은 모집 정보를 확인하는 중입니다…</section>';
+      if(applicationError)return '<section class="cc" role="alert"><b>'+entryText('모집 링크 확인 필요','Invitation unavailable')+'</b><p>'+mailEscape(creatorEntryLocale()==='en'?'This invitation could not be verified. Reopen your original invitation or try again.':applicationError)+'</p><button class="btn line" onclick="creatorReload()">'+entryText('다시 확인','Try again')+'</button></section>';
+      if(!applicationContext)return '<section class="cc" role="status">'+entryText('제안받은 모집 정보를 확인하는 중입니다…','Loading your invitation…')+'</section>';
       var r=applicationContext;
-      return '<section class="cc"><b>'+mailEscape(r.brandName)+' · 모집 신청</b><p>'+mailEscape(r.productName||'브랜드 PR 리스트')+'</p>'+(r.campaignName?'<p>'+mailEscape(r.campaignName)+'</p>':'')+
-       '<p>브랜드 합류·모집 신청과 최종 참여 확정은 다릅니다. 제안받은 조건을 확인한 뒤 신청하세요.</p>'+
-       (applicationDone?'<p role="status">✓ 이 브랜드에 신청 접수 완료 · 참여 검토 대기</p><button class="btn line" onclick="creatorOpenJoinedCommunity()">이 브랜드 커뮤니티 보기</button>':window.__ME&&window.__ME.kind==='creator'?'<label><input id="recruitmentConsent" type="checkbox"> 이 브랜드 PR 리스트 합류 및 해당 모집 신청을 확인합니다.</label><button class="btn" onclick="creatorApplyRecruitment()" '+(applicationBusy?'disabled':'')+'>'+(applicationBusy?'저장 중…':'이 브랜드에 신청하기')+'</button>':'<p>제안을 받은 이메일로 로그인하면 이 모집에 신청할 수 있습니다.</p>')+'</section>';
+      return invitationProductHtml()+'<section class="cc"><b>'+mailEscape(r.brandName)+' · '+entryText('모집 신청','Invitation')+'</b><p>'+mailEscape(r.productName||entryText('브랜드 PR 리스트','Brand PR list'))+'</p>'+(r.campaignName?'<p>'+mailEscape(r.campaignName)+'</p>':'')+
+       '<p>'+entryText('브랜드 합류·모집 신청과 최종 참여 확정은 다릅니다. 제안받은 조건을 확인한 뒤 신청하세요.','Joining the PR list or applying does not confirm selection. Review the invitation terms before applying.')+'</p>'+
+       (applicationDone?'<p role="status">'+entryText('✓ 신청 접수 완료 · 참여 검토 대기','✓ Application received · Selection pending')+'</p><button class="btn line" onclick="creatorOpenJoinedCommunity()">'+entryText('이 브랜드 커뮤니티 보기','Open this brand community')+'</button>':window.__ME&&window.__ME.kind==='creator'?'<label><input id="recruitmentConsent" type="checkbox"> '+entryText('이 브랜드 PR 리스트 합류 및 해당 모집 신청을 확인합니다.','I confirm joining this brand’s PR list and applying for this invitation.')+'</label><button class="btn" onclick="creatorApplyRecruitment()" '+(applicationBusy?'disabled':'')+'>'+entryText(applicationBusy?'저장 중…':'이 브랜드에 신청하기',applicationBusy?'Saving…':'Apply to this brand')+'</button>':'<p>'+entryText('제안을 받은 이메일로 로그인하면 이 모집에 신청할 수 있습니다.','Sign in with the email that received this invitation to apply.')+'</p>')+'</section>';
     }
     function brandCardHtml(b,joined){
       if(!b)return '';
@@ -2487,11 +2501,12 @@
       document.querySelector('.svcbar').style.display='none';
       var body='';
       if(!window.__ME){
-        body=creatorHeadHtml()+
-          recruitmentCard()+(joinBrandInfo&&!joinBrandInfo.missing?'<p>'+mailEscape(joinBrandInfo.name||'브랜드')+'의 PR 리스트 초대를 받으셨나요? 먼저 로그인해 주세요.</p>':'')+
-          '<h2>크리에이터 로그인</h2><p>비밀번호 없이 이메일 링크로 로그인해요.</p>'+
-          (magicSent?'<div class="cc"><p>메일함의 로그인 링크를 확인하세요 (15분 유효).</p></div>':'')+
-          '<form class="cc" onsubmit="event.preventDefault();creatorMagic()"><label for="crEmail">이메일 주소</label><input id="crEmail" type="email" required autocomplete="email" placeholder="you@email.com" style="width:100%;box-sizing:border-box;padding:12px;margin-bottom:10px"><button id="crLoginButton" type="submit" class="btn">로그인 링크 받기</button><p id="crLoginStatus" role="status" aria-live="polite"></p></form>';
+        document.documentElement.lang=creatorEntryLocale();
+        body=creatorHeadHtml()+recruitmentCard()+(!applicationToken?invitationProductHtml():'')+
+          (joinBrandInfo&&!joinBrandInfo.missing?'<p>'+mailEscape(joinBrandInfo.name||'')+' · '+entryText('브랜드 PR 리스트에 초대받으셨나요? 이메일로 시작하세요.','Invited to the brand’s PR list? Get started with your email.')+'</p>':'')+
+          '<h2>'+entryText('로그인 또는 시작하기','Sign in or get started')+'</h2><p>'+entryText('처음 이용하셔도 이메일을 입력해 시작할 수 있습니다. 비밀번호 없이 이메일 링크로 로그인합니다.','New here? Enter your email to get started. We’ll send a secure sign-in link—no password needed.')+'</p>'+
+          (magicSent?'<div class="cc"><p>'+entryText('메일함의 로그인 링크를 확인하세요 (15분 유효).','Check your inbox for your sign-in link (valid for 15 minutes).')+'</p></div>':'')+
+          '<form class="cc" onsubmit="event.preventDefault();creatorMagic()"><label for="crEmail">'+entryText('이메일 주소','Email address')+'</label><input id="crEmail" type="email" required autocomplete="email" value="'+mailEscape(creatorEntryEmail)+'" oninput="creatorEntryEmailSet(this.value)" placeholder="you@email.com" style="width:100%;box-sizing:border-box;padding:12px;margin-bottom:10px"><button id="crLoginButton" type="submit" class="btn" '+(creatorMagicBusy?'disabled':'')+'>'+entryText('이메일 링크 받기','Send sign-in link')+'</button><p id="crLoginStatus" role="status" aria-live="polite"></p></form>';
       }else{
         var joinedIds=(myMemberships||[]).map(function(m){return m.brandId;});
         var content='';
@@ -2520,8 +2535,8 @@
         crFormRestore();
         return;
       }
-      if(!window.__ME)body='<section class="community-workspace community-login"><aside class="community-login-intro"><a class="creator-wordmark" href="https://theprlist.net">theprlist<span>CREATOR CLUB</span></a><h1>브랜드와 만나고,<br>나의 콘텐츠로 연결해요.</h1><p>당신과 어울리는 브랜드 커뮤니티에 참여하고, 캠페인부터 콘텐츠 협업까지 한곳에서 이어가세요.</p><ul><li>브랜드별 커뮤니티와 담당자 대화</li><li>캠페인 신청과 참여 조건 확인</li><li>샘플 배송 · 콘텐츠 제출 · 진행 관리</li></ul></aside><div class="community-login-main">'+body+'</div></section>';
-      document.getElementById('stage').innerHTML='<main class="live-main">'+body+'<p style="margin-top:34px"><a href="https://theprlist.net">서비스 소개</a> · <a href="https://theprlist.net/privacy">개인정보처리방침</a></p></main>';
+      if(!window.__ME)body='<section class="community-workspace community-login'+(applicationToken||invitationProduct?' has-invitation':'')+'"><aside class="community-login-intro"><a class="creator-wordmark" href="https://theprlist.net">theprlist<span>CREATOR CLUB</span></a><h1>'+entryText('브랜드와 만나고,<br>나의 콘텐츠로 연결해요.','Meet brands.<br>Create together.')+'</h1><p>'+entryText('당신과 어울리는 브랜드 커뮤니티에 참여하고, 캠페인부터 콘텐츠 협업까지 한곳에서 이어가세요.','Discover brand communities, explore campaigns, and manage your creator collaborations in one place.')+'</p><ul><li>'+entryText('브랜드별 커뮤니티와 담당자 대화','Brand communities and conversations')+'</li><li>'+entryText('캠페인 신청과 참여 조건 확인','Campaign applications and collaboration terms')+'</li><li>'+entryText('샘플 배송 · 콘텐츠 제출 · 진행 관리','Sample delivery, content submissions and progress')+'</li></ul></aside><div class="community-login-main">'+body+'</div></section>';
+      document.getElementById('stage').innerHTML='<main class="live-main">'+body+'<p style="margin-top:34px"><a href="https://theprlist.net">'+entryText('서비스 소개','About theprlist')+'</a> · <a href="https://theprlist.net/privacy">'+entryText('개인정보처리방침','Privacy policy')+'</a></p></main>';
       crFormLastTab=null;  // 로그아웃/로그인 화면 — 초안 키 해제
     };
     render();loadCreatorData();
@@ -2562,17 +2577,17 @@
       } catch (e) {}
       var fwdBrand = (sp.get("brand") || "").toLowerCase();
       if (!/^[a-z0-9][a-z0-9-]{2,39}$/.test(fwdBrand)) fwdBrand = "";
-      location.replace(creatorApp + "/?" + (fwdBrand ? "brand=" + encodeURIComponent(fwdBrand) + "&" : "") + "magic=" + encodeURIComponent(magicTok)+(sp.get("application")?"&application="+encodeURIComponent(sp.get("application")):""));
+      location.replace(creatorApp + "/?" + (fwdBrand ? "brand=" + encodeURIComponent(fwdBrand) + "&" : "") + "magic=" + encodeURIComponent(magicTok)+(sp.get("application")?"&application="+encodeURIComponent(sp.get("application")):"")+(sp.get("lang")?"&lang="+encodeURIComponent(sp.get("lang")):""));
     }
     if (magicTok && !magicForward) {
-      var keepBrand = sp.get("brand"), keepApplication=sp.get("application");
+      var keepBrand = sp.get("brand"), keepApplication=sp.get("application"),keepLocale=sp.get("lang");
       req("POST", "/auth/magic/verify", { token: magicTok }).then(function (r) {
         jwtSet(r.token); window.__ME = r.user; authChip();
-        history.replaceState(null, "", location.pathname + ((keepBrand||keepApplication)?"?"+new URLSearchParams(Object.assign({},keepBrand?{brand:keepBrand}:{},keepApplication?{application:keepApplication}:{})).toString():""));
-        toast("로그인 완료 ✅", r.user.email);
+        history.replaceState(null, "", location.pathname + ((keepBrand||keepApplication||keepLocale)?"?"+new URLSearchParams(Object.assign({},keepBrand?{brand:keepBrand}:{},keepApplication?{application:keepApplication}:{},keepLocale?{lang:keepLocale}:{})).toString():""));
+        toast(sp.get("lang")==="en"?"Signed in ✅":"로그인 완료 ✅", r.user.email);
         if (window.render) try { render(); } catch (e) {}
         if (typeof loadCreatorData === "function") try { loadCreatorData(); } catch (e) {}
-      }).catch(function () { toast("로그인 실패", "링크가 만료됐어요 — 다시 요청해 주세요."); });
+      }).catch(function () { toast(sp.get("lang")==="en"?"Sign-in failed":"로그인 실패", sp.get("lang")==="en"?"This link has expired. Please request a new sign-in link.":"링크가 만료됐어요 — 다시 요청해 주세요."); });
     }
     if (jwtGet()) {
       req("GET", "/auth/me").then(function (u) { window.__ME = u; authChip(); reloadBrand();

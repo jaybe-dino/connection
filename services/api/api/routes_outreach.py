@@ -105,7 +105,8 @@ def compose(brand: str, body: AIDraft, authorization: str = Header(default='')):
     import os as _os
     join_url = (_os.environ.get('CREATOR_APP_URL', 'https://app.theprlist.net').rstrip('/')
                 + '/?brand=' + target)
-    text = text.strip() + f"\n\n▶ 브랜드 PR 리스트 합류(무료): {join_url}"
+    from .outreach_locale import proposal_locale,join_label
+    text = text.strip() + "\n\n▶ "+join_label(proposal_locale(text))+": "+join_url
     if len(text) > 10000:
         raise HTTPException(503, 'AI 초안이 너무 깁니다. 더 짧게 작성해 달라고 요청해 주세요.')
     return {'subject':subject.strip(),'body':text,'sent':False,
@@ -183,7 +184,8 @@ def create_batch(brand: str, body: Draft, authorization: str = Header(default=''
         validate_ctas(body.body,target)
         proposal_text=body.body.strip()
         if join_url not in proposal_text:
-            proposal_text+='\n\n▶ 브랜드 PR 리스트 합류(무료): '+join_url
+            from .outreach_locale import proposal_locale,join_label
+            proposal_text+='\n\n▶ '+join_label(proposal_locale(body.body))+': '+join_url
         if len(proposal_text)>10000:raise HTTPException(400,'가입 링크를 포함한 본문이 너무 깁니다')
         account_id = body.gmail_account_id
         if account_id and not conn.execute("SELECT 1 FROM gmail_accounts WHERE account_id=%s AND brand_id=%s AND state='connected'", (account_id,brand)).fetchone():
@@ -286,7 +288,7 @@ def deliver_pending(brand: str, batch_id) -> int:
             conn.execute("UPDATE outreach_recipients SET state='sending' WHERE recipient_id=%s",(r['recipient_id'],))
         try:
             subject=r['personalized_subject'] or b['subject']
-            message=(r['personalized_body'] or b['body'])+'\n\n수신 거부 / Unsubscribe: https://api.theprlist.net/outreach/unsubscribe/'+str(opt['token'])
+            message=(r['personalized_body'] or b['body'])+'\n\nUnsubscribe: https://api.theprlist.net/outreach/unsubscribe/'+str(opt['token'])
             with connect() as conn:
                 sent=gmail.send_via_brand_gmail(conn,brand,r['email'],subject,message,account_id=b['gmail_account_id'])
                 if sent and sent['via']=='gmail':

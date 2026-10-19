@@ -206,3 +206,26 @@ def save_community(brand_id:str,b:CommunitySetup,actor:dict=Depends(require_admi
         c.execute('UPDATE cells SET name=%s WHERE cell_id=%s AND brand_id=%s',(name,cell,brand_id))
         ledger_append(c,str(actor['sub']),'BRAND_COMMUNITY_CONFIGURED',brand_id,{'cellId':cell,'name':name,'membershipChanged':False})
         return {'brandId':brand_id,'cellId':cell,'name':name,'communityUrl':'https://app.theprlist.net/?brand='+brand_id,'emailSent':False}
+
+
+class InvitationProduct(BaseModel):
+    summary:str=Field(default='',max_length=2000)
+    image_url:str=Field(default='',max_length=2000)
+
+
+@router.put('/brands/{brand_id}/products/{product_id}/invitation')
+def save_invitation_product(brand_id:str,product_id:UUID,b:InvitationProduct,actor:dict=Depends(require_admin_jwt)):
+    from .invitation_product import public_product,safe_image
+    image=safe_image(b.image_url.strip())
+    with connect() as c:
+        public_product(c,brand_id,product_id)
+        c.execute('INSERT INTO product_invitation_profiles(product_id,summary,image_url) VALUES(%s,%s,%s) ON CONFLICT(product_id) DO UPDATE SET summary=EXCLUDED.summary,image_url=EXCLUDED.image_url,updated_at=now()',(product_id,b.summary.strip(),image))
+        ledger_append(c,str(actor['sub']),'INVITATION_PRODUCT_PRESENTATION_UPDATED',str(product_id),{'brandId':brand_id,'public':True})
+        return public_product(c,brand_id,product_id)
+
+
+public=APIRouter()
+@public.get('/brands/{brand_id}/products/{product_id}/invitation')
+def invitation_product(brand_id:str,product_id:UUID):
+    from .invitation_product import public_product
+    with connect() as c:return public_product(c,brand_id,product_id)

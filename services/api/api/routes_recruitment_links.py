@@ -7,6 +7,7 @@ import secrets
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Header, HTTPException, Response
+from .outreach_locale import proposal_locale
 from . import auth
 from .db import connect, ledger_append
 
@@ -40,11 +41,13 @@ def append_link(conn, batch_id, recipient_id, text):
     token = secrets.token_urlsafe(32)
     conn.execute('INSERT INTO recruitment_application_links(token_hash,recipient_id) VALUES(%s,%s)',
                  (hashlib.sha256(token.encode()).hexdigest(),recipient_id))
-    b = conn.execute('SELECT COALESCE(target_brand_id,brand_id) AS target FROM outreach_batches WHERE batch_id=%s',(batch_id,)).fetchone()
+    b = conn.execute('SELECT COALESCE(target_brand_id,brand_id) AS target,body,proposal_locale FROM outreach_batches WHERE batch_id=%s',(batch_id,)).fetchone()
     base = os.environ.get('CREATOR_APP_URL','https://app.theprlist.net').rstrip('/')
     legacy = base+'/?brand='+b['target']
     # Replace the canonical CTA rather than adding a second conflicting join action.
-    text=text.replace(legacy, legacy+'&application='+token)
+    from .outreach_locale import proposal_locale
+    locale=b['proposal_locale'] or proposal_locale(b['body'])
+    text=text.replace(legacy, legacy+'&lang='+locale+'&application='+token)
     if len(text)>10000:raise HTTPException(400,'신청 링크를 포함한 본문이 너무 깁니다')
     return text
 
@@ -54,7 +57,7 @@ def resolve(conn, token, lock=False):
         raise HTTPException(404,'모집 링크를 찾을 수 없습니다')
     r = conn.execute('''SELECT l.link_id,l.expires_at,r.email,r.state AS recipient_state,
         b.batch_id,b.brand_id AS workspace_id,COALESCE(b.target_brand_id,b.brand_id) AS target,
-        b.product_id,b.product_name,b.campaign_id,b.mapping_key,b.state AS batch_state,
+        b.product_id,b.product_name,b.campaign_id,b.mapping_key,b.state AS batch_state,b.proposal_locale,b.body AS proposal_body,
         br.name AS brand_name,br.is_internal,br.is_demo,br.suspended_at,p.state AS product_state,c.name AS campaign_name
         FROM recruitment_application_links l JOIN outreach_recipients r USING(recipient_id)
         JOIN outreach_batches b USING(batch_id) JOIN brands br ON br.brand_id=COALESCE(b.target_brand_id,b.brand_id)
@@ -88,6 +91,7 @@ def public_context(r):
     return {'brandId':r['target'],'brandName':r['brand_name'],
             'productId':str(r['product_id']) if r['product_id'] else None,'productName':r['product_name'],
             'campaignId':r['campaign_id'],'campaignName':r['campaign_name'],
+            'locale':r.get('proposal_locale') or proposal_locale(r.get('proposal_body','')),
             'communityUrl':'https://app.theprlist.net/?brand='+r['target']}
 
 
@@ -99,7 +103,11 @@ def context(token: str,response:Response):
         with connect() as c:
             r=resolve(c,token)
             record_event(c,r['link_id'],'click')
-            return public_context(r)
+            result=public_context(r)
+            if r['product_id']:
+                from .invitation_product import public_product
+                result['product']=public_product(c,r['target'],r['product_id'])
+            return result
     except HTTPException as e:
         # 만료/취소/수신거부는 blocked로 기록(계약 §3) — 거부 트랜잭션과 분리 커밋.
         if e.status_code==410:

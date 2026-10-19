@@ -17,8 +17,8 @@ class Preview(BaseModel):
     mapping_id: UUID
     account_id: UUID
     recipient: str=Field(min_length=3,max_length=254)
-    name: str=Field(default='테스트 크리에이터',max_length=100)
-    reason: str=Field(default='제품과 신청 링크를 확인하는 내부 테스트입니다.',max_length=1000)
+    name: str=Field(default='' ,max_length=100)
+    reason: str=Field(default='' ,max_length=1000)
 
 class Send(Preview):
     request_id: UUID
@@ -40,15 +40,17 @@ def prepare(c,b):
     quota=gmail._acct_out(gmail._with_delivery_usage(c,a))
     reserved=c.execute("SELECT count(*) n FROM outreach_recipients r JOIN outreach_batches b USING(batch_id) WHERE b.gmail_account_id=%s AND b.state IN ('draft','approved') AND r.state IN ('pending','sending')",(b.account_id,)).fetchone()['n']
     if quota['sendingPaused'] or quota['remainingToday']<=reserved:raise HTTPException(409,'발신 계정이 중지되었거나 초안 예약분을 제외한 잔여량이 없습니다')
-    values={'name':b.name.strip(),'reason':b.reason.strip(),'brand':m['brand_name'],'product':m['product_name']}
+    from .outreach_locale import proposal_locale,join_label
+    locale=proposal_locale(m['body'],m['language'])
+    values={'name':b.name.strip() or ('Test creator' if locale=='en' else '테스트 크리에이터'),'reason':b.reason.strip() or ('This is an internal preview of the product invitation.' if locale=='en' else '제품과 신청 링크를 확인하는 내부 테스트입니다.'),'brand':m['brand_name'],'product':m['product_name']}
     subject='[TEST] '+render_text(m['subject'],values).strip()
     body=render_text(m['body'],values).strip()
     from .routes_recruitment_links import validate_ctas, validate_campaign
     validate_ctas(body,m['target_brand_id']);validate_campaign(c,m['target_brand_id'],m['campaign_id'],m['product_id'])
     if not m['subject'].strip() or not body or len(subject)>160 or any(x in subject for x in '\r\n'):raise HTTPException(400,'메일 제목·본문을 확인하세요')
     from urllib.parse import urlencode
-    url=os.environ.get('CREATOR_APP_URL','https://app.theprlist.net').rstrip('/')+'/?'+urlencode({'brand':m['target_brand_id'],'product':str(m['product_id']),**({'campaign':m['campaign_id']} if m['campaign_id'] else {})})
-    body+='\n\n▶ 브랜드 신청 페이지: '+url+'\n\n[내부 테스트] 실제 모집 대상이 아닙니다. 이 메일에는 수신자별 신청 추적 토큰이 없으며 발송·신청 실적에 포함하지 않습니다.'
+    url=os.environ.get('CREATOR_APP_URL','https://app.theprlist.net').rstrip('/')+'/?'+urlencode({'brand':m['target_brand_id'],'lang':locale,'product':str(m['product_id']),**({'campaign':m['campaign_id']} if m['campaign_id'] else {})})
+    body+='\n\n▶ '+join_label(locale)+': '+url+('\n\n[INTERNAL TEST] This email does not enroll a creator or create an application. This preview link has no recipient tracking token.' if locale=='en' else '\n\n[내부 테스트] 실제 모집 대상이 아닙니다. 이 메일에는 수신자별 신청 추적 토큰이 없으며 발송·신청 실적에 포함하지 않습니다.')
     result={'fromEmail':a['email'],'to':email,'subject':subject,'body':body,'brandId':m['target_brand_id'],'productId':str(m['product_id']),'campaignId':m['campaign_id'],'communityUrl':url,'mappingRevision':m['revision'],'sent':False}
     result['reviewHash']=hashlib.sha256(json.dumps(result,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     return result

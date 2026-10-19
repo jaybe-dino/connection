@@ -2361,7 +2361,6 @@
     function crTopHtml(){
       var unread=(creatorNotifs&&creatorNotifs.unreadCount)||0;
       return '<header class="crtop"><span class="crtop-brand">theprlist <small>CREATOR</small></span>'
-        
         +'<button class="crtop-bell" onclick="crNotifToggle()" aria-label="알림 '+unread+'건 열기">🔔'+(unread?'<em>'+(unread>99?'99+':unread)+'</em>':'')+'</button>'
         +'<button class="crtop-me" onclick="crTab(\'settings\')" aria-label="계정과 언어 설정">설정</button></header>';
     }

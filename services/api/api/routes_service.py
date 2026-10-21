@@ -626,6 +626,7 @@ def brand_ranking(brand_id: str,
                   authorization: str = Header(default="")) -> list[dict]:
     """브랜드별 XP 랭킹 — 그 브랜드 멤버/담당자/운영만 조회."""
     claims = _actor(authorization)
+    cid = None
     with connect() as conn:
         if claims.get("kind") == "creator":
             cid = _ensure_creator_row(conn, claims)
@@ -642,8 +643,11 @@ def brand_ranking(brand_id: str,
             " FROM xp_events x JOIN creators c USING (creator_id)"
             " WHERE x.brand_id=%s GROUP BY 1,2 ORDER BY total DESC LIMIT 20",
             (brand_id,)).fetchall()
-    return [{"handle": r["handle"], "total": r["total"],
-             "rank": i + 1} for i, r in enumerate(rows)]
+    return [{"handle": r["handle"], "total": r["total"], "rank": i + 1,
+             # 요청한 크리에이터 본인 표시 — 클라이언트가 핸들 추측 없이
+             # '나' 행을 강조할 수 있게 한다(민감정보 추가 없음)
+             "me": bool(cid and r["creator_id"] == cid)}
+            for i, r in enumerate(rows)]
 
 
 @router.get("/me/missions")

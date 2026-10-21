@@ -1425,3 +1425,38 @@ auth_tokens/brand_team_roles 재사용)
   버튼 44px·가로 넘침 없음·라벨 지속·확인 단계·구현 용어 미노출),
   console-admin-shell.mjs 22단언(새 확인 단계 흐름 포함) 전부 PASS.
   운영 배포·실메일·DNS 변경 없음.
+
+## 2026-10-21 — 크리에이터 slack-v3 원본 실서비스 전환 1차
+(branch claude/creator-slack-v3-live-20261021, 기준 b0832a9 + 검수
+82d7f86 cherry-pick — 메일함/아웃리치/도메인 서명 보존)
+
+- app.theprlist.net 루트(apps/creator-app/index.html)가 승인 디자인
+  docs/ui-reference/slack-v3 기반 셸로 열린다. CSS 3종 바이트 동일
+  복사(+live.css 추가분 2종), JS 3종은 원본 마크업·클래스 유지 각색,
+  live-core.js가 예시 데이터를 전부 실서버 상태로 대체. 요소별 매핑은
+  docs/SLACK_V3_LIVE_MAPPING.md (시안 전용 요소는 삭제가 아니라 실제
+  이용 안내/다음 단계/협업 상태로 치환, 가짜 데이터 없음 — 빈 상태 표기).
+- 실연결: 초대(?brand=/?product=/?application=) → 매직링크 로그인 →
+  온보딩(/me/profile, 동의 대리 기록 없음) → TikTok 입장 게이트(서버
+  강제·UI 안내) → /me/join → 커뮤니티(메시지·번역·원문·스레드·검색·
+  읽음·공지 고정·초안 보존) → 캠페인(실모집·국가명·마감·지역/게이트
+  차단) → 신청(아이디어는 담당자 DM 실전송) → 선정 → 수수료 합의 →
+  샘플 송장 → Spark 코드 → 콘텐츠 제출(+메모 DM) → 완료 기록.
+  알림(딥링크·모두 읽음), 랭킹(me 플래그 — 서버 소규모 추가)·미션·배지
+  (서버 XP), 내 공간, 설정(언어 5종 자동/수동·알림 목록·계정·로그아웃),
+  ?invite=/?reset= 계정 링크, 5s 폴링+softRender(입력·포커스·스크롤
+  보존) 전부 실데이터.
+- 검증: 신규 Playwright creator-slack-live.mjs 54단언 — disposable DB
+  (e2e_c3)에서 브랜드 2곳(두 번째는 어드민 일반 등록 경로로 생성),
+  크리에이터 등록→협업 완료 전 여정 + 권한 부정(타 브랜드 랭킹 403·셀
+  비노출·미가입 DM 차단·게이트 중 join 차단) + 원본 slack.html을 같은
+  뷰포트에 띄워 플럼 색(top/rail/side)·구조 비교 + PC 1440/모바일
+  375·390 실측·대조 스크린샷(shots/creator-slack-*.png, REF 포함).
+  TikTok은 공식 연동 승인 대기라 서버 테스트와 동일하게 DB 대리
+  (tiktok_owner_state/open_id)로 게이트 통과를 검증 — 실키 연결 전까지
+  운영에서는 '미연결·대기' 상태가 그대로 노출된다(pending 정확 표기).
+- 회귀: 서버 pytest 306, tests_billing 95, tests_ui 96, admin-brand-
+  accounts 23, console-admin-shell 22, console/admin/signup/creator 빌드
+  전부 통과. engine-live/콘솔/사인업은 무변경(기존 테스트 마커 보존).
+- 남은 운영 전제: TikTok provider 키·실메일(SENDGRID) 연결 시 데모
+  링크 표시가 자동으로 실발송 안내로 바뀐다. 운영 배포는 검수 후 진행.

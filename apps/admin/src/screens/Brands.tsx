@@ -19,6 +19,20 @@ const COUNTRY_OPTIONS: [string, string][] = [
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{2,39}$/;
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
+// Keep transport status codes in adminApi for send/retry guards, but show plain
+// instructions here instead of a raw HTTP/JSON response to the operator.
+const friendlyError = (error: unknown): string => {
+  const raw = error instanceof Error ? error.message : "요청을 처리하지 못했어요. 다시 시도해 주세요.";
+  const body = raw.replace(/^\d{3}\s+/, "");
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed.detail === "string") return parsed.detail.replace(/\(owner\)/g, "");
+    return "입력한 내용을 확인한 뒤 다시 시도해 주세요.";
+  } catch {
+    return /^\d{3}\s+/.test(raw) ? "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요." : raw;
+  }
+};
+
 const suggestSlug = (name: string) =>
   name.toLowerCase().normalize("NFKD")
     .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
@@ -62,10 +76,10 @@ export default function Brands() {
 
   const load = () =>
     adminApi.brands().then((r) => { setRows(r); setErr(""); })
-      .catch((e) => setErr(e.message || "브랜드 목록을 불러오지 못했습니다"));
+      .catch((e) => setErr(friendlyError(e)));
   const loadAudit = () =>
     adminApi.audit(auditActor, auditEvent).then(setAudit)
-      .catch((e) => { setAudit([]); setErr(e.message || "기록 조회에 실패했습니다"); });
+      .catch((e) => { setAudit([]); setErr(friendlyError(e)); });
   useEffect(() => { void load(); }, []);
 
   const loadAccounts = async (brand: string, gen: number) => {
@@ -76,14 +90,14 @@ export default function Brands() {
     } catch (e) {
       if (gen !== genRef.current) return;
       setAccounts([]);
-      setErr((e as Error).message || "담당자 목록을 불러오지 못했습니다");
+      setErr(friendlyError(e));
     }
   };
 
   // 브랜드 선택/전환 — 링크·입력·확인 단계를 모두 초기화한다
   const pick = (brand: string) => {
     genRef.current += 1;
-    if (selected === brand) { setSelected(""); setAccounts(null); setLinks({}); setConfirm(null); return; }
+    if (selected === brand) { setSelected(""); setAccounts(null); setLinks({}); setConfirm(null); setErr(""); return; }
     setSelected(brand);
     setAccounts(null);
     setLinks({});
@@ -131,7 +145,7 @@ export default function Brands() {
       setCountrySel({}); setCountryEtc(""); setSlugTouched(false); setFieldErr({});
       await load();
       pick(out.brandId);
-    } catch (e) { setRegErr((e as Error).message); }
+    } catch (e) { setRegErr(friendlyError(e)); }
     setBusy("");
   };
 
@@ -146,7 +160,7 @@ export default function Brands() {
       if (gen === genRef.current) setLinks({});
       if (brand && gen === genRef.current) await loadAccounts(brand, gen);
       await load();
-    } catch (e) { if (gen === genRef.current) setErr((e as Error).message); }
+    } catch (e) { if (gen === genRef.current) setErr(friendlyError(e)); }
     setBusy("");
   };
 
@@ -167,7 +181,7 @@ export default function Brands() {
             : "비밀번호 재설정 링크 (30분 안에 1번만 사용 가능)",
           link: r.link, note: r.note } });
       }
-    } catch (e) { if (gen === genRef.current) setErr((e as Error).message); }
+    } catch (e) { if (gen === genRef.current) setErr(friendlyError(e)); }
     setBusy("");
   };
 

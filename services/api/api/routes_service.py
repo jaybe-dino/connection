@@ -69,12 +69,17 @@ def notify_brand_members(conn, brand_id: str, ntype: str, title: str,
     이동하는 상세 API가 멤버십/브랜드 가드로 열람 권한을 다시 검증한다."""
     t = {"brandId": brand_id}
     t.update(target or {})
+    # 알림 설정(notification_prefs) 반영 — 행 없음=켜짐, channels='{}'=끔.
     rows = conn.execute(
         "INSERT INTO notifications (user_id, type, title, body, target)"
         " SELECT DISTINCT u.user_id::text, %s, %s, %s, %s::jsonb"
         " FROM memberships m JOIN users u ON u.creator_id = m.creator_id"
-        " WHERE m.brand_id = %s RETURNING notif_id",
-        (ntype, title, body, json.dumps(t), brand_id)).fetchall()
+        " LEFT JOIN notification_prefs np"
+        "   ON np.user_id = u.user_id::text AND np.type = %s"
+        " WHERE m.brand_id = %s"
+        "   AND (np.user_id IS NULL OR np.channels <> '{}')"
+        " RETURNING notif_id",
+        (ntype, title, body, json.dumps(t), ntype, brand_id)).fetchall()
     return len(rows)
 
 
@@ -515,13 +520,19 @@ def my_unread(authorization: str = Header(default="")) -> list[dict]:
 def thread(cell_id: str, msg_id: int,
            authorization: str = Header(default="")) -> list[dict]:
     claims = _actor(authorization)
+    from .routes_community import _reaction_actor
     with connect() as conn:
         cell = _cell(conn, cell_id)
-        _member_or_owner(conn, claims, cell)
+        who = _member_or_owner(conn, claims, cell)
+        actor = _reaction_actor(claims, who, cell)
         rows = conn.execute(
-            "SELECT * FROM cell_messages WHERE cell_id=%s AND"
-            " (msg_id=%s OR thread_parent=%s) ORDER BY msg_id",
-            (cell_id, msg_id, msg_id)).fetchall()
+            "SELECT m.*, (SELECT count(*) FROM message_reactions rr"
+            "  WHERE rr.msg_id=m.msg_id) AS reaction_count,"
+            " EXISTS(SELECT 1 FROM message_reactions rr"
+            "  WHERE rr.msg_id=m.msg_id AND rr.actor=%s) AS my_reaction"
+            " FROM cell_messages m WHERE m.cell_id=%s AND"
+            " (m.msg_id=%s OR m.thread_parent=%s) ORDER BY m.msg_id",
+            (actor, cell_id, msg_id, msg_id)).fetchall()
     if not rows:
         raise HTTPException(404, "메시지를 찾을 수 없습니다")
     return [{"msgId": r["msg_id"], "author": r["author"],
@@ -530,6 +541,9 @@ def thread(cell_id: str, msg_id: int,
              "translations": r["translations"],
              "translationState": r["translation_state"],
              "threadParent": r["thread_parent"],
+             "imageUrl": r["image_url"] or "",
+             "reactionCount": r["reaction_count"],
+             "myReaction": bool(r["my_reaction"]),
              "at": r["at"].isoformat()} for r in rows]
 
 
@@ -601,6 +615,59 @@ def search_messages(cell_id: str, q: str = "",
 
 # ── XP·랭킹·미션 ────────────────────────────────────────────────
 
+NOTIF_PREF_TYPES = ("dm", "campaign", "deadline", "email")
+
+
+class NotifPrefsIn(BaseModel):
+    dm: bool = True
+    campaign: bool = True
+    deadline: bool = True
+    email: bool = True
+
+
+@router.get("/me/notification-prefs")
+def my_notif_prefs(authorization: str = Header(default="")) -> dict:
+    """알림 설정 — 기존 notification_prefs 재사용(행 없음=켜짐).
+
+    적용 범위는 honest하게 함께 반환한다: campaign은 캠페인 알림 생성에
+    즉시 반영되고, deadline(기한 알림 러너)·email(메일 발송)은 해당 기능
+    연결 전까지 저장만 된다(pending).'"""
+    with connect() as conn:
+        claims, cid = _me_creator(conn, authorization)
+        uid = str(claims.get("sub"))
+        rows = conn.execute(
+            "SELECT type, channels FROM notification_prefs"
+            " WHERE user_id=%s AND type = ANY(%s)",
+            (uid, list(NOTIF_PREF_TYPES))).fetchall()
+    prefs = {t: True for t in NOTIF_PREF_TYPES}
+    for r in rows:
+        prefs[r["type"]] = bool(r["channels"])
+    return {"prefs": prefs,
+            "applied": {"dm": "unread",          # DM은 미읽음 배지로 전달
+                        "campaign": "active",    # 알림 생성에 즉시 반영
+                        "deadline": "pending",   # 기한 알림 러너 연결 대기
+                        "email": "pending"}}     # 메일 발송 연결 대기
+
+
+@router.put("/me/notification-prefs")
+def save_notif_prefs(body: NotifPrefsIn,
+                     authorization: str = Header(default="")) -> dict:
+    with connect() as conn:
+        claims, cid = _me_creator(conn, authorization)
+        uid = str(claims.get("sub"))
+        values = {"dm": body.dm, "campaign": body.campaign,
+                  "deadline": body.deadline, "email": body.email}
+        for t, on in values.items():
+            conn.execute(
+                "INSERT INTO notification_prefs (user_id, type, channels)"
+                " VALUES (%s,%s,%s) ON CONFLICT (user_id, type)"
+                " DO UPDATE SET channels=EXCLUDED.channels",
+                (uid, t, ["inbox"] if on else []))
+        ledger_append(conn, f"creator:{cid}", "NOTIF_PREFS_UPDATED", cid,
+                      values)
+    return {"ok": True, "prefs": values}
+
+
 @router.get("/me/xp")
 def my_xp(brand: str = "", authorization: str = Header(default="")) -> dict:
     with connect() as conn:
@@ -622,9 +689,12 @@ def my_xp(brand: str = "", authorization: str = Header(default="")) -> dict:
 
 
 @router.get("/brands/{brand_id}/ranking")
-def brand_ranking(brand_id: str,
+def brand_ranking(brand_id: str, period: str = "all",
                   authorization: str = Header(default="")) -> list[dict]:
-    """브랜드별 XP 랭킹 — 그 브랜드 멤버/담당자/운영만 조회."""
+    """브랜드별 XP 랭킹 — 그 브랜드 멤버/담당자/운영만 조회.
+
+    period=week 는 최근 7일 활동만 집계한다(가짜 주간 수치 금지 — 같은
+    xp_events 를 기간 필터로만 좁힌다)."""
     claims = _actor(authorization)
     cid = None
     with connect() as conn:
@@ -638,10 +708,13 @@ def brand_ranking(brand_id: str,
                 raise HTTPException(403, "이 브랜드에 대한 권한이 없습니다")
         elif claims.get("kind") != "admin":
             raise HTTPException(403, "접근 권한이 없습니다")
+        cond = " AND x.created_at >= now() - interval '7 days'" \
+            if period == "week" else ""
         rows = conn.execute(
             "SELECT x.creator_id, c.handle, sum(x.points) AS total"
             " FROM xp_events x JOIN creators c USING (creator_id)"
-            " WHERE x.brand_id=%s GROUP BY 1,2 ORDER BY total DESC LIMIT 20",
+            f" WHERE x.brand_id=%s{cond}"
+            " GROUP BY 1,2 ORDER BY total DESC LIMIT 20",
             (brand_id,)).fetchall()
     return [{"handle": r["handle"], "total": r["total"], "rank": i + 1,
              # 요청한 크리에이터 본인 표시 — 클라이언트가 핸들 추측 없이

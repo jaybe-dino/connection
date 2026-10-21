@@ -63,7 +63,11 @@ def _terms_out(t: dict, extra: dict | None = None) -> dict:
            "sampleTracking": t["sample_tracking"],
            "contentUrl": t["content_url"],
            "sparkCode": t["spark_code"],
-           "affiliateLink": t["affiliate_link"]}
+           "affiliateLink": t["affiliate_link"],
+           "shipping": t.get("shipping"),
+           "revisionNote": t.get("revision_note") or "",
+           "revisionRequestedAt": (t["revision_requested_at"].isoformat()
+                                   if t.get("revision_requested_at") else None)}
     if extra:
         out.update(extra)
     return out
@@ -106,7 +110,9 @@ def applicants(brand: str, campaign_id: str,
             "SELECT a.creator_id, a.status, a.applied_at, c.handle,"
             " c.platform, c.verified, t.state AS terms_state,"
             " t.commission_pct, t.agreed_commission_pct, t.tiktok_handle,"
-            " t.sample_tracking, t.content_url, t.spark_code, t.affiliate_link"
+            " t.sample_tracking, t.content_url, t.spark_code,"
+            " t.affiliate_link, t.shipping, t.revision_note,"
+            " t.revision_requested_at"
             " FROM campaign_applications a"
             " JOIN creators c USING (creator_id)"
             " LEFT JOIN campaign_terms t"
@@ -126,7 +132,9 @@ def applicants(brand: str, campaign_id: str,
              "sampleTracking": r["sample_tracking"] or "",
              "contentUrl": r["content_url"] or "",
              "sparkCode": r["spark_code"] or "",
-             "affiliateLink": r["affiliate_link"] or ""} for r in rows]
+             "affiliateLink": r["affiliate_link"] or "",
+             "shipping": r["shipping"],
+             "revisionNote": r["revision_note"] or ""} for r in rows]
 
 
 class SelectIn(BaseModel):
@@ -252,6 +260,76 @@ def issue_affiliate_link(brand: str, campaign_id: str, creator_id: str,
             " WHERE campaign_id=%s AND creator_id=%s RETURNING *",
             (body.link, campaign_id, creator_id)).fetchone()
         ledger_append(conn, f"brand:{brand}", "AFFILIATE_LINK_ISSUED",
+                      campaign_id, {"creator": creator_id})
+    return _terms_out(t)
+
+
+class ShippingIn(BaseModel):
+    recipient: str = Field(min_length=1, max_length=80)
+    country: str = Field(min_length=2, max_length=2)
+    address: str = Field(min_length=4, max_length=300)
+    phone: str = Field(min_length=4, max_length=40)
+
+
+@router.post("/me/campaign-offers/{campaign_id}/shipping")
+def submit_shipping(campaign_id: str, body: ShippingIn,
+                    authorization: str = Header(default="")) -> dict:
+    """샘플 수령 정보 — 협업 당사자(크리에이터 본인 ↔ 해당 브랜드)만
+    저장·조회한다. 감사 원장에는 주소·연락처를 남기지 않는다."""
+    import json as _json
+    with connect() as conn:
+        cid = _creator(conn, authorization)
+        t = _terms(conn, campaign_id, cid)
+        if t["state"] not in ("selected", "terms_agreed"):
+            raise HTTPException(409, "샘플 발송 전(선정~합의)에만 수령 정보를"
+                                     f" 등록할 수 있어요 (현재 {t['state']})")
+        t = conn.execute(
+            "UPDATE campaign_terms SET shipping=%s::jsonb"
+            " WHERE campaign_id=%s AND creator_id=%s RETURNING *",
+            (_json.dumps({"recipient": body.recipient.strip(),
+                          "country": body.country.strip().upper(),
+                          "address": body.address.strip(),
+                          "phone": body.phone.strip()}),
+             campaign_id, cid)).fetchone()
+        ledger_append(conn, f"creator:{cid}", "SHIPPING_INFO_SUBMITTED",
+                      campaign_id, {"country": body.country.strip().upper()})
+    return _terms_out(t)
+
+
+class RevisionIn(BaseModel):
+    note: str = Field(min_length=4, max_length=500)
+
+
+@router.post("/brands/{brand}/campaigns/{campaign_id}/terms/{creator_id}/request-revision")
+def request_revision(brand: str, campaign_id: str, creator_id: str,
+                     body: RevisionIn,
+                     authorization: str = Header(default="")) -> dict:
+    """브랜드 수정 요청 — 제출된 콘텐츠에 피드백을 남기고 재제출을 받는다."""
+    _brand_guard(brand, authorization)
+    with connect() as conn:
+        _campaign(conn, brand, campaign_id)
+        t = _terms(conn, campaign_id, creator_id)
+        if t["state"] != "content_submitted":
+            raise HTTPException(409, "제출된 콘텐츠에만 수정을 요청할 수"
+                                     f" 있어요 (현재 {t['state']})")
+        t = conn.execute(
+            "UPDATE campaign_terms SET state='revision_requested',"
+            " revision_note=%s, revision_requested_at=now()"
+            " WHERE campaign_id=%s AND creator_id=%s RETURNING *",
+            (body.note.strip(), campaign_id, creator_id)).fetchone()
+        camp = conn.execute("SELECT name FROM campaigns WHERE campaign_id=%s",
+                            (campaign_id,)).fetchone()
+        # 해당 크리에이터에게만 알림(배지+카드, 강제 이동 없음)
+        import json as _json
+        conn.execute(
+            "INSERT INTO notifications (user_id, type, title, body, target)"
+            " SELECT u.user_id::text, 'campaign', %s, %s, %s::jsonb"
+            " FROM users u WHERE u.creator_id=%s",
+            (f"수정 요청: {(camp or {}).get('name') or campaign_id}",
+             body.note.strip()[:200],
+             _json.dumps({"brandId": brand, "campaignId": campaign_id}),
+             creator_id))
+        ledger_append(conn, f"brand:{brand}", "CAMPAIGN_REVISION_REQUESTED",
                       campaign_id, {"creator": creator_id})
     return _terms_out(t)
 
@@ -404,7 +482,7 @@ def submit_spark_code(campaign_id: str, body: SparkIn,
         cid = _creator(conn, authorization)
         t = _terms(conn, campaign_id, cid)
         if t["state"] not in ("terms_agreed", "sample_shipped",
-                              "content_submitted"):
+                              "content_submitted", "revision_requested"):
             raise HTTPException(409, f"합의 후 제출 가능 (현재 {t['state']})")
         t = conn.execute(
             "UPDATE campaign_terms SET spark_code=%s"
@@ -428,11 +506,13 @@ def submit_content(campaign_id: str, body: ContentIn,
     with connect() as conn:
         cid = _creator(conn, authorization)
         t = _terms(conn, campaign_id, cid)
-        if t["state"] not in ("terms_agreed", "sample_shipped"):
+        if t["state"] not in ("terms_agreed", "sample_shipped",
+                              "revision_requested"):
             raise HTTPException(409, f"합의/샘플 수령 후 제출 가능 (현재 {t['state']})")
         t = conn.execute(
             "UPDATE campaign_terms SET state='content_submitted',"
-            " content_url=%s, submitted_at=now()"
+            " content_url=%s, submitted_at=now(),"
+            " revision_note='', revision_requested_at=NULL"
             " WHERE campaign_id=%s AND creator_id=%s RETURNING *",
             (body.content_url, campaign_id, cid)).fetchone()
         conn.execute(

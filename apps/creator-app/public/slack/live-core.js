@@ -168,9 +168,16 @@ window.dmCellFor=function(brandId){return (LIVE.cells||[]).find(function(c){retu
 window.campaignsLive=function(){return LIVE.campaigns||[];};
 window.campaignById=function(id){return (LIVE.campaigns||[]).find(function(c){return c.campaignId===id;})||null;};
 window.offerByCampaign=function(id){return (LIVE.offers||[]).find(function(o){return o.campaignId===id;})||null;};
-window.campExpired=function(c){try{return !!(c&&c.deadline&&String(c.deadline).slice(0,10)<new Date().toISOString().slice(0,10));}catch(e){return false;}};
-window.offerStateLabel=function(v){return ({none:'모집 중',applied:'신청 검토 중',selected:'조건 확인 필요',terms_agreed:'샘플 발송 대기',sample_shipped:'샘플 발송됨 · 콘텐츠 준비',content_submitted:'제출 완료 · 브랜드 검토 중',completed:'협업 완료',declined:'제안 거절',rejected:'미선정'})[v]||v||'확인 필요';};
-window.actionableOffers=function(){return (LIVE.offers||[]).filter(function(o){return ['selected','terms_agreed','sample_shipped'].indexOf(o.state)>=0;});};
+window.campExpired=function(c){
+  // 서버 신청 마감 검사와 동일하게 Asia/Seoul 기준 날짜로 비교한다
+  try{
+    if(!c||!c.deadline)return false;
+    var today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul'}).format(new Date());
+    return String(c.deadline).slice(0,10)<today;
+  }catch(e){return false;}
+};
+window.offerStateLabel=function(v){return ({none:'모집 중',applied:'신청 검토 중',selected:'조건 확인 필요',terms_agreed:'샘플 발송 대기',sample_shipped:'샘플 발송됨 · 콘텐츠 준비',content_submitted:'제출 완료 · 브랜드 검토 중',revision_requested:'수정 요청 — 수정본 제출 필요',completed:'협업 완료',declined:'제안 거절',rejected:'미선정'})[v]||v||'확인 필요';};
+window.actionableOffers=function(){return (LIVE.offers||[]).filter(function(o){return ['selected','terms_agreed','sample_shipped','revision_requested'].indexOf(o.state)>=0;});};
 window.unreadCount=function(cellId){var u=LIVE.unread[cellId];return (u&&u.unread)||0;};
 window.unreadTotal=function(){var t=0;Object.keys(LIVE.unread).forEach(function(k){t+=LIVE.unread[k].unread||0;});return t;};
 window.entryReady=function(){return !!(LIVE.profile&&LIVE.profile.entryReady);};
@@ -222,6 +229,7 @@ window.loadCreatorData=function(){
     req('GET','/me/profile').then(function(p){LIVE.profile=p;render();}).catch(function(){});
     req('GET','/me/tiktok').then(function(t){LIVE.tiktok=t;render();}).catch(function(){});
     req('GET','/me/xp').then(function(x){LIVE.xp=x;render();}).catch(function(){});
+    req('GET','/me/notification-prefs').then(function(np){LIVE.notifPrefs=np;render();}).catch(function(){});
     pollStart();
   }
 };
@@ -240,7 +248,7 @@ var commVersion=0;
 window.openCell=function(id,name,channel){
   var cell=(LIVE.cells||[]).find(function(c){return c.cellId===id;});
   if(cell)ui.brand=cell.brandId;
-  var ch=cell&&cell.kind==='dm'?'chat':(['chat','tips','notice'].indexOf(channel)>=0?channel:(ui.channel&&cell&&cell.kind!=='dm'?ui.channel:'chat'));
+  var ch=cell&&cell.kind==='dm'?'chat':(['chat','tips','products','notice'].indexOf(channel)>=0?channel:(ui.channel&&cell&&cell.kind!=='dm'?ui.channel:'chat'));
   ui.channel=ch;
   var version=++commVersion,token=jwtGet();
   LIVE.open={cellId:id,name:name,channel:ch,msgs:[],loading:true,error:'',dm:!!(cell&&cell.kind==='dm')};
@@ -258,14 +266,17 @@ window.selectChannelLive=function(ch){if(LIVE.open)return openCell(LIVE.open.cel
 window.sendMessage=function(){
   var d=document.getElementById('chatDraft'),v=(d&&d.value||'').trim();
   if(!v||!LIVE.open||LIVE.sending||LIVE.open.channel==='notice'||v.length>2000)return;
+  var img=((document.getElementById('chatImage')||{}).value||'').trim();
+  if(img&&!/^https:\/\/\S{8,470}$/.test(img))return toast('이미지는 공개 https:// 주소만 첨부할 수 있어요.');
   var id=LIVE.open.cellId,name=LIVE.open.name,ch=LIVE.open.channel,key=d.getAttribute('data-key'),token=jwtGet();
   LIVE.sending=true;render();
-  return req('POST','/community/cells/'+encodeURIComponent(id)+'/messages',{text:v,channel:ch,locale:(window.__USER_LANG||'ko')}).then(function(){
+  return req('POST','/community/cells/'+encodeURIComponent(id)+'/messages',{text:v,channel:ch,locale:(window.__USER_LANG||'ko'),image_url:img}).then(function(){
     if(token!==jwtGet())return;
     if(key){store.drafts[key]='';save();}
+    ui.attachOpen=false;formClearField('chatImage');
     if(LIVE.open&&LIVE.open.cellId===id&&LIVE.open.channel===ch)return openCell(id,name,ch);
   }).catch(function(e){if(isStale(e))return;toast((e&&e.message)||'게시하지 못했어요. 입력은 보관됐어요 — 다시 시도하세요.');})
-    .finally(function(){LIVE.sending=false;render();var el=document.getElementById('chatDraft');if(el)el.focus();});
+    .finally(function(){LIVE.sending=false;softRender();var el=document.getElementById('chatDraft');if(el)el.focus();});
 };
 window.threadOpen=function(mid){
   if(!LIVE.open)return;
@@ -286,7 +297,26 @@ window.threadReplySend=function(){
     if(token!==jwtGet())return;
     return threadOpen(mid);
   }).catch(function(e){if(isStale(e))return;toast((e&&e.message)||'답글을 보내지 못했습니다.');})
-    .finally(function(){LIVE.threadBusy=false;render();});
+    .finally(function(){LIVE.threadBusy=false;softRender();});
+};
+window.reactToggle=function(msgId,on){
+  if(!LIVE.open)return;
+  var id=LIVE.open.cellId;
+  function apply(list,count,mine){(list||[]).forEach(function(m){if(m.msgId===msgId){if(count!=null)m.reactionCount=count;m.myReaction=mine;}});}
+  // 낙관 반영(연타 방지 겸) — 실패하면 서버 값으로 복원
+  var prev=null;(LIVE.open.msgs||[]).forEach(function(m){if(m.msgId===msgId)prev={c:m.reactionCount||0,m:!!m.myReaction};});
+  apply(LIVE.open.msgs,prev?(prev.c+(on?1:-1)):null,on);
+  if(LIVE.thread&&LIVE.thread.msgs)apply(LIVE.thread.msgs,null,on);
+  softRender();
+  return req('POST','/community/cells/'+encodeURIComponent(id)+'/messages/'+msgId+'/reaction',{on:!!on}).then(function(r){
+    apply(LIVE.open&&LIVE.open.msgs,r.count,r.mine);
+    if(LIVE.thread&&LIVE.thread.msgs)apply(LIVE.thread.msgs,r.count,r.mine);
+    softRender();
+  }).catch(function(e){
+    if(isStale(e))return;
+    if(prev){apply(LIVE.open&&LIVE.open.msgs,prev.c,prev.m);softRender();}
+    toast((e&&e.message)||'리액션을 저장하지 못했습니다.');
+  });
 };
 window.commSearchInput=function(v){LIVE.searchQ=v;};
 window.commSearchRun=function(){
@@ -298,7 +328,7 @@ window.commSearchRun=function(){
   return req('GET','/community/cells/'+encodeURIComponent(id)+'/search?q='+encodeURIComponent(q)).then(function(r){
     if(token!==jwtGet())return;LIVE.searchRes=r;
   }).catch(function(e){if(isStale(e))return;LIVE.searchRes=[];toast((e&&e.message)||'검색하지 못했습니다.');})
-    .finally(function(){LIVE.searchBusy=false;render();});
+    .finally(function(){LIVE.searchBusy=false;softRender();});
 };
 window.commSearchClear=function(){LIVE.searchRes=null;LIVE.searchQ='';render();};
 window.openDm=function(brandId){
@@ -319,9 +349,9 @@ window.applyCampaign=function(cid){
   return req('POST','/campaigns/'+encodeURIComponent(cid)+'/apply',{creator_id:'me'}).then(function(){
     toast('신청이 접수됐어요 — 브랜드가 검토 후 선정하면 내 협업에서 조건을 확인할 수 있어요.');
     navigate('applied',cid);
-    return collabRefresh();
-  }).catch(function(e){if(isStale(e))return;toast((e&&e.message)||'신청하지 못했습니다. 잠시 후 다시 시도해 주세요.');})
-    .finally(function(){LIVE.applyBusy[cid]=false;render();});
+    return Promise.resolve(collabRefresh()).then(function(){return true;});
+  }).catch(function(e){if(isStale(e))return false;toast((e&&e.message)||'신청하지 못했습니다. 잠시 후 다시 시도해 주세요.');return false;})
+    .finally(function(){LIVE.applyBusy[cid]=false;softRender();});
 };
 window.agreeOffer=function(cid,accept){
   if(LIVE.agreeBusy)return;
@@ -330,9 +360,10 @@ window.agreeOffer=function(cid,accept){
   LIVE.agreeBusy=true;render();
   return req('POST','/me/campaign-offers/'+encodeURIComponent(cid)+'/agree',{accept:!!accept,tiktok_handle:h}).then(function(r){
     toast(accept?'수수료 합의 완료 — 확정 '+r.agreedCommissionPct+'% · 샘플 발송을 기다려 주세요.':'이 캠페인 제안을 거절했어요.');
+    formClearPage('collaboration');
     return collabRefresh();
   }).catch(function(e){if(isStale(e))return;toast((e&&e.message)||'처리하지 못했습니다.');})
-    .finally(function(){LIVE.agreeBusy=false;render();});
+    .finally(function(){LIVE.agreeBusy=false;softRender();});
 };
 window.submitSpark=function(cid){
   var v=((document.getElementById('sparkCode')||{}).value||'').trim();
@@ -340,9 +371,32 @@ window.submitSpark=function(cid){
   if(LIVE.sparkBusy)return;LIVE.sparkBusy=true;render();
   return req('POST','/me/campaign-offers/'+encodeURIComponent(cid)+'/spark-code',{spark_code:v}).then(function(){
     toast('Spark 코드가 브랜드에 전달됐어요 — 커뮤니티에는 노출되지 않습니다.');
+    formClearField('sparkCode');
     return collabRefresh();
   }).catch(function(e){if(isStale(e))return;toast((e&&e.message)||'합의 이후에 제출할 수 있어요.');})
-    .finally(function(){LIVE.sparkBusy=false;render();});
+    .finally(function(){LIVE.sparkBusy=false;softRender();});
+};
+/* 담당자 DM 전달(신청 아이디어·제출 메모) — 실패 시 DM 초안으로 보관해
+   본 작업(신청/제출)을 중복하지 않고 메모만 다시 보낼 수 있게 한다. */
+window.stashDmDraft=function(brandId,text){
+  if(!window.__ME)return false;
+  // 매직 로그인 응답에는 creatorId가 없을 수 있다 — 프로필 값으로 폴백
+  var cid=window.__ME.creatorId||(LIVE.profile&&LIVE.profile.creatorId);
+  if(!cid){var dm=dmCellFor(brandId);if(dm)cid=String(dm.cellId).split('--').pop();}
+  if(!cid)return false;
+  var cellId='dm-'+brandId+'--'+cid;
+  var key='u:'+window.__ME.userId+':'+cellId+':chat';
+  store.drafts[key]=(store.drafts[key]?store.drafts[key]+'\n':'')+text;
+  save();return true;
+};
+window.relayToManagerDm=function(brandId,text){
+  return req('POST','/community/dm/'+brandId,{}).then(function(r){
+    return req('POST','/community/cells/'+encodeURIComponent(r.cellId)+'/messages',{text:text,channel:'chat',locale:(window.__USER_LANG||'ko')})
+      .then(function(){return true;});
+  }).catch(function(e){
+    if(isStale(e))return false;
+    return window.stashDmDraft(brandId,text)?false:'lost';
+  });
 };
 window.submitContent=function(cid,url,memo){
   if(LIVE.contentBusy)return Promise.resolve();
@@ -350,15 +404,49 @@ window.submitContent=function(cid,url,memo){
   LIVE.contentBusy=true;render();
   var offer=offerByCampaign(cid);
   return req('POST','/me/campaign-offers/'+encodeURIComponent(cid)+'/content',{content_url:url}).then(function(){
-    toast('콘텐츠 제출 완료 — 브랜드 확인 후 완료 처리됩니다.');
+    formClearPage('submission');
     var m=(memo||'').trim();
-    if(m&&offer)return req('POST','/community/dm/'+offer.brandId,{}).then(function(r){
-      return req('POST','/community/cells/'+encodeURIComponent(r.cellId)+'/messages',{text:'[콘텐츠 제출 메모] '+(offer.campaignName||cid)+' — '+m,channel:'chat',locale:(window.__USER_LANG||'ko')});
-    }).catch(function(){});
-  }).then(function(){return collabRefresh();})
-    .then(function(){navigate('collaboration',cid);})
-    .catch(function(e){toast((e&&e.message)||'합의/샘플 수령 후 제출할 수 있어요.');})
-    .finally(function(){LIVE.contentBusy=false;render();});
+    if(!m||!offer){toast('콘텐츠 제출 완료 — 브랜드 확인 후 완료 처리됩니다.');return true;}
+    return relayToManagerDm(offer.brandId,'[콘텐츠 제출 메모] '+(offer.campaignName||cid)+' — '+m).then(function(sent){
+      toast(sent===true?'콘텐츠 제출 완료 — 메모도 담당자 DM으로 전달했어요.'
+        :sent==='lost'?'콘텐츠는 제출됐어요. 메모 전달에 실패했어요 — 담당자 DM에서 직접 전해 주세요. (콘텐츠를 다시 제출할 필요는 없어요)'
+        :'콘텐츠는 제출됐어요. 메모 전달은 실패해 담당자 DM 초안으로 보관했어요 — DM에서 보내기만 누르면 됩니다. (콘텐츠를 다시 제출할 필요는 없어요)');
+      return true;
+    });
+  }).then(function(done){if(done)return collabRefresh().then(function(){navigate('collaboration',cid);});})
+    .catch(function(e){if(isStale(e))return;toast((e&&e.message)||'합의/샘플 수령 후 제출할 수 있어요.');})
+    .finally(function(){LIVE.contentBusy=false;softRender();});
+};
+window.submitShipping=function(cid){
+  if(LIVE.shippingBusy)return;
+  function val(id){var el=document.getElementById(id);return el?el.value.trim():'';}
+  var payload={recipient:val('shipRecipient'),country:val('shipCountry').toUpperCase(),address:val('shipAddress'),phone:val('shipPhone')};
+  if(!payload.recipient||payload.country.length!==2||payload.address.length<4||payload.phone.length<4)
+    return toast('수령인·국가(2자리)·주소·연락처를 확인해 주세요.');
+  var consent=document.getElementById('shipConsent');
+  if(consent&&!consent.checked)return toast('샘플 배송을 위한 정보 제공을 확인해 주세요.');
+  LIVE.shippingBusy=true;render();
+  return req('POST','/me/campaign-offers/'+encodeURIComponent(cid)+'/shipping',payload).then(function(){
+    toast('수령 정보를 저장했어요 — 브랜드 담당자에게만 전달됩니다.');
+    formClearPage('collaboration');
+    return collabRefresh();
+  }).catch(function(e){if(isStale(e))return;toast((e&&e.message)||'샘플 발송 전에만 등록할 수 있어요.');})
+    .finally(function(){LIVE.shippingBusy=false;softRender();});
+};
+window.saveNotifPref=function(key,on){
+  var cur=(LIVE.notifPrefs&&LIVE.notifPrefs.prefs)||{dm:true,campaign:true,deadline:true,email:true};
+  var next={dm:cur.dm,campaign:cur.campaign,deadline:cur.deadline,email:cur.email};
+  next[key]=!!on;
+  var prev=LIVE.notifPrefs;
+  LIVE.notifPrefs={prefs:next,applied:(prev&&prev.applied)||{}};render();
+  return req('PUT','/me/notification-prefs',next).then(function(){
+    toast('알림 설정을 저장했어요.');
+    return req('GET','/me/notification-prefs').then(function(np){LIVE.notifPrefs=np;render();});
+  }).catch(function(e){
+    if(isStale(e))return;
+    LIVE.notifPrefs=prev;render();
+    toast((e&&e.message)||'알림 설정을 저장하지 못했습니다.');
+  });
 };
 window.joinBrandLive=function(brandId){
   if(LIVE.joinBusy)return;LIVE.joinBusy=true;render();
@@ -415,9 +503,9 @@ window.profileSaveLive=function(onDone){
   LIVE.profileBusy=true;render();
   req('PUT','/me/profile',payload)
     .then(function(r){toast(r.onboarded?'프로필 저장 완료 🎉':(r.hint||'프로필이 저장되었습니다.'));return req('GET','/me/profile');})
-    .then(function(p){LIVE.profile=p;if(onDone)onDone(p);})
+    .then(function(p){LIVE.profile=p;formClearPage('settings');formClearPage('onboarding');if(onDone)onDone(p);})
     .catch(function(e){if(isStale(e))return;toast((e&&e.message)||'입력값을 확인해 주세요.');})
-    .finally(function(){LIVE.profileBusy=false;render();retryMemberships();});
+    .finally(function(){LIVE.profileBusy=false;softRender();retryMemberships();});
 };
 window.tiktokConnect=function(){
   if(LIVE.tiktokBusy)return;LIVE.tiktokBusy=true;render();
@@ -441,12 +529,13 @@ window.loadSpace=function(brandId){
   if(LIVE.spaceBusy)return;LIVE.spaceBusy=true;render();
   Promise.all([
     req('GET','/me/missions?brand='+encodeURIComponent(brandId)).catch(function(){return null;}),
-    req('GET','/brands/'+encodeURIComponent(brandId)+'/ranking').catch(function(){return null;}),
+    req('GET','/brands/'+encodeURIComponent(brandId)+'/ranking?period=all').catch(function(){return null;}),
+    req('GET','/brands/'+encodeURIComponent(brandId)+'/ranking?period=week').catch(function(){return null;}),
     req('GET','/me/xp').catch(function(){return null;})
   ]).then(function(r){
     if(r[0])LIVE.missions[brandId]=r[0];
-    if(r[1])LIVE.ranking[brandId]=r[1];
-    if(r[2])LIVE.xp=r[2];
+    if(r[1]||r[2])LIVE.ranking[brandId]={all:r[1],week:r[2]};
+    if(r[3])LIVE.xp=r[3];
   }).finally(function(){LIVE.spaceBusy=false;render();});
 };
 
@@ -476,6 +565,7 @@ function resetLiveSession(){
   LIVE.missions={};LIVE.ranking={};LIVE.loadErr={};
   LIVE.searchQ='';LIVE.searchRes=null;LIVE.applicationDone=false;LIVE.applicationBusy=false;
   LIVE.magic={busy:false,sent:false,demoLink:'',status:''};
+  formDirty={};
   if(typeof ui!=='undefined'){ui.original={};ui.brand=null;ui.dm=null;ui.campaign=null;ui.activeCollab=null;ui.thread=null;ui.panel=null;}
 }
 window.sessionBind=function(user){
@@ -498,6 +588,32 @@ try{window.addEventListener('storage',function(e){
     location.reload();
   }
 });}catch(e){}
+
+/* ── 실패 시 폼 보존 — 사용자가 만진 입력만 페이지별로 기억해 재렌더
+      후에도 값·체크 상태를 복원한다(서버 적재 값을 덮지 않도록 더티만).
+      비밀번호는 제외, chatDraft는 자체 초안 시스템 사용. ── */
+var formDirty={};
+function dirtyPageKey(){return (typeof ui!=='undefined'&&ui.page)||'';}
+function onFormDirty(e){
+  var el=e.target;
+  if(!el||!el.id||el.type==='password'||el.id==='chatDraft')return;
+  if(!window.__ME)return;
+  var pg=dirtyPageKey();
+  (formDirty[pg]||(formDirty[pg]={}))[el.id]=
+    (el.type==='checkbox'||el.type==='radio')?{c:el.checked}:{v:el.value};
+}
+try{document.addEventListener('input',onFormDirty,true);
+    document.addEventListener('change',onFormDirty,true);}catch(e){}
+window.formRestore=function(){
+  var m=formDirty[dirtyPageKey()];if(!m)return;
+  Object.keys(m).forEach(function(id){
+    var el=document.getElementById(id);if(!el||el.type==='password')return;
+    var st=m[id];
+    if('c' in st)el.checked=st.c;else if(el.value!==st.v)el.value=st.v;
+  });
+};
+window.formClearPage=function(pg){delete formDirty[pg||dirtyPageKey()];};
+window.formClearField=function(id){var m=formDirty[dirtyPageKey()];if(m)delete m[id];};
 
 /* ── 폴링 — 알림·미읽음·열린 채널·스레드·캠페인/협업, 변경시에만 softRender ── */
 var pollTimer=null,pollBusy=false,pollFail=0,pollWired=false;

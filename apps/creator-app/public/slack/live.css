@@ -12,3 +12,9 @@
 }
 .live-search-res .live-search-head { display: flex; justify-content: space-between; align-items: center; }
 .live-search-res p { margin: 8px 0 0; }
+.live-attach { margin: 0 0 8px; display: flex; flex-direction: column; gap: 4px; }
+.live-attach label { font-size: 10px; font-weight: 700; color: #8a7f90; letter-spacing: .04em; }
+.live-attach input {
+  font-size: 12px; padding: 8px 10px; border: 1px solid #d7cfdd;
+  border-radius: 8px; box-sizing: border-box; width: 100%;
+}

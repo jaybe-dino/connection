@@ -1310,6 +1310,18 @@
       .then(function(){prodNotice='어필리에이트 링크 발급 완료.';window.collabShow(cid);})
       .catch(function(){toast('발급 실패','수수료 합의 이후에 가능해요.');});
   };
+  window.collabRevision=function(cid,creatorId){
+    var v=((document.getElementById('rvn_'+creatorId)||{}).value||'').trim();
+    if(v.length<4)return toast('수정 요청','요청 내용을 4자 이상 적어 주세요.');
+    req('POST','/brands/'+BRAND()+'/campaigns/'+cid+'/terms/'+creatorId+'/request-revision',{note:v})
+      .then(function(){prodNotice='수정 요청을 보냈어요 — 크리에이터가 수정본을 다시 제출하면 완료 처리할 수 있어요.';window.collabShow(cid);})
+      .catch(function(e){toast('요청 실패',mailEscape((e&&e.message)||'제출된 콘텐츠에만 요청할 수 있어요.'));});
+  };
+  function collabShippingHtml(a){
+    if(!a.shipping)return '<p style="font-size:12px;margin:4px 0;color:#5a6560">샘플 수령 정보 미등록 — 크리에이터가 내 협업에서 등록하면 여기 표시돼요.</p>';
+    var sp=a.shipping;
+    return '<p style="font-size:12px;margin:4px 0">수령 정보: '+mailEscape(sp.recipient||'')+' · '+mailEscape(sp.country||'')+' · '+mailEscape(sp.address||'')+' · '+mailEscape(sp.phone||'')+'</p>';
+  }
   window.collabComplete=function(cid,creatorId){
     req('POST','/brands/'+BRAND()+'/campaigns/'+cid+'/terms/'+creatorId+'/complete')
       .then(function(){prodNotice='협업 완료 처리됐어요.';window.collabShow(cid);})
@@ -1422,10 +1434,14 @@
             h+='<p style="font-size:12px;margin:6px 0">제안 수수료 '+(a.commissionPct!=null?a.commissionPct+'%':'-')+' — 크리에이터 합의 대기 중.</p>';
           }else if(a.termsState==='terms_agreed'||a.termsState==='sample_shipped'){
             h+='<p style="font-size:12px;margin:6px 0">확정 수수료 '+(a.agreedCommissionPct!=null?a.agreedCommissionPct+'%':'-')+(a.sampleTracking?' · 송장 '+mailEscape(a.sampleTracking):'')+(a.sparkCode?' · Spark 코드 수령 ✓':'')+'</p>'+sparkRowHtml(a);
+            h+=collabShippingHtml(a);
             if(a.termsState==='terms_agreed')h+='<div style="display:flex;gap:6px;margin:4px 0"><input id="shp_'+a.creatorId+'" placeholder="샘플 송장 번호" style="flex:1;padding:8px"><span class="cbt" onclick="collabShip(\''+c.campaignId+'\',\''+a.creatorId+'\')">샘플 발송</span></div>';
             h+='<div style="display:flex;gap:6px;margin:4px 0"><input id="afl_'+a.creatorId+'" placeholder="어필리에이트 링크 (https://… — 브랜드 발급)" value="'+mailEscape(a.affiliateLink||'')+'" style="flex:1;padding:8px"><span class="cbt" onclick="collabLink(\''+c.campaignId+'\',\''+a.creatorId+'\')">링크 발급</span></div>';
           }else if(a.termsState==='content_submitted'){
-            h+='<p style="font-size:12px;margin:6px 0">콘텐츠: '+mailEscape(a.contentUrl)+(a.sparkCode?' · Spark 코드 ✓':'')+'</p>'+sparkRowHtml(a)+'<span class="cbt" onclick="collabComplete(\''+c.campaignId+'\',\''+a.creatorId+'\')">완료 처리</span>';
+            h+='<p style="font-size:12px;margin:6px 0">콘텐츠: '+mailEscape(a.contentUrl)+(a.sparkCode?' · Spark 코드 ✓':'')+'</p>'+sparkRowHtml(a)+'<span class="cbt" onclick="collabComplete(\''+c.campaignId+'\',\''+a.creatorId+'\')">완료 처리</span>'
+              +'<div style="display:flex;gap:6px;margin:6px 0"><input id="rvn_'+a.creatorId+'" placeholder="수정 요청 내용 (크리에이터에게 전달)" style="flex:1;padding:8px"><span class="cbt no" onclick="collabRevision(\''+c.campaignId+'\',\''+a.creatorId+'\')">수정 요청</span></div>';
+          }else if(a.termsState==='revision_requested'){
+            h+='<p style="font-size:12px;margin:6px 0">수정 요청 중 — "'+mailEscape(a.revisionNote||'')+'"<br>이전 제출: '+mailEscape(a.contentUrl||'-')+' · 크리에이터의 수정본 제출을 기다리고 있어요.</p>'+sparkRowHtml(a);
           }else if(a.termsState==='completed'){
             h+='<p style="font-size:12px;margin:6px 0">✓ 완료 — 확정 수수료 '+(a.agreedCommissionPct!=null?a.agreedCommissionPct+'%':'-')+(a.sampleTracking?' · 송장 '+mailEscape(a.sampleTracking):'')+'<br>콘텐츠: '+(a.contentUrl?'<a href="'+mailEscape(a.contentUrl)+'" target="_blank" rel="noopener">'+mailEscape(a.contentUrl)+'</a>':'-')+'</p>'+sparkRowHtml(a);
           }else if(a.termsState==='declined'){

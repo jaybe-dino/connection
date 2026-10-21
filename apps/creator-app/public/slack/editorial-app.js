@@ -15,14 +15,22 @@ function closeModal(){$('#modal').close()}
 function modal(html){$('#modalBody').innerHTML=html;$('#modal').showModal()}
 function avatar(letter,cls=''){return `<span class="avatar ${cls}">${E(letter)}</span>`}
 function myName(){const me=window.__ME;if(!me)return '크리에이터';const h=LIVE.profile&&LIVE.profile.tiktokHandle;return (h&&h.replace(/^@/,''))||((me.email||'').split('@')[0])||'크리에이터'}
-function captureDraft(){const d=$('#chatDraft');if(d&&d.dataset.key){store.drafts[d.dataset.key]=d.value;save()}}
+function captureDraft(){
+  // 세션 소유자 검증 — 로그아웃 직후나 계정 교체 중에는 화면에 남은 입력을
+  // 캡처하지 않는다(다른 계정 스토어로의 유입·메모리 잔존 방지).
+  if(!window.__ME||!window.__storeUser||window.__storeUser()!==window.__ME.userId)return;
+  const d=$('#chatDraft');
+  if(d&&d.dataset.key&&d.dataset.key.indexOf('u:'+window.__ME.userId+':')===0){store.drafts[d.dataset.key]=d.value;save()}
+}
 function navigate(page,id){captureDraft();ui.page=page;ui.thread=null;if(id)ui.campaign=id;history.pushState(null,'','#'+page+(id?'/'+id:''));render();window.scrollTo(0,0)}
 function selectBrand(brandId){captureDraft();ui.brand=brandId;ui.channel='chat';ui.thread=null;const b=brandById(brandId);if(b&&b.cellId)openCell(b.cellId,b.cellName,'chat');else render()}
 function selectChannel(channel){captureDraft();ui.channel=channel;ui.thread=null;if(typeof selectChannelLive==='function')selectChannelLive(channel);else render()}
 function pageHead(kicker,title,desc,action=''){return `<div class="page-head"><div><span class="eyebrow">${kicker}</span><h1>${title}</h1><p>${desc}</p></div>${action}</div>`}
 
 /* ── 대화(커뮤니티 채널·담당자 DM) — 실제 메시지·번역·스레드 ── */
-function chatKey(){return LIVE.open?LIVE.open.cellId+':'+LIVE.open.channel:''}
+/* 초안 키 — 사용자ID+셀(브랜드 소속)+채널로 네임스페이스: 같은 기기의
+   다른 계정이 이 초안을 보거나 보낼 수 없다(store 자체도 계정별 저장). */
+function chatKey(){if(!LIVE.open||!window.__ME)return '';return 'u:'+window.__ME.userId+':'+LIVE.open.cellId+':'+LIVE.open.channel}
 function fmtTime(at){if(!at)return '';try{const d=new Date(at);const h=d.getHours(),m=String(d.getMinutes()).padStart(2,'0');return (h<12?'오전 ':'오후 ')+((h%12)||12)+':'+m}catch(e){return String(at).slice(11,16)}}
 function fmtDay(at){try{const d=new Date(at),now=new Date();const base=(d.getMonth()+1)+'월 '+d.getDate()+'일';return d.toDateString()===now.toDateString()?base+' · 오늘':base}catch(e){return ''}}
 function messageHtml(m,dm,key){

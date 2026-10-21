@@ -24,13 +24,27 @@ function jwtSet(t){try{localStorage.setItem('CONNECTION_JWT',t);}catch(e){}}
 function jwtClear(){try{localStorage.removeItem('CONNECTION_JWT');}catch(e){}}
 window.jwtGet=jwtGet;
 
+/* ── 세션 세대 — 로그인/로그아웃/계정 교체마다 증가.
+   모든 요청은 발사 시점의 (세대, 토큰)을 캡처하고, 응답이 돌아온 시점에
+   세션이 바뀌어 있으면 stale 오류로 중단한다: 늦게 도착한 이전 계정의
+   응답이 LIVE를 덮지 못하고, 체인의 후속 POST가 다른 계정 토큰으로
+   이어지지도 않는다. stale 오류는 사용자 메시지를 띄우지 않는다. ── */
+var sessionGen=0;
+function bumpSessionGen(){sessionGen++;}
+window.__sessionGen=function(){return sessionGen;};
+function staleError(){var e=new Error('이전 세션의 응답이라 적용하지 않았습니다');e.stale=true;return e;}
+window.isStale=function(e){return !!(e&&e.stale);};
+
 function req(method,path,body){
+  var gen=sessionGen,tok=jwtGet();
   var h={'Content-Type':'application/json'};
-  var jt=jwtGet();if(jt)h['Authorization']='Bearer '+jt;
+  if(tok)h['Authorization']='Bearer '+tok;
   return fetch(API+path,{method:method,headers:h,body:body?JSON.stringify(body):undefined})
     .then(function(r){return r.json().then(function(data){
+      if(gen!==sessionGen||tok!==jwtGet())throw staleError();
       if(!r.ok){var err=new Error(typeof data.detail==='string'?data.detail:'요청을 처리하지 못했습니다 ('+r.status+')');err.status=r.status;throw err;}
-      return data;});});
+      return data;});},
+    function(netErr){if(gen!==sessionGen||tok!==jwtGet())throw staleError();throw netErr;});
 }
 window.liveReq=req;
 
@@ -76,11 +90,29 @@ window.useAutomaticConversationLang=function(){
   }).catch(function(){});
 })();
 
-/* ── 이 브라우저만의 편의 저장(초안·북마크·읽음 힌트) — 운영 데이터 아님 ── */
-var defaults={saved:[],drafts:{},setting:'profile'};
-var saved;try{saved=JSON.parse(localStorage.getItem('prlist-slack-live-v1')||'null');}catch(e){}
-window.store={saved:(saved&&saved.saved)||[],drafts:(saved&&saved.drafts)||{},setting:(saved&&saved.setting)||'profile'};
-window.save=function(){try{localStorage.setItem('prlist-slack-live-v1',JSON.stringify({saved:store.saved,drafts:store.drafts,setting:store.setting}));}catch(e){}};
+/* ── 이 브라우저만의 편의 저장(초안·북마크) — 운영 데이터 아님.
+   계정(userId)별로 격리 저장한다: 같은 기기에서 A 로그아웃 → B 로그인해도
+   A의 미전송 초안·북마크가 B에게 보이지 않는다. 로그인 전에는 메모리
+   전용(영속화 없음)이며, 과거 계정 공용 키(prlist-slack-live-v1)는 읽지
+   않고 폐기한다(마이그레이션 금지 — 누구의 초안인지 알 수 없다). ── */
+var STORE_PREFIX='prlist-slack-live-v1:u:';
+var storeUser=null;
+function emptyStore(){return {saved:[],drafts:{},setting:'profile'};}
+window.store=emptyStore();
+window.save=function(){
+  if(!storeUser)return;   // 미로그인: 영속화하지 않음
+  try{localStorage.setItem(STORE_PREFIX+storeUser,JSON.stringify({saved:store.saved,drafts:store.drafts,setting:store.setting}));}catch(e){}
+};
+function storeBind(userId){
+  storeUser=String(userId||'')||null;
+  var s=null;
+  if(storeUser){try{s=JSON.parse(localStorage.getItem(STORE_PREFIX+storeUser)||'null');}catch(e){}}
+  window.store={saved:(s&&s.saved)||[],drafts:(s&&s.drafts)||{},setting:(s&&s.setting)||'profile'};
+  try{localStorage.removeItem('prlist-slack-live-v1');}catch(e){}   // 레거시 공용 키 폐기
+  if(typeof ui!=='undefined')ui.setting=store.setting||'profile';
+}
+function storeUnbind(){storeUser=null;window.store=emptyStore();}
+window.__storeUser=function(){return storeUser;};
 
 /* ── 진입 파라미터 — 브랜드 초대·모집 제안·매직링크·계정 링크 ── */
 var sp=new URLSearchParams(location.search);
@@ -167,24 +199,24 @@ window.retryMemberships=function(){
     if(token!==jwtGet())return;
     if(!Array.isArray(m))throw new Error('bad');
     LIVE.memberships=m;membershipState='ready';render();
-  }).catch(function(){if(token!==jwtGet())return;membershipState='error';render();});
+  }).catch(function(e){if(isStale(e)||token!==jwtGet())return;membershipState='error';render();});
 };
 window.loadCreatorData=function(){
   if(applicationToken)req('GET','/recruitment-links/'+encodeURIComponent(applicationToken)).then(function(r){
     if(LIVE.joinTarget&&LIVE.joinTarget!==r.brandId){LIVE.applicationContext=null;LIVE.applicationError='모집 링크와 브랜드가 다릅니다. 원래 제안 링크를 열어 주세요.';render();return;}
     LIVE.applicationContext=r;LIVE.joinTarget=r.brandId;if(r.locale)window.__INVITATION_LOCALE=r.locale;
     LIVE.invitationProduct=r.product||null;LIVE.applicationError='';render();
-  }).catch(function(e){LIVE.applicationContext=null;LIVE.applicationError=(e&&e.message)||'모집 링크를 확인하지 못했습니다';render();});
+  }).catch(function(e){if(isStale(e))return;LIVE.applicationContext=null;LIVE.applicationError=(e&&e.message)||'모집 링크를 확인하지 못했습니다';render();});
   var productQuery=sp.get('product');
   if(LIVE.joinTarget&&productQuery&&!applicationToken)req('GET','/brands/'+encodeURIComponent(LIVE.joinTarget)+'/products/'+encodeURIComponent(productQuery)+'/invitation').then(function(p){LIVE.invitationProduct=p;render();}).catch(function(){});
-  if(LIVE.joinTarget)req('GET','/brands/'+LIVE.joinTarget+'/identity').then(function(b){LIVE.joinBrandInfo=b;render();}).catch(function(){LIVE.joinBrandInfo={missing:true};render();});
+  if(LIVE.joinTarget)req('GET','/brands/'+LIVE.joinTarget+'/identity').then(function(b){LIVE.joinBrandInfo=b;render();}).catch(function(e){if(isStale(e))return;LIVE.joinBrandInfo={missing:true};render();});
   if(window.__ME&&window.__ME.kind==='creator'){
     retryMemberships();LIVE.loadErr={};
     req('GET','/community/my-cells').then(function(c){LIVE.cells=c;LIVE.loadErr.community=false;
       if(!LIVE.open&&(ui.page==='community')){var first=c.find(function(x){return x.kind!=='dm'&&(!LIVE.joinTarget||x.brandId===LIVE.joinTarget);});if(first){ui.brand=first.brandId;window.openCell(first.cellId,first.name,ui.channel);return;}}
-      render();}).catch(function(){LIVE.loadErr.community=true;render();});
-    req('GET','/me/campaigns').then(function(c){LIVE.campaigns=c;LIVE.loadErr.campaigns=false;render();}).catch(function(){LIVE.loadErr.campaigns=true;render();});
-    req('GET','/me/campaign-offers').then(function(o){LIVE.offers=o;LIVE.loadErr.offers=false;render();}).catch(function(){LIVE.loadErr.offers=true;render();});
+      render();}).catch(function(e){if(isStale(e))return;LIVE.loadErr.community=true;render();});
+    req('GET','/me/campaigns').then(function(c){LIVE.campaigns=c;LIVE.loadErr.campaigns=false;render();}).catch(function(e){if(isStale(e))return;LIVE.loadErr.campaigns=true;render();});
+    req('GET','/me/campaign-offers').then(function(o){LIVE.offers=o;LIVE.loadErr.offers=false;render();}).catch(function(e){if(isStale(e))return;LIVE.loadErr.offers=true;render();});
     req('GET','/me/unread').then(function(u){var m={};(u||[]).forEach(function(x){m[x.cellId]=x;});LIVE.unread=m;render();}).catch(function(){});
     req('GET','/me/notifications?limit=30').then(function(n){LIVE.notifs=n;render();}).catch(function(){});
     req('GET','/me/profile').then(function(p){LIVE.profile=p;render();}).catch(function(){});
@@ -220,7 +252,7 @@ window.openCell=function(id,name,channel){
     if(maxId)req('POST','/community/cells/'+encodeURIComponent(id)+'/read',{last_msg_id:maxId}).then(function(){if(LIVE.unread[id]){delete LIVE.unread[id];render();}}).catch(function(){});
     render();
     var feed=document.getElementById('messageFeed');if(feed)feed.scrollTop=feed.scrollHeight;
-  }).catch(function(e){if(version!==commVersion||token!==jwtGet())return;LIVE.open.loading=false;LIVE.open.error=(e&&e.message)||'대화를 불러오지 못했습니다. 멤버십과 연결 상태를 확인하세요.';render();});
+  }).catch(function(e){if(isStale(e)||version!==commVersion||token!==jwtGet())return;LIVE.open.loading=false;LIVE.open.error=(e&&e.message)||'대화를 불러오지 못했습니다. 멤버십과 연결 상태를 확인하세요.';render();});
 };
 window.selectChannelLive=function(ch){if(LIVE.open)return openCell(LIVE.open.cellId,LIVE.open.name,ch);};
 window.sendMessage=function(){
@@ -232,7 +264,7 @@ window.sendMessage=function(){
     if(token!==jwtGet())return;
     if(key){store.drafts[key]='';save();}
     if(LIVE.open&&LIVE.open.cellId===id&&LIVE.open.channel===ch)return openCell(id,name,ch);
-  }).catch(function(e){toast((e&&e.message)||'게시하지 못했어요. 입력은 보관됐어요 — 다시 시도하세요.');})
+  }).catch(function(e){if(isStale(e))return;toast((e&&e.message)||'게시하지 못했어요. 입력은 보관됐어요 — 다시 시도하세요.');})
     .finally(function(){LIVE.sending=false;render();var el=document.getElementById('chatDraft');if(el)el.focus();});
 };
 window.threadOpen=function(mid){
@@ -242,7 +274,7 @@ window.threadOpen=function(mid){
   return req('GET','/community/cells/'+encodeURIComponent(id)+'/messages/'+mid+'/thread').then(function(m){
     if(version!==commVersion||token!==jwtGet())return;
     LIVE.thread={rootId:mid,msgs:m};render();
-  }).catch(function(){if(version!==commVersion)return;LIVE.thread=null;toast('스레드를 불러오지 못했습니다.');render();});
+  }).catch(function(e){if(isStale(e)||version!==commVersion)return;LIVE.thread=null;toast('스레드를 불러오지 못했습니다.');render();});
 };
 window.threadClose=function(){LIVE.thread=null;render();};
 window.threadReplySend=function(){
@@ -253,7 +285,7 @@ window.threadReplySend=function(){
   return req('POST','/community/cells/'+encodeURIComponent(id)+'/messages',{text:v,channel:LIVE.open.channel==='notice'?'chat':LIVE.open.channel,locale:(window.__USER_LANG||'ko'),thread_parent:mid}).then(function(){
     if(token!==jwtGet())return;
     return threadOpen(mid);
-  }).catch(function(e){toast((e&&e.message)||'답글을 보내지 못했습니다.');})
+  }).catch(function(e){if(isStale(e))return;toast((e&&e.message)||'답글을 보내지 못했습니다.');})
     .finally(function(){LIVE.threadBusy=false;render();});
 };
 window.commSearchInput=function(v){LIVE.searchQ=v;};
@@ -265,7 +297,7 @@ window.commSearchRun=function(){
   LIVE.searchBusy=true;render();
   return req('GET','/community/cells/'+encodeURIComponent(id)+'/search?q='+encodeURIComponent(q)).then(function(r){
     if(token!==jwtGet())return;LIVE.searchRes=r;
-  }).catch(function(e){LIVE.searchRes=[];toast((e&&e.message)||'검색하지 못했습니다.');})
+  }).catch(function(e){if(isStale(e))return;LIVE.searchRes=[];toast((e&&e.message)||'검색하지 못했습니다.');})
     .finally(function(){LIVE.searchBusy=false;render();});
 };
 window.commSearchClear=function(){LIVE.searchRes=null;LIVE.searchQ='';render();};
@@ -277,7 +309,7 @@ window.openDm=function(brandId){
     }
     navigate('messages');ui.dm=brandId;
     openCell(r.cellId,'담당자 DM');
-  }).catch(function(){toast('담당자 DM은 브랜드 멤버십 가입 후 이용할 수 있어요.');});
+  }).catch(function(e){if(isStale(e))return;toast('담당자 DM은 브랜드 멤버십 가입 후 이용할 수 있어요.');});
 };
 
 /* ── 캠페인·협업 액션 ── */
@@ -288,7 +320,7 @@ window.applyCampaign=function(cid){
     toast('신청이 접수됐어요 — 브랜드가 검토 후 선정하면 내 협업에서 조건을 확인할 수 있어요.');
     navigate('applied',cid);
     return collabRefresh();
-  }).catch(function(e){toast((e&&e.message)||'신청하지 못했습니다. 잠시 후 다시 시도해 주세요.');})
+  }).catch(function(e){if(isStale(e))return;toast((e&&e.message)||'신청하지 못했습니다. 잠시 후 다시 시도해 주세요.');})
     .finally(function(){LIVE.applyBusy[cid]=false;render();});
 };
 window.agreeOffer=function(cid,accept){
@@ -299,7 +331,7 @@ window.agreeOffer=function(cid,accept){
   return req('POST','/me/campaign-offers/'+encodeURIComponent(cid)+'/agree',{accept:!!accept,tiktok_handle:h}).then(function(r){
     toast(accept?'수수료 합의 완료 — 확정 '+r.agreedCommissionPct+'% · 샘플 발송을 기다려 주세요.':'이 캠페인 제안을 거절했어요.');
     return collabRefresh();
-  }).catch(function(e){toast((e&&e.message)||'처리하지 못했습니다.');})
+  }).catch(function(e){if(isStale(e))return;toast((e&&e.message)||'처리하지 못했습니다.');})
     .finally(function(){LIVE.agreeBusy=false;render();});
 };
 window.submitSpark=function(cid){
@@ -309,7 +341,7 @@ window.submitSpark=function(cid){
   return req('POST','/me/campaign-offers/'+encodeURIComponent(cid)+'/spark-code',{spark_code:v}).then(function(){
     toast('Spark 코드가 브랜드에 전달됐어요 — 커뮤니티에는 노출되지 않습니다.');
     return collabRefresh();
-  }).catch(function(e){toast((e&&e.message)||'합의 이후에 제출할 수 있어요.');})
+  }).catch(function(e){if(isStale(e))return;toast((e&&e.message)||'합의 이후에 제출할 수 있어요.');})
     .finally(function(){LIVE.sparkBusy=false;render();});
 };
 window.submitContent=function(cid,url,memo){
@@ -337,6 +369,7 @@ window.joinBrandLive=function(brandId){
     loadCreatorData();
   }).catch(function(e){
     LIVE.joinBusy=false;
+    if(isStale(e))return;
     var msg=(e&&e.message)||'';
     if(msg.indexOf('온보딩')>=0||msg.indexOf('인증')>=0){toast(msg);navigate('onboarding');return;}
     toast(msg||'가입하지 못했습니다. 잠시 후 다시 시도해 주세요.');render();
@@ -349,7 +382,7 @@ window.applyRecruitment=function(){
   LIVE.applicationBusy=true;render();
   req('POST','/recruitment-links/'+encodeURIComponent(applicationToken)+'/apply',{}).then(function(r){
     LIVE.applicationDone=true;toast(r.brandName+'에 신청이 저장되었습니다. 참여 확정은 별도 검토입니다.');loadCreatorData();
-  }).catch(function(e){LIVE.applicationError=(e&&e.message)||'이 제안을 받은 계정인지 확인해 주세요.';})
+  }).catch(function(e){if(isStale(e))return;LIVE.applicationError=(e&&e.message)||'이 제안을 받은 계정인지 확인해 주세요.';})
     .finally(function(){LIVE.applicationBusy=false;render();});
 };
 
@@ -357,7 +390,7 @@ window.applyRecruitment=function(){
 window.notifReadAll=function(){
   req('POST','/me/notifications/read',{all:true}).then(function(){return req('GET','/me/notifications?limit=30');})
     .then(function(n){LIVE.notifs=n;render();})
-    .catch(function(){toast('읽음 처리에 실패했습니다 — 다시 시도해 주세요.');});
+    .catch(function(e){if(isStale(e))return;toast('읽음 처리에 실패했습니다 — 다시 시도해 주세요.');});
 };
 window.notifGo=function(idx){
   var item=LIVE.notifs&&LIVE.notifs.items&&LIVE.notifs.items[idx];if(!item)return;
@@ -383,7 +416,7 @@ window.profileSaveLive=function(onDone){
   req('PUT','/me/profile',payload)
     .then(function(r){toast(r.onboarded?'프로필 저장 완료 🎉':(r.hint||'프로필이 저장되었습니다.'));return req('GET','/me/profile');})
     .then(function(p){LIVE.profile=p;if(onDone)onDone(p);})
-    .catch(function(e){toast((e&&e.message)||'입력값을 확인해 주세요.');})
+    .catch(function(e){if(isStale(e))return;toast((e&&e.message)||'입력값을 확인해 주세요.');})
     .finally(function(){LIVE.profileBusy=false;render();retryMemberships();});
 };
 window.tiktokConnect=function(){
@@ -392,14 +425,14 @@ window.tiktokConnect=function(){
     if(r&&r.authUrl){toast('TikTok 인증 창으로 이동합니다 — 완료 후 상태 새로고침을 눌러 주세요.');try{window.open(r.authUrl,'_blank','noopener');}catch(e){}}
     return req('GET','/me/tiktok');
   }).then(function(t){LIVE.tiktok=t;})
-    .catch(function(e){toast((e&&e.message)||'지금은 연결할 수 없습니다.');return req('GET','/me/tiktok').then(function(t){LIVE.tiktok=t;}).catch(function(){});})
+    .catch(function(e){if(isStale(e))return;toast((e&&e.message)||'지금은 연결할 수 없습니다.');return req('GET','/me/tiktok').then(function(t){LIVE.tiktok=t;}).catch(function(){});})
     .finally(function(){LIVE.tiktokBusy=false;render();});
 };
 window.tiktokDisconnect=function(){
-  req('POST','/me/tiktok/disconnect',{}).then(function(){return req('GET','/me/tiktok');}).then(function(t){LIVE.tiktok=t;toast('TikTok 소유 인증을 해제했습니다.');render();}).catch(function(){toast('해제하지 못했습니다 — 다시 시도해 주세요.');});
+  req('POST','/me/tiktok/disconnect',{}).then(function(){return req('GET','/me/tiktok');}).then(function(t){LIVE.tiktok=t;toast('TikTok 소유 인증을 해제했습니다.');render();}).catch(function(e){if(isStale(e))return;toast('해제하지 못했습니다 — 다시 시도해 주세요.');});
 };
 window.tiktokRefresh=function(){
-  Promise.all([req('GET','/me/tiktok'),req('GET','/me/profile')]).then(function(r){LIVE.tiktok=r[0];LIVE.profile=r[1];render();}).catch(function(){toast('상태를 확인하지 못했습니다.');});
+  Promise.all([req('GET','/me/tiktok'),req('GET','/me/profile')]).then(function(r){LIVE.tiktok=r[0];LIVE.profile=r[1];render();}).catch(function(e){if(isStale(e))return;toast('상태를 확인하지 못했습니다.');});
 };
 window.tiktokStateLabel=function(s){return ({none:'미연결',pending:'인증 진행 중',connected:'연결됨 ✓',failed:'인증 실패 — 다시 연결',expired:'만료 — 다시 연결',revoked:'해제됨',eligible:'자격 확인 ✓',rejected:'자격 미충족'})[s]||s||'미연결';};
 
@@ -430,16 +463,41 @@ window.magicRequest=function(email){
     LIVE.magic.sent=true;LIVE.magic.status='';
     if(r.demoLink)LIVE.magic.demoLink=r.demoLink.replace('https://app.theprlist.net/',location.origin+'/').replace('https://theprlist.net/',location.origin+'/');
     navigate('checkemail');
-  }).catch(function(e){LIVE.magic.status=(e&&e.message)||entryText('로그인 링크 요청에 실패했습니다. 연결 상태를 확인해 주세요.','Unable to send the sign-in link. Please try again.');render();})
+  }).catch(function(e){if(isStale(e))return;LIVE.magic.status=(e&&e.message)||entryText('로그인 링크 요청에 실패했습니다. 연결 상태를 확인해 주세요.','Unable to send the sign-in link. Please try again.');render();})
     .finally(function(){LIVE.magic.busy=false;render();});
 };
-window.authLogout=function(){
-  jwtClear();window.__ME=null;
+/* 세션 민감 메모리 전부 초기화 — 로그아웃·다른 창 로그아웃 공용 */
+function resetLiveSession(){
+  bumpSessionGen();
+  window.__ME=null;
+  storeUnbind();
   LIVE.memberships=null;LIVE.cells=null;LIVE.campaigns=null;LIVE.offers=null;LIVE.unread={};
   LIVE.notifs=null;LIVE.profile=null;LIVE.tiktok=null;LIVE.xp=null;LIVE.open=null;LIVE.thread=null;
+  LIVE.missions={};LIVE.ranking={};LIVE.loadErr={};
+  LIVE.searchQ='';LIVE.searchRes=null;LIVE.applicationDone=false;LIVE.applicationBusy=false;
+  LIVE.magic={busy:false,sent:false,demoLink:'',status:''};
+  if(typeof ui!=='undefined'){ui.original={};ui.brand=null;ui.dm=null;ui.campaign=null;ui.activeCollab=null;ui.thread=null;ui.panel=null;}
+}
+window.sessionBind=function(user){
+  bumpSessionGen();
+  window.__ME=user;
+  storeBind(user&&user.userId);
+};
+window.authLogout=function(){
+  jwtClear();
+  resetLiveSession();
   toast('로그아웃했습니다 — 다시 로그인해야 이용할 수 있어요.');
   navigate('login');
 };
+/* 다른 창/탭의 로그아웃·계정 교체를 이 창에도 즉시 반영 */
+try{window.addEventListener('storage',function(e){
+  if(e.key!=='CONNECTION_JWT')return;
+  if(!e.newValue){               // 다른 창에서 로그아웃
+    if(window.__ME){resetLiveSession();toast('다른 창에서 로그아웃되어 이 창도 로그아웃했어요.');navigate('login');}
+  }else{                         // 다른 창에서 로그인/계정 교체 — 깨끗하게 재적재
+    location.reload();
+  }
+});}catch(e){}
 
 /* ── 폴링 — 알림·미읽음·열린 채널·스레드·캠페인/협업, 변경시에만 softRender ── */
 var pollTimer=null,pollBusy=false,pollFail=0,pollWired=false;
@@ -545,7 +603,7 @@ window.liveBoot=function(){
       req('POST','/auth/reset/confirm',{token:resetTok,password:pw}).then(function(r){
         closeModal();history.replaceState(null,'',location.pathname);
         toast((r.message||'비밀번호 변경 완료 ✅')+(r.kind==='admin'?' — admin.theprlist.net에서 다시 로그인하세요.':' — 다시 로그인하세요.'));
-      }).catch(function(e){toast((e&&e.message)||'링크가 만료됐거나 이미 사용됐어요 — 재설정을 다시 요청하세요.');});
+      }).catch(function(e){if(isStale(e))return;toast((e&&e.message)||'링크가 만료됐거나 이미 사용됐어요 — 재설정을 다시 요청하세요.');});
     };
   }
   if(inviteTok){
@@ -553,17 +611,17 @@ window.liveBoot=function(){
     window.liveAcceptInvite=function(){
       var pw=(document.getElementById('axPw')||{}).value||'';
       req('POST','/auth/accept',{token:inviteTok,password:pw}).then(function(r){
-        jwtSet(r.token);window.__ME=r.user;closeModal();
+        jwtSet(r.token);sessionBind(r.user);closeModal();
         history.replaceState(null,'',location.pathname);
         toast('계정 생성 완료 🎉 '+r.user.email+' — 브랜드 콘솔(console.theprlist.net)에서 이 계정으로 로그인하세요.');
         LIVE.authKnown=true;render();
-      }).catch(function(){toast('수락하지 못했습니다 — 링크가 만료됐을 수 있어요. 초대를 다시 요청하세요. 비밀번호는 10자 이상.');});
+      }).catch(function(e){if(isStale(e))return;toast('수락하지 못했습니다 — 링크가 만료됐을 수 있어요. 초대를 다시 요청하세요. 비밀번호는 10자 이상.');});
     };
   }
   if(magicTok){
     var keep={};if(LIVE.joinTarget)keep.brand=LIVE.joinTarget;if(applicationToken)keep.application=applicationToken;if(sp.get('lang'))keep.lang=sp.get('lang');
     req('POST','/auth/magic/verify',{token:magicTok}).then(function(r){
-      jwtSet(r.token);window.__ME=r.user;LIVE.authKnown=true;LIVE.verifyState='';
+      jwtSet(r.token);sessionBind(r.user);LIVE.authKnown=true;LIVE.verifyState='';
       history.replaceState(null,'',location.pathname+(Object.keys(keep).length?'?'+new URLSearchParams(keep).toString():''));
       toast(sp.get('lang')==='en'?'Signed in ✅ '+r.user.email:'로그인 완료 ✅ '+r.user.email);
       req('GET','/me/profile').then(function(p){
@@ -573,7 +631,8 @@ window.liveBoot=function(){
         else navigate('community');
         loadCreatorData();
       }).catch(function(){navigate('community');loadCreatorData();});
-    }).catch(function(){
+    }).catch(function(e){
+      if(isStale(e))return;
       LIVE.verifyState='failed';LIVE.authKnown=true;
       navigate('state','expired');
     });
@@ -581,8 +640,8 @@ window.liveBoot=function(){
   }
   if(jwtGet()){
     req('GET','/auth/me').then(function(u){
-      window.__ME=u;LIVE.authKnown=true;render();loadCreatorData();
-    }).catch(function(){jwtClear();LIVE.authKnown=true;render();});
+      sessionBind(u);LIVE.authKnown=true;render();loadCreatorData();
+    }).catch(function(e){if(isStale(e))return;jwtClear();LIVE.authKnown=true;render();});
   }else{
     LIVE.authKnown=true;
   }

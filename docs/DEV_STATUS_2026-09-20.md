@@ -1499,3 +1499,32 @@ auth_tokens/brand_team_roles 재사용)
   isolation 10단언, console-admin-shell 22, admin-brand-accounts 23,
   tests_ui 96, billing 95, 전 앱 빌드 통과. 운영 배포 없음(Railway 장애
   중 — 로컬 검증만).
+
+## 2026-10-21(보완 3) — AUTH_REQUIRED=1 운영 경계 + 실버튼/실데이터 대조
+(branch claude/creator-slack-v3-live-20261021)
+
+- 운영 차단 해소: legacy_access_boundary self_checked 에
+  /me/notification-prefs(GET/PUT)·/me/campaign-offers/{id}/shipping(POST)
+  정확 경로만 추가(핸들러 본인 JWT 검사 유지, 넓은 /me/* 허용 없음).
+  독립 검수 재실행용 tests/test_creator_parity_strict_independent.py
+  4종: AUTH_REQUIRED=1에서 본인 성공·익명 401·타 크리에이터 shipping 404·
+  수정요청 note strip 검증·DM 배지 실반영(준비는 개발 모드, 검증 구간만
+  운영 모드 전환 — 메일 미발송 유지).
+- 입력 검증: ShippingIn recipient/address/phone strip 후 길이,
+  country 영문 2자리(소문자→대문자), RevisionIn note strip 후 4자 —
+  공백만 입력이 빈 값으로 저장되는 경로 차단(422).
+- '담당자 메시지' 토글 실반영: off 시 /me/unread 가 DM 셀 배지를
+  제외(라운지 유지·대화 열람 가능), applied=active 로 표기. 알림 설정
+  로드 실패는 영구 스켈레톤 대신 오류+다시 불러오기 UI.
+- 실버튼/API 대조 2건: ① 검토 중(content_submitted) '제출 링크 수정'이
+  실제로 동작 — submit_content 가 content_submitted 수정 허용(본인 terms
+  만, 완료 후 409, XP 유니크로 중복 지급 없음, ledger edited 표기),
+  수정 화면은 현재 링크 프리필. ② /me/campaigns·/me/campaign-offers 가
+  캠페인의 같은 브랜드 제품 이미지(imageUrl)를 동반 — 캠페인 카드·상세·
+  협업 카드에 실제 제품 이미지 표시(타 브랜드 연결·비https 는 무시,
+  중립 fallback 유지).
+- 검증: 서버 pytest 317(parity 7 + strict 4 포함), creator-slack-live
+  e2e 76단언 — **AUTH_REQUIRED=1 서버**로 로그인부터 전 여정(제품 이미지
+  카드/협업 카드, 링크 수정·XP 1회, DM 배지 토글 등) 통과, isolation 10,
+  admin-brand-accounts 23, console-admin-shell 22, tests_ui 96, billing
+  95, 전 앱 빌드. 운영 미배포(Railway 장애 지속 — 로컬 검증만).

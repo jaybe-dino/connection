@@ -247,3 +247,93 @@ def test_revision_request_roundtrip(client, box):
     assert client.post(f"/brands/{box['a']}/campaigns/{cid}/terms/"
                        f"{creator_id}/complete",
                        headers=bh).status_code == 200
+
+
+# ── 검토 중 제출 링크 수정(본인만·완료 후 금지·XP 중복 없음) ─────
+
+def test_content_edit_while_in_review(client, box):
+    ch = _member(client, box, "edit")
+    cid, creator_id, bh = _campaign_to_state(client, box, ch)
+    # 검토 중(content_submitted) 수정 — UI '제출 링크 수정' 버튼의 실제 경로
+    r = client.post(f"/me/campaign-offers/{cid}/content", json={
+        "content_url": "https://example.com/v1-edited"}, headers=ch)
+    assert r.status_code == 200, r.text
+    assert r.json()["state"] == "content_submitted"
+    assert r.json()["contentUrl"].endswith("v1-edited")
+    # 본인 terms 만 — 같은 브랜드 다른 크리에이터는 404
+    other = _member(client, box, "edit2")
+    assert client.post(f"/me/campaign-offers/{cid}/content", json={
+        "content_url": "https://example.com/steal"},
+        headers=other).status_code == 404
+    # XP는 (creator,brand,kind,subject) 1회 — 수정으로 중복 지급 없음
+    with connect() as c:
+        n = c.execute(
+            "SELECT count(*) c FROM xp_events WHERE creator_id=%s AND"
+            " kind='content_submitted' AND subject=%s",
+            (creator_id, cid)).fetchone()["c"]
+    assert n == 1
+    # 완료 후 변경 금지(기록 보존)
+    assert client.post(f"/brands/{box['a']}/campaigns/{cid}/terms/"
+                       f"{creator_id}/complete", headers=bh).status_code == 200
+    assert client.post(f"/me/campaign-offers/{cid}/content", json={
+        "content_url": "https://example.com/late"},
+        headers=ch).status_code == 409
+
+
+# ── 캠페인 카드 실제품 이미지(같은 브랜드만·https만) ─────────────
+
+def test_campaign_product_image_join(client, box):
+    ch = _member(client, box, "img")
+    bh = _h(_brand_user(client, f"im-{box['sfx']}@{box['a']}.ex", box["a"]))
+    prod = client.post(f"/brands/{box['a']}/products", json={
+        "name": "이미지 세럼 " + box["sfx"], "commission_pct": 10},
+        headers=bh).json()
+    camp = client.post(f"/brands/{box['a']}/campaigns", json={
+        "name": "이미지 캠페인 " + box["sfx"], "reward_type": "affiliate",
+        "countries": ["KR"]}, headers=bh).json()
+    cid = camp["campaignId"]
+    client.post(f"/brands/{box['a']}/campaigns/{cid}/publish", headers=bh)
+    with connect() as c:
+        c.execute("INSERT INTO product_invitation_profiles"
+                  " (product_id, image_url) VALUES (%s,%s)",
+                  (prod["productId"], "https://cdn.example.com/serum.jpg"))
+        c.execute("UPDATE campaigns SET product_id=%s WHERE campaign_id=%s",
+                  (prod["productId"], cid))
+    def my(cid_):
+        return next(x for x in client.get("/me/campaigns", headers=ch).json()
+                    if x["campaignId"] == cid_)
+    assert my(cid)["imageUrl"] == "https://cdn.example.com/serum.jpg"
+    # 협업 카드(offers)에도 동반
+    client.post(f"/campaigns/{cid}/apply", json={"creator_id": "me"},
+                headers=ch)
+    me = client.get("/me/campaigns", headers=ch).json()
+    creator_id = client.post(f"/campaigns/{cid}/apply",
+                             json={"creator_id": "me"},
+                             headers=ch).json()["creatorId"]
+    client.post(f"/brands/{box['a']}/campaigns/{cid}/select", json={
+        "creator_id": creator_id, "commission_pct": 10}, headers=bh)
+    off = next(o for o in client.get("/me/campaign-offers",
+                                     headers=ch).json()
+               if o["campaignId"] == cid)
+    assert off["imageUrl"] == "https://cdn.example.com/serum.jpg"
+    # 타 브랜드 제품이 잘못 연결돼도 이미지가 노출되지 않는다(브랜드 가드)
+    bh_b = _h(_brand_user(client, f"im2-{box['sfx']}@{box['b']}.ex",
+                          box["b"]))
+    prod_b = client.post(f"/brands/{box['b']}/products", json={
+        "name": "타브랜드 제품 " + box["sfx"], "commission_pct": 10},
+        headers=bh_b).json()
+    with connect() as c:
+        c.execute("INSERT INTO product_invitation_profiles"
+                  " (product_id, image_url) VALUES (%s,%s)",
+                  (prod_b["productId"], "https://cdn.example.com/other.jpg"))
+        c.execute("UPDATE campaigns SET product_id=%s WHERE campaign_id=%s",
+                  (prod_b["productId"], cid))
+    assert my(cid)["imageUrl"] is None
+    # https 가 아닌 이미지 값은 무시(중립 fallback)
+    with connect() as c:
+        c.execute("UPDATE campaigns SET product_id=%s WHERE campaign_id=%s",
+                  (prod["productId"], cid))
+        c.execute("UPDATE product_invitation_profiles SET image_url="
+                  "'http://insecure/img.jpg' WHERE product_id=%s",
+                  (prod["productId"],))
+    assert my(cid)["imageUrl"] is None

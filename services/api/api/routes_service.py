@@ -492,11 +492,18 @@ def my_unread(authorization: str = Header(default="")) -> list[dict]:
     with connect() as conn:
         if claims.get("kind") == "creator":
             cid = _ensure_creator_row(conn, claims)
+            # '담당자 메시지' 알림 설정 off → DM 셀 미읽음 배지 제외(내부
+            # 기능이므로 설정이 실제로 반영된다 — 대화 자체는 그대로 열람 가능)
+            dm_pref = conn.execute(
+                "SELECT channels FROM notification_prefs WHERE user_id=%s"
+                " AND type='dm'", (uid,)).fetchone()
+            dm_on = dm_pref is None or bool(dm_pref["channels"])
             cells = conn.execute(
                 "SELECT c.cell_id FROM cells c JOIN memberships m ON"
                 " m.brand_id=c.brand_id AND m.creator_id=%s"
-                " WHERE c.visibility<>'dm' OR c.cell_id ="
-                " 'dm-'||c.brand_id||'--'||m.creator_id", (cid,)).fetchall()
+                " WHERE c.visibility<>'dm' OR (%s AND c.cell_id ="
+                " 'dm-'||c.brand_id||'--'||m.creator_id)",
+                (cid, dm_on)).fetchall()
         elif claims.get("kind") == "brand":
             cells = conn.execute("SELECT cell_id FROM cells WHERE brand_id=%s",
                                  (claims.get("brand_id"),)).fetchall()
@@ -643,7 +650,7 @@ def my_notif_prefs(authorization: str = Header(default="")) -> dict:
     for r in rows:
         prefs[r["type"]] = bool(r["channels"])
     return {"prefs": prefs,
-            "applied": {"dm": "unread",          # DM은 미읽음 배지로 전달
+            "applied": {"dm": "active",          # DM 미읽음 배지에 즉시 반영
                         "campaign": "active",    # 알림 생성에 즉시 반영
                         "deadline": "pending",   # 기한 알림 러너 연결 대기
                         "email": "pending"}}     # 메일 발송 연결 대기

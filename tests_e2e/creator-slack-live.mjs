@@ -44,7 +44,8 @@ const crashDump = async (e) => {
   console.log("CRASH:", (e && e.message || e));
   try { if (globalThis.__A) await globalThis.__A.screenshot({ path: "tests_e2e/shots/creator-slack-FAIL.png" }); } catch {}
   try {
-    if (globalThis.__A) console.log("BODY:", (await globalThis.__A.evaluate(() => document.body.innerText)).slice(0, 500).replace(/\n/g, "|"));
+    if (globalThis.__A) console.log("BODY:", (await globalThis.__A.evaluate(() => document.body.innerText)).slice(0, 1600).replace(/\n/g, "|"));
+    console.log("TOAST:", await globalThis.__A.evaluate(() => document.getElementById("toast").innerText));
   } catch {}
   try { refServer.kill(); } catch {}
   process.exit(1);
@@ -62,6 +63,10 @@ const newPage = async (tag, viewport, mobile) => {
 const rgb = (hex) => { const n = parseInt(hex.slice(1), 16);
   return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`; };
 const sfx = Date.now().toString(36);
+
+// 반복 실행이 쌓은 이전 e2e 크리에이터들의 XP 잔여를 정리(disposable DB)
+// — 동점 수십 명이 TOP20을 채워 이번 실행 계정의 랭킹 행이 밀리는 것 방지
+sql(`DELETE FROM xp_events USING creators WHERE xp_events.creator_id=creators.creator_id AND creators.handle LIKE 'live\\_%'`);
 
 // ── 준비(실 API): 브랜드 2곳 + 글로우랩 캠페인 1건 발행 ──
 let boot = await api("POST", "/auth/bootstrap", { email: "ops.e2e@ex.com", password: "admin-ops-pass-1" });
@@ -92,6 +97,12 @@ const camp = await api("POST", "/brands/glowlab/campaigns",
     deadline, countries: ["KR", "TH"] }, gjwt);
 const CID = camp.body.campaignId;
 ok("캠페인 생성(초안)", camp.status === 200 && !!CID, JSON.stringify(camp.body).slice(0, 100));
+// 제품 정보가 이미 등록된 브랜드 — 캠페인에 실제 제품 이미지 연결
+const PRODUCT_IMG = `https://cdn.example.com/serum-${sfx}.jpg`;
+const prodId = sql(`INSERT INTO brand_products (brand_id, name) VALUES ('glowlab', '라이브 세럼 ${sfx}') RETURNING product_id`).split("\n")[0];
+sql(`INSERT INTO product_invitation_profiles (product_id, image_url) VALUES ('${prodId}', '${PRODUCT_IMG}')`);
+sql(`UPDATE campaigns SET product_id='${prodId}' WHERE campaign_id='${CID}'`);
+ok("브랜드 제품+이미지 등록(글로우랩 실데이터)", !!prodId);
 
 // ── PC 1440: 초대 → 로그인 → 온보딩 → TikTok 게이트 → 참여 ──
 const EMAIL = `live-${sfx}@creator.example`;
@@ -224,10 +235,23 @@ ok("메시지 이미지 첨부(https 검증) + 원본 message-image 렌더", tru
 await A.click(".slack-sidebar details.journey-more summary");
 await A.click('.slack-sidebar button:has-text("제품이야기")');
 await A.waitForSelector("h1:has-text(\"제품 이야기\")", { timeout: 9000 });
+await A.waitForFunction(() => LIVE.open && LIVE.open.channel === "products" && !LIVE.open.loading && !LIVE.sending, null, { timeout: 9000 });
 await A.fill("#chatDraft", "제품 채널 첫 글 " + sfx);
 await A.click(".send-btn");
-await A.waitForSelector(`text=제품 채널 첫 글 ${sfx}`, { timeout: 9000 });
-ok("제품이야기(products) 실채널 게시·조회", true);
+// 전송 확인은 서버 기준(API) — 간헐 렌더 타이밍과 무관하게 1회 재시도 허용
+let prodPosted = false;
+for (let i = 0; i < 10 && !prodPosted; i++) {
+  await A.waitForTimeout(900);
+  const pr = await api("GET", `/community/cells/${gCell.cellId}/messages?channel=products`, null, myTok2);
+  prodPosted = (pr.body || []).some((m) => m.original === "제품 채널 첫 글 " + sfx);
+  if (!prodPosted && i === 4) {
+    await A.fill("#chatDraft", "제품 채널 첫 글 " + sfx).catch(() => {});
+    await A.click(".send-btn").catch(() => {});
+  }
+}
+ok("제품이야기(products) 실채널 게시(서버 확인)", prodPosted);
+await A.waitForSelector(`text=제품 채널 첫 글 ${sfx}`, { timeout: 12000 });
+ok("제품이야기 채널 화면 조회", true);
 await A.click('.slack-sidebar button:has-text("자유대화")');
 await A.waitForTimeout(1200);
 await A.fill('input[aria-label="이 채널에서 검색"]', MSG.slice(0, 8));
@@ -255,6 +279,10 @@ await A.click('.slack-sidebar button:has-text("캠페인 둘러보기")');
 await A.waitForSelector(".campaign-grid", { timeout: 9000 });
 t = await A.evaluate(() => document.body.innerText);
 ok("캠페인 목록: 실모집 카드(커미션·보상·마감)", t.includes(CNAME) && t.includes("15%"));
+const cardImg = await A.evaluate((n) => { const a = [...document.querySelectorAll("article.card")]
+  .find((x) => x.innerText.includes(n)); const i = a && a.querySelector("img");
+  return i ? i.getAttribute("src") : ""; }, CNAME);
+ok("캠페인 카드: 실제 제품 이미지 표시(모노그램 아님)", cardImg === PRODUCT_IMG, cardImg.slice(0, 60));
 await A.click(`article.card:has-text("${CNAME}") >> button:has-text("캠페인 자세히 보기")`);
 await A.waitForSelector(".detail-layout", { timeout: 9000 });
 await A.waitForSelector("text=데일리 글로우 세럼", { timeout: 9000 });
@@ -351,6 +379,22 @@ ok("콘텐츠 제출 성공 + 메모 전달 실패의 부분 성공 안내(완�
 ok("실패한 메모는 담당자 DM 초안으로 보관(재제출 불필요)",
   stashedDraft.includes(sfx), stashedDraft.slice(0, 60));
 
+// ── 검토 중 '제출 링크 수정' — 실제 URL 수정(완료 전까지만) ──
+await A.click('button:has-text("제출 링크 수정")');
+await A.waitForSelector("#journeyContent", { timeout: 9000 });
+const prefilled = await A.evaluate(() => document.getElementById("journeyContent").value);
+ok("제출 링크 수정 화면: 현재 제출 링크 프리필", prefilled.includes(sfx), prefilled.slice(0, 50));
+await A.fill("#journeyContent", `https://www.tiktok.com/@${HANDLE}/video/${sfx}edited`);
+await A.check(".journey-checkbox input");
+await A.click('button:has-text("제출 링크 수정") >> nth=-1');
+await A.waitForSelector("text=브랜드가 콘텐츠를 검토하고 있어요", { timeout: 12000 });
+const editedOffer = await api("GET", "/me/campaign-offers", null, myTok);
+ok("검토 중 제출 링크 수정 반영(409 아님·상태 유지)",
+  (editedOffer.body || []).some((o) => o.campaignId === CID
+    && o.state === "content_submitted" && (o.contentUrl || "").endsWith(sfx + "edited")));
+const xpOnce = sql(`SELECT count(*) FROM xp_events WHERE kind='content_submitted' AND subject='${CID}'`);
+ok("링크 수정으로 XP 중복 지급 없음", xpOnce === "1", xpOnce);
+
 // ── 브랜드 수정 요청 → 수정본 제출 → 완료 ──
 const rev = await api("POST",
   `/brands/glowlab/campaigns/${CID}/terms/${myCreatorId}/request-revision`,
@@ -383,6 +427,9 @@ await A.click('.slack-sidebar button:has-text("내 할 일")');
 await A.waitForSelector(".work-list, .tabs", { timeout: 12000 });
 await A.click('.tabs button:has-text("완료")');
 await A.waitForSelector("text=협업을 완료했어요", { timeout: 12000 });
+const workImg = await A.evaluate(() => { const i = document.querySelector("img.work-thumb");
+  return i ? i.getAttribute("src") : ""; });
+ok("협업 카드: 실제 제품 이미지 표시", workImg === PRODUCT_IMG, workImg.slice(0, 60));
 await A.click('button:has-text("완료 기록 보기")').catch(() => {});
 await A.waitForTimeout(1200);
 t = await A.evaluate(() => document.body.innerText);

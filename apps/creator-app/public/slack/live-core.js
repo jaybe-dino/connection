@@ -229,7 +229,7 @@ window.loadCreatorData=function(){
     req('GET','/me/profile').then(function(p){LIVE.profile=p;render();}).catch(function(){});
     req('GET','/me/tiktok').then(function(t){LIVE.tiktok=t;render();}).catch(function(){});
     req('GET','/me/xp').then(function(x){LIVE.xp=x;render();}).catch(function(){});
-    req('GET','/me/notification-prefs').then(function(np){LIVE.notifPrefs=np;render();}).catch(function(){});
+    loadNotifPrefs();
     pollStart();
   }
 };
@@ -433,6 +433,11 @@ window.submitShipping=function(cid){
   }).catch(function(e){if(isStale(e))return;toast((e&&e.message)||'샘플 발송 전에만 등록할 수 있어요.');})
     .finally(function(){LIVE.shippingBusy=false;softRender();});
 };
+window.loadNotifPrefs=function(){
+  LIVE.notifPrefsError=false;render();
+  return req('GET','/me/notification-prefs').then(function(np){LIVE.notifPrefs=np;LIVE.notifPrefsError=false;render();})
+    .catch(function(e){if(isStale(e))return;LIVE.notifPrefsError=true;render();});
+};
 window.saveNotifPref=function(key,on){
   var cur=(LIVE.notifPrefs&&LIVE.notifPrefs.prefs)||{dm:true,campaign:true,deadline:true,email:true};
   var next={dm:cur.dm,campaign:cur.campaign,deadline:cur.deadline,email:cur.email};
@@ -562,7 +567,7 @@ function resetLiveSession(){
   storeUnbind();
   LIVE.memberships=null;LIVE.cells=null;LIVE.campaigns=null;LIVE.offers=null;LIVE.unread={};
   LIVE.notifs=null;LIVE.profile=null;LIVE.tiktok=null;LIVE.xp=null;LIVE.open=null;LIVE.thread=null;
-  LIVE.missions={};LIVE.ranking={};LIVE.loadErr={};
+  LIVE.missions={};LIVE.ranking={};LIVE.loadErr={};LIVE.notifPrefs=null;LIVE.notifPrefsError=false;
   LIVE.searchQ='';LIVE.searchRes=null;LIVE.applicationDone=false;LIVE.applicationBusy=false;
   LIVE.magic={busy:false,sent:false,demoLink:'',status:''};
   formDirty={};

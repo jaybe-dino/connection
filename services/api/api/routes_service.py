@@ -870,19 +870,29 @@ def set_team_role(brand_id: str, body: RoleIn,
                   authorization: str = Header(default=""),
                   x_admin_key: str = Header(default="")) -> dict:
     claims = require_brand(brand_id, authorization, x_admin_key)
+    # 어드민 계정 관리와 같은 불변식을 공유한다(독립 QA 반영): 브랜드 단위
+    # 락, 마지막 활성 owner 강등 금지, 역할 변경 시 session_epoch 상승으로
+    # 기존 JWT의 낡은 역할 유지 차단.
+    from .routes_admin_brands import (_assert_not_last_active_owner,
+                                      _target_account, brand_account_lock)
     with connect() as conn:
+        brand_account_lock(conn, brand_id)
         if _team_role(conn, claims, brand_id) not in ("owner", "admin"):
             raise HTTPException(403, "역할 변경은 소유자(owner)만 할 수 있습니다")
-        target = conn.execute(
-            "SELECT 1 FROM users WHERE user_id=%s::uuid AND brand_id=%s AND"
-            " kind='brand'", (body.user_id, brand_id)).fetchone()
-        if not target:
+        try:
+            target = _target_account(conn, brand_id, body.user_id)
+        except HTTPException:
             raise HTTPException(404, "이 브랜드의 팀원이 아닙니다")
+        if target["role"] == body.role:
+            return {"ok": True, "changed": False}
+        if body.role == "manager":
+            _assert_not_last_active_owner(conn, brand_id, body.user_id, "강등")
         conn.execute(
             "INSERT INTO brand_team_roles (brand_id, user_id, role)"
             " VALUES (%s,%s::uuid,%s) ON CONFLICT (brand_id, user_id)"
             " DO UPDATE SET role=EXCLUDED.role",
             (brand_id, body.user_id, body.role))
+        auth.bump_session_epoch(conn, body.user_id)
         ledger_append(conn, f"brand:{brand_id}", "TEAM_ROLE_SET",
                       body.user_id, {"role": body.role,
                                      "by": str(claims.get("sub"))})

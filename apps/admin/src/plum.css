@@ -51,3 +51,40 @@
   font-size: 11px;
   font-weight: 500;
 }
+
+/* 브랜드 관리 — 초보 운영자용 큰 버튼/라벨 폼. 터치 최소 44px. */
+.wkb-btn {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 13px;
+}
+.wkb-primary {
+  background: var(--t500);
+  border-color: var(--t500);
+  color: #fff;
+}
+.wkb-primary:hover { background: var(--t400); }
+.wkb-danger-btn {
+  background: var(--c500, #b4232a);
+  border-color: var(--c500, #b4232a);
+  color: #fff;
+}
+.wkb-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.wkb-field > label { font-size: 12px; font-weight: 800; }
+.wkb-field input, .wkb-field select { min-height: 40px; box-sizing: border-box; }
+.wkb-hint { font-size: 11px; color: var(--n500); line-height: 1.6; }
+.wkb-err { font-size: 12px; color: var(--c500, #b4232a); }
+.wkb-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.wkb-danger {
+  border: 1px solid #e4c7c7;
+  background: #fdf7f7;
+  border-radius: 10px;
+  padding: 10px;
+}
+/* 375/390 — 버튼은 세로 흐름으로 전체 폭, 입력은 줄바꿈 없이 한 줄씩 */
+@media (max-width: 480px) {
+  .wkb-row { flex-direction: column; align-items: stretch; }
+  .wkb-row > button, .wkb-row > .wkb-btn { width: 100%; }
+}

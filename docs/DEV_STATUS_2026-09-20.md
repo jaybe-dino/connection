@@ -1387,3 +1387,41 @@ auth_tokens/brand_team_roles 재사용)
   중지·재개·세션 철회) — 전체 서버 304+billing 95+tests_ui 96, admin
   tsc+build 통과. 신규 Playwright admin-brand-accounts.mjs 16단언
   (PC 1440 + 모바일 375 실측·캡처). 운영 배포·실메일·DNS 변경 없음.
+
+## 2026-10-21(보완) — 어드민 초보자 UX 전면 재구성 + 보안 검수 4건
+(같은 branch claude/admin-brand-accounts-20261021)
+
+- 보안/동시성 검수 반영(서버):
+  (1) 역할 변경이 epoch만 올리고 열린 링크를 남기던 공백 — 공통 헬퍼
+  invalidate_sessions(epoch 상승+미사용 invite/reset/magic 전부 폐기)로
+  통일, 어드민 role/state(중지)/revoke-sessions 와 기존 콘솔
+  /brands/{b}/team/role 모두 적용. (2) 공백 브랜드명(' ')이 길이 검사를
+  통과하던 문제 — trim 후 2자 미만 400, trim 저장. (3) 같은 담당자
+  이메일 동시 등록/계정 추가 시 unique 500 — 'account-email:' advisory
+  lock + INSERT ON CONFLICT DO NOTHING 백스톱으로 409 정상 롤백(브랜드
+  행 포함 전체 롤백 유지). 신규 pytest 2(공백 이름 400·trim, 역할 변경
+  시 열린 invite/reset 폐기 — 어드민·콘솔 양 경로) → 서버 306 passed.
+- 어드민 /brands 초보자(설명 없이 진행 가능) UX 재작성:
+  3단계 안내(브랜드 추가→담당자 계정 준비→운영 시작), 큰 '새 브랜드
+  추가' 접이식 폼(라벨 지속 표시+예시+인라인 오류), 'slug'→'브랜드
+  주소'(app.theprlist.net/?brand= 미리보기, 이름 기반 자동 추천+직접
+  수정), 국가는 한국/태국/미국/베트남/일본 체크박스+기타 2자리 코드
+  보조 입력, owner/manager→'소유자/담당자'+권한 한 줄 설명, 등록 완료
+  카드에 다음 단계(링크 만들기→복사→직접 전달) 안내, 요금은 "1명당
+  5,000원(부가세 포함) 월 단위 합산" 자연 문구, 409/per_signup/JSON 등
+  구현 용어 일반 안내에서 제거(e2e로 미노출 검증).
+- 계정 패널: '담당자 관리' 단일 진입, 미설정 계정은 '비밀번호 설정 링크
+  만들기'+복사+전달 안내, 설정됨은 상태/최근 로그인 표시. 위험 작업
+  (브랜드 이용 중지, 역할 변경, 계정 이용 중지, '모든 기기에서
+  로그아웃'(구 세션 철회))은 '관리 메뉴' 뒤 대상 브랜드·이메일을
+  보여주는 확인 단계 경유. busy 중 폼 전체 잠금(중복 클릭 방지).
+- 요청 세대(generation) 가드: 브랜드 빠른 전환 시 늦게 도착한 이전
+  브랜드의 계정/링크 응답을 버리고, 브랜드 변경 시 폼/링크/확인 단계
+  초기화, 링크 응답은 같은 브랜드일 때만 표시.
+- 레일 메뉴 '브랜드 운영'→'브랜드 관리'. plum.css .wkb-*(버튼 44px,
+  480px 이하 세로 흐름 전체 폭).
+- 검증: 서버 306 + billing 95 + tests_ui 96, admin tsc/build,
+  admin-brand-accounts.mjs 23단언(PC 1440 + 모바일 375·390 실측 —
+  버튼 44px·가로 넘침 없음·라벨 지속·확인 단계·구현 용어 미노출),
+  console-admin-shell.mjs 22단언(새 확인 단계 흐름 포함) 전부 PASS.
+  운영 배포·실메일·DNS 변경 없음.

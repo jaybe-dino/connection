@@ -1353,3 +1353,37 @@ Claude의 62f9c1d UI 가이드·개편을 인수한 뒤 직접 검수하여 다�
   브랜드 화면에서 원문 SPARK-LATE-77 readonly+복사 버튼 확인→공개
   커뮤니티 비노출 확인→완료 처리 후 재진입에도 확정 수수료 12.5%·송장·
   콘텐츠·코드 원문 조회. tests_ui 78, e2e 12종 전부 PASS. 운영 배포 보류.
+
+## 2026-10-21 — 어드민 고객 브랜드 직접 등록 + 로그인 계정 관리
+(branch claude/admin-brand-accounts-20261021, 기준 b0f5ade — 메일함/
+아웃리치/도메인 서명 최신본 보존, 스키마 변경 없음: 기존 users/
+auth_tokens/brand_team_roles 재사용)
+
+- 서버 routes_admin_brands.py (전부 require_admin_jwt — JWT+OTP 완료
+  필수, 간이 키 불가): POST /admin/brands 일반 등록(브랜드명/slug/
+  카테고리/타깃국가/담당자이메일 → 기본 커뮤니티·운영 참고 프로필 v1·
+  owner 계정, plan per_signup 5,000원 VAT 월합산). slug는 가입 신청
+  pending 과 같은 advisory lock으로 직렬화 + 중복 409, 담당자 이메일이
+  기존 타브랜드/크리에이터/어드민이면 전환 금지 409, 원자적 + 감사 로그
+  (termsConfirmed:false — 동의/학습 확인 대리 기록 금지). 기존
+  chief+theprlist 회사 관리 셋업(routes_recruitment_setup)은 그대로.
+- 계정 관리 API: 목록(이메일/owner·manager(legacy 최초=owner fallback
+  일치)/활성·중지/비밀번호 설정 여부/최근 로그인), 계정 추가, 초기 설정
+  72h·재설정 30m 1회용 링크 "준비"(자동 발송 없음, 응답에만 원문 — 감사
+  payload/로그 무토큰, 새 발급 시 동종 기존 토큰 폐기, 비밀번호 있는
+  계정에 초기 링크 금지), 활성/중지·역할 변경·세션 철회(각각
+  session_epoch 상승 + 미사용 토큰 폐기), 마지막 활성 owner 중지/강등
+  409, 타 브랜드·어드민 계정 404 차단. 이메일 이전/삭제 범위 밖.
+- 독립 QA 반영: 기존 콘솔 /brands/{b}/team/role 도 같은 공통 헬퍼 적용 —
+  브랜드 단위 락 + 마지막 활성 owner 강등 409 + 역할 변경 시 대상 epoch
+  상승(낡은 역할 JWT 즉시 차단).
+- 어드민 UI(Brands.tsx): 등록 폼·브랜드 검색·선택 브랜드 계정 패널
+  (명시 버튼 클릭 시에만 링크 표시, 브랜드 전환/계정 상태 변경 시 링크
+  비움, readonly+복사), 기존 정지/재개·감사 로그 유지, 플럼 토큰.
+- 검증(실 로컬 disposable DB): 신규 pytest 8(등록 원자성/중복 slug·
+  pending slug·예약어/이메일 전환 금지 3종/비어드민·OTP pending 401/
+  초기링크→비번설정→로그인→자기브랜드만·구링크 폐기·무토큰 감사/reset
+  만료·재사용·폐기·epoch/역할 변경 epoch·기존 경로 마지막 owner 보호/
+  중지·재개·세션 철회) — 전체 서버 304+billing 95+tests_ui 96, admin
+  tsc+build 통과. 신규 Playwright admin-brand-accounts.mjs 16단언
+  (PC 1440 + 모바일 375 실측·캡처). 운영 배포·실메일·DNS 변경 없음.

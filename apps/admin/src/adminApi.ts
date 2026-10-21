@@ -185,6 +185,35 @@ export const adminApi = {
       `/admin/brands/${encodeURIComponent(id)}/resume`, { method: "POST" }),
   audit: (actor = "", event = "", limit = 100) =>
     req<AuditRow[]>(`/admin/audit?actor=${encodeURIComponent(actor)}&event=${encodeURIComponent(event)}&limit=${limit}`),
+  registerBrand: (body: { name: string; slug: string; category: string;
+    countries: string[]; manager_email: string }) =>
+    req<{ brandId: string; managerUserId: string }>("/admin/brands",
+      { method: "POST", body: JSON.stringify(body) }),
+  brandAccounts: (brand: string) =>
+    req<BrandAccount[]>(`/admin/brands/${encodeURIComponent(brand)}/accounts`),
+  addBrandAccount: (brand: string, email: string, role: string) =>
+    req<BrandAccount>(`/admin/brands/${encodeURIComponent(brand)}/accounts`,
+      { method: "POST", body: JSON.stringify({ email, role }) }),
+  accountSetupLink: (brand: string, userId: string) =>
+    req<{ link: string; ttlHours: number; note: string }>(
+      `/admin/brands/${encodeURIComponent(brand)}/accounts/${userId}/setup-link`,
+      { method: "POST" }),
+  accountResetLink: (brand: string, userId: string) =>
+    req<{ link: string; ttlMinutes: number; note: string }>(
+      `/admin/brands/${encodeURIComponent(brand)}/accounts/${userId}/reset-link`,
+      { method: "POST" }),
+  accountState: (brand: string, userId: string, active: boolean) =>
+    req<{ ok: boolean; state: string }>(
+      `/admin/brands/${encodeURIComponent(brand)}/accounts/${userId}/state`,
+      { method: "POST", body: JSON.stringify({ active }) }),
+  accountRole: (brand: string, userId: string, role: string) =>
+    req<{ ok: boolean; role: string }>(
+      `/admin/brands/${encodeURIComponent(brand)}/accounts/${userId}/role`,
+      { method: "POST", body: JSON.stringify({ role }) }),
+  accountRevokeSessions: (brand: string, userId: string) =>
+    req<{ ok: boolean }>(
+      `/admin/brands/${encodeURIComponent(brand)}/accounts/${userId}/revoke-sessions`,
+      { method: "POST" }),
   applications: (status = "pending") =>
     req<Application[]>(`/admin/applications?status=${status}`),
   approveApplication: (id: string) =>
@@ -228,4 +257,9 @@ export interface AdminBrand {
 export interface AuditRow {
   actor: string; event: string; subject: string;
   payload: Record<string, unknown>; at: string;
+}
+
+export interface BrandAccount {
+  userId: string; email: string; state: string; role: string;
+  passwordSet: boolean; lastLoginAt: string | null; createdAt: string;
 }

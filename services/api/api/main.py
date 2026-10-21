@@ -134,6 +134,8 @@ from .routes_recruitment_repeat import router as _recruitment_repeat_router
 app.include_router(_recruitment_repeat_router)
 from .routes_service import router as _service_router
 app.include_router(_service_router)
+from .routes_admin_brands import router as _admin_brands_router
+app.include_router(_admin_brands_router)
 
 ALL_LOCALES = ["ko", "th", "en", "vi", "ja"]
 

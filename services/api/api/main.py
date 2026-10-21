@@ -77,6 +77,10 @@ async def legacy_access_boundary(request: Request, call_next):
         or (path == '/me/notifications/read' and method == 'POST')
         or (path in ('/me/unread', '/me/xp', '/me/missions')
             and method == 'GET')
+        # slack-v3 패리티 — 핸들러가 _me_creator/_creator로 본인 행만 처리
+        or (path == '/me/notification-prefs' and method in ('GET', 'PUT'))
+        or (re.fullmatch(r"/me/campaign-offers/[^/]+/shipping", path)
+            and method == 'POST')
     )
     if legacy and auth.auth_required() and method != 'OPTIONS' and not self_checked:
         try:

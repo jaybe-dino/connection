@@ -265,10 +265,46 @@ def issue_affiliate_link(brand: str, campaign_id: str, creator_id: str,
 
 
 class ShippingIn(BaseModel):
-    recipient: str = Field(min_length=1, max_length=80)
-    country: str = Field(min_length=2, max_length=2)
-    address: str = Field(min_length=4, max_length=300)
-    phone: str = Field(min_length=4, max_length=40)
+    """공백만 입력한 값이 길이 검사를 통과해 빈 값으로 저장되지 않도록
+    strip 후 길이·형식을 검증한다(검수 반영)."""
+    recipient: str = Field(max_length=80)
+    country: str = Field(max_length=10)
+    address: str = Field(max_length=300)
+    phone: str = Field(max_length=40)
+
+    @field_validator('recipient', 'country', 'address', 'phone', mode='before')
+    @classmethod
+    def _strip(cls, v):
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator('recipient')
+    @classmethod
+    def _recipient(cls, v):
+        if len(v) < 1:
+            raise ValueError('수령인을 입력해 주세요')
+        return v
+
+    @field_validator('country')
+    @classmethod
+    def _country(cls, v):
+        import re as _re
+        if not _re.fullmatch(r'[A-Za-z]{2}', v):
+            raise ValueError('수령 국가는 영문 2자리 코드입니다 (예: KR)')
+        return v.upper()
+
+    @field_validator('address')
+    @classmethod
+    def _address(cls, v):
+        if len(v) < 4:
+            raise ValueError('배송 주소를 4자 이상 입력해 주세요')
+        return v
+
+    @field_validator('phone')
+    @classmethod
+    def _phone(cls, v):
+        if len(v) < 4:
+            raise ValueError('연락처를 4자 이상 입력해 주세요')
+        return v
 
 
 @router.post("/me/campaign-offers/{campaign_id}/shipping")
@@ -297,7 +333,19 @@ def submit_shipping(campaign_id: str, body: ShippingIn,
 
 
 class RevisionIn(BaseModel):
-    note: str = Field(min_length=4, max_length=500)
+    note: str = Field(max_length=500)
+
+    @field_validator('note', mode='before')
+    @classmethod
+    def _strip_note(cls, v):
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator('note')
+    @classmethod
+    def _note(cls, v):
+        if len(v) < 4:
+            raise ValueError('요청 내용을 4자 이상 적어 주세요')
+        return v
 
 
 @router.post("/brands/{brand}/campaigns/{campaign_id}/terms/{creator_id}/request-revision")
@@ -368,9 +416,16 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
             "SELECT c.campaign_id, c.brand_id, c.name, c.product, c.usp,"
             " c.reward_type, c.affiliate_pct, c.deadline, c.status,"
             " c.countries, b.name AS brand_name, b.logo_url,"
-            " a.status AS my_status, t.state AS terms_state"
+            " a.status AS my_status, t.state AS terms_state,"
+            # 캠페인 제품 이미지 — 반드시 같은 브랜드의 제품만 연결(타 브랜드
+            # 이미지 금지). 초대 소개 이미지(최신 운영 입력)를 사용한다.
+            " pip.image_url AS product_image"
             " FROM campaigns c JOIN brands b USING (brand_id)"
             " JOIN memberships m ON m.brand_id=c.brand_id AND m.creator_id=%s"
+            " LEFT JOIN brand_products bp ON bp.product_id=c.product_id"
+            "   AND bp.brand_id=c.brand_id"
+            " LEFT JOIN product_invitation_profiles pip"
+            "   ON pip.product_id=bp.product_id"
             " LEFT JOIN campaign_applications a"
             "   ON a.campaign_id=c.campaign_id AND a.creator_id=%s"
             " LEFT JOIN campaign_terms t"
@@ -393,6 +448,9 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
         out.append(
             {"campaignId": r["campaign_id"], "brandId": r["brand_id"],
              "brandName": r["brand_name"], "logoUrl": r["logo_url"],
+             "imageUrl": (r["product_image"]
+                          if (r["product_image"] or "").startswith("https://")
+                          else None),
              "name": r["name"], "product": r["product"],
              "usp": r["usp"] or "", "rewardType": r["reward_type"],
              "affiliatePct": (float(r["affiliate_pct"])
@@ -413,14 +471,26 @@ def my_offers(authorization: str = Header(default="")) -> list[dict]:
     with connect() as conn:
         cid = _creator(conn, authorization)
         rows = conn.execute(
-            "SELECT t.*, c.name AS campaign_name, c.brand_id,"
-            " b.name AS brand_name FROM campaign_terms t"
+            "SELECT t.*, c.name AS campaign_name, c.brand_id, c.product,"
+            " b.name AS brand_name, b.logo_url,"
+            " pip.image_url AS product_image"
+            " FROM campaign_terms t"
             " JOIN campaigns c USING (campaign_id)"
             " JOIN brands b ON b.brand_id=c.brand_id"
+            " LEFT JOIN brand_products bp ON bp.product_id=c.product_id"
+            "   AND bp.brand_id=c.brand_id"
+            " LEFT JOIN product_invitation_profiles pip"
+            "   ON pip.product_id=bp.product_id"
             " WHERE t.creator_id=%s ORDER BY t.selected_at", (cid,)).fetchall()
     return [_terms_out(r, {"campaignName": r["campaign_name"],
                            "brandId": r["brand_id"],
-                           "brandName": r["brand_name"]}) for r in rows]
+                           "brandName": r["brand_name"],
+                           "product": r["product"],
+                           "logoUrl": r["logo_url"],
+                           "imageUrl": (r["product_image"]
+                                        if (r["product_image"] or "")
+                                        .startswith("https://") else None)})
+            for r in rows]
 
 
 class AgreeIn(BaseModel):
@@ -507,8 +577,10 @@ def submit_content(campaign_id: str, body: ContentIn,
         cid = _creator(conn, authorization)
         t = _terms(conn, campaign_id, cid)
         if t["state"] not in ("terms_agreed", "sample_shipped",
-                              "revision_requested"):
+                              "revision_requested", "content_submitted"):
+            # 완료(completed) 후에는 기록 보존을 위해 변경 금지
             raise HTTPException(409, f"합의/샘플 수령 후 제출 가능 (현재 {t['state']})")
+        edited = t["state"] == "content_submitted"   # 검토 중 링크 수정
         t = conn.execute(
             "UPDATE campaign_terms SET state='content_submitted',"
             " content_url=%s, submitted_at=now(),"
@@ -525,5 +597,6 @@ def submit_content(campaign_id: str, body: ContentIn,
             award_xp(conn, cid, _b["brand_id"], "content_submitted",
                      campaign_id)
         ledger_append(conn, f"creator:{cid}", "CAMPAIGN_CONTENT_SUBMITTED",
-                      campaign_id, {"url": body.content_url})
+                      campaign_id, {"url": body.content_url,
+                                    "edited": edited})
     return _terms_out(t)

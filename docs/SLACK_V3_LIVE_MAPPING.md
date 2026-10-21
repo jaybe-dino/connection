@@ -66,7 +66,7 @@
 | 원본 요소 | 실서비스 | 빈/차단 |
 |---|---|---|
 | 탭(전체/저장/신청) | 전체=`/me/campaigns`, 저장=기기 북마크∩실목록, 신청=myStatus/termsState | 각 탭 빈 카드 |
-| 캠페인 카드(사진/상태 pill/북마크/커미션/마감) | 실데이터. 사진=제품·로고 URL, 없으면 **중립 모노그램**(타 브랜드 사진 미사용) | — |
+| 캠페인 카드(사진/상태 pill/북마크/커미션/마감) | 실데이터. 사진=캠페인에 연결된 **같은 브랜드 제품의 실제 이미지**(product_invitation_profiles, https만) → 브랜드 로고 → 중립 모노그램 순(타 브랜드 이미지 금지) | — |
 | 상세(히어로/소개/가이드/일정/신청 aside) | 실 usp·제품·국가(국가명 표기)·마감·보상유형. 가이드 1번 타일은 실제 제품명 | 마감/지역 미대상/게이트 시 신청 차단+사유 |
 | 신청 페이지(핸들+아이디어+확인) | 핸들=프로필 값(읽기 전용, 설정 링크), `POST /campaigns/{id}/apply`; 아이디어는 **담당자 DM 실전송** — 전달 실패 시 부분 성공 안내 + DM 초안 보관(신청 중복 없음) | 게이트/마감/지역 각각 전용 화면 |
 | 신청 완료/상태 | 실상태: 검토 중 → 선정(협업 이동) / rejected(미선정) | — |
@@ -80,7 +80,7 @@
 | 선정·조건 확인 | 제안 수수료 표시, TikTok 핸들 입력 + 확인 체크 → `POST agree`(거절 포함) |
 | 샘플 수령 정보 입력(원본 address 단계) | `POST /me/campaign-offers/{cid}/shipping` — 선정~합의 단계에서 수령인/국가/주소/연락처 저장·수정, **해당 협업의 브랜드 콘솔에서만 조회**(감사 원장에는 국가만, 주소·연락처 무기록). 발송 후 잠금 |
 | 배송 상태 | sample_shipped + 실송장 표시 |
-| 콘텐츠 제출(링크+메모) | `POST content`(https 강제). 메모는 **담당자 DM 실전송** — 전달 실패 시 부분 성공 안내 + DM 초안 보관(콘텐츠 재제출 불필요) |
+| 콘텐츠 제출(링크+메모) | `POST content`(https 강제). 검토 중(content_submitted)에는 '제출 링크 수정'으로 본인 링크를 실수정(완료 후 변경 금지·XP 중복 지급 없음). 메모는 **담당자 DM 실전송** — 전달 실패 시 부분 성공 안내 + DM 초안 보관(콘텐츠 재제출 불필요) |
 | 수정 요청(원본 revision) | 브랜드 콘솔 `request-revision`(피드백 메모) → 상태 `revision_requested` + 크리에이터 알림 → 원본 revision-note 화면에서 **수정본 제출**(요청 해소 후 재검토, 완료는 재제출 뒤에만) |
 | Spark Ads 코드 | `POST spark-code` — 합의 후~검토 중 등록/수정, 브랜드 전용(커뮤니티 비노출) 문구 유지 |
 | 완료 화면(배지·기록) | completed: 확정 수수료·콘텐츠 링크·어필리에이트 링크·Spark 보존 표시. 정산 송금 화면은 '공개 준비 중' 명시 |
@@ -98,7 +98,7 @@
 | 내 공간(배너/통계/브랜드 그리드/저장 캠페인) | 실프로필·실멤버십·실XP, 저장 캠페인=기기 북마크 |
 | 설정-프로필 | 온보딩 폼과 동일(실저장) + TikTok 인증 |
 | 설정-언어·번역 | 5개 언어 + 접속 국가 자동 선택(`/locale/detect`·`/api/locale`) |
-| 설정-알림(원본 토글 4종) | `GET/PUT /me/notification-prefs`(notification_prefs 재사용, 계정 저장). campaign 토글은 알림 생성에 즉시 반영, dm은 미읽음 배지로 상시 전달, deadline·email은 해당 기능 연결 전까지 '준비 중' 정직 표기로 저장만. 아래에 실알림 목록+읽음 처리 |
+| 설정-알림(원본 토글 4종) | `GET/PUT /me/notification-prefs`(notification_prefs 재사용, 계정 저장). campaign 토글은 알림 생성에, dm 토글은 담당자 DM 미읽음 배지에 즉시 반영(대화 열람은 유지), deadline·email은 해당 기능 연결 전까지 '준비 중' 정직 표기로 저장만. 로드 실패 시 오류·다시 불러오기 UI. 아래에 실알림 목록+읽음 처리 |
 | 설정-계정('체험 초기화') | **치환**: 실이메일/TikTok 상태/약관·개인정보 링크/로그아웃 |
 
 ## 계정 딥링크 보존
@@ -117,3 +117,13 @@
   화면일 때) 목록 — 변경 시에만 softRender(입력·포커스·커서·스크롤 보존,
   하단 근접 시 하단 유지). background 중단, 복귀 시 즉시 1회. 세션(토큰)
   교체 시 stale 응답 폐기·초안 키 분리.
+
+## 운영 모드(AUTH_REQUIRED=1) 경계
+
+- legacy_access_boundary 의 self_checked 정확 경로 목록에 신규 2경로를
+  추가했다: `/me/notification-prefs`(GET/PUT),
+  `/me/campaign-offers/{id}/shipping`(POST) — 각 핸들러의 본인 JWT 검사
+  (_me_creator/_creator)는 그대로이며 넓은 `/me/*` 허용은 하지 않는다.
+  회귀 방지는 tests/test_creator_parity_strict_independent.py
+  (AUTH_REQUIRED=1: 본인 성공·익명 401·타 크리에이터 404·입력 strip 검증·
+  DM 배지 실반영) 로 고정.

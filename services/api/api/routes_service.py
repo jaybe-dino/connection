@@ -874,7 +874,8 @@ def set_team_role(brand_id: str, body: RoleIn,
     # 락, 마지막 활성 owner 강등 금지, 역할 변경 시 session_epoch 상승으로
     # 기존 JWT의 낡은 역할 유지 차단.
     from .routes_admin_brands import (_assert_not_last_active_owner,
-                                      _target_account, brand_account_lock)
+                                      _target_account, brand_account_lock,
+                                      invalidate_sessions)
     with connect() as conn:
         brand_account_lock(conn, brand_id)
         if _team_role(conn, claims, brand_id) not in ("owner", "admin"):
@@ -892,7 +893,7 @@ def set_team_role(brand_id: str, body: RoleIn,
             " VALUES (%s,%s::uuid,%s) ON CONFLICT (brand_id, user_id)"
             " DO UPDATE SET role=EXCLUDED.role",
             (brand_id, body.user_id, body.role))
-        auth.bump_session_epoch(conn, body.user_id)
+        invalidate_sessions(conn, body.user_id)   # 기존 JWT + 미사용 링크 폐기
         ledger_append(conn, f"brand:{brand_id}", "TEAM_ROLE_SET",
                       body.user_id, {"role": body.role,
                                      "by": str(claims.get("sub"))})

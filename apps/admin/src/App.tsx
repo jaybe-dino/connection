@@ -19,7 +19,7 @@ const RAIL = [
   { to: "/disputes", label: "분쟁 심판", icon: "⚖", badge: "openDisputes" },
   { to: "/submissions", label: "검수 현황", icon: "◑", badge: "inReviewSubmissions" },
   { to: "/recruitment", label: "디노 공용 모집", icon: "◈" },
-  { to: "/brands", label: "브랜드 운영", icon: "◆" },
+  { to: "/brands", label: "브랜드 관리", icon: "◆" },
   { to: "/mail", label: "계정별 메일함", icon: "✉" },
   { to: "/gmail", label: "Gmail 운영", icon: "✉" },
   { to: "/pool", label: "후보 풀", icon: "◎" },

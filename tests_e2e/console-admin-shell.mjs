@@ -6,6 +6,9 @@ import { chromium } from "/opt/node22/lib/node_modules/playwright/index.mjs";
 const API = "http://localhost:8765";
 const results = [];
 const ok = (n, p, note = "") => results.push(`${p ? "PASS" : "FAIL"} ${n}${note ? " — " + note : ""}`);
+const api = (m, p, b) => fetch(API + p, { method: m,
+  headers: { "Content-Type": "application/json" },
+  body: b ? JSON.stringify(b) : undefined }).then((r) => r.json());
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
 const errors = [];
 const newPage = async (tag, viewport, mobile) => {
@@ -105,16 +108,16 @@ ok("하단 네비 → 커뮤니티", (await pm.evaluate(() => document.body.inne
 await pm.screenshot({ path: "tests_e2e/shots/console-mobile.png" }).catch(() => {});
 
 // ── 어드민 데스크톱 1440: 플럼 전사 운영 셸 + 정지/재개 + 감사 로그 ──
+// 어드민 실계정 JWT (최초 1회 bootstrap, 이후 login)
+let boot = await api("POST", "/auth/bootstrap",
+  { email: "ops.e2e@ex.com", password: "admin-ops-pass-1" });
+if (!boot.token) boot = await api("POST", "/auth/login",
+  { email: "ops.e2e@ex.com", password: "admin-ops-pass-1" });
+const ajwt = boot.token;
 const pa = await newPage("admin", { width: 1440, height: 900 });
 await pa.goto(`http://localhost:5176/?api=${encodeURIComponent(API)}`);
-await pa.waitForTimeout(1300);
-const skip = pa.locator("text=키 모드로 계속");
-if (await skip.count()) await skip.click();
-else {
-  await pa.fill('input[placeholder="이메일"]', "admin.ctx@ex.com");
-  await pa.fill('input[placeholder="비밀번호"]', "admin-ctx-pass-1");
-  await pa.click('button:has-text("로그인")');
-}
+await pa.evaluate((t) => localStorage.setItem("CONNECTION_JWT", t), ajwt);
+await pa.goto(`http://localhost:5176/?api=${encodeURIComponent(API)}`);
 await pa.waitForTimeout(1600);
 const aTop = await pa.evaluate(() => {
   const h = document.querySelector(".wk-admin-top");
@@ -124,44 +127,46 @@ const aTop = await pa.evaluate(() => {
 });
 ok("어드민 플럼 탑바(#302037·전사 운영)", aTop.top === rgb("#302037") && aTop.text.includes("전사 운영"), JSON.stringify(aTop));
 ok("어드민 rail 플럼(#3A2843)", aTop.rail === rgb("#3a2843"), aTop.rail);
-await pa.click('text=브랜드 운영');
+await pa.click('text=브랜드 관리');
 await pa.waitForTimeout(1500);
-// REALCO 카드(b=REALCO 의 카드 루트)에서 정지 → 정지됨 → 재개
-const realcoCard = pa.locator('b:text-is("REALCO")').locator("xpath=../..");
-await realcoCard.locator('input[placeholder*="정지 사유"]').fill("셸 검증 정지");
-await realcoCard.locator('button:has-text("정지")').first().click();
-await pa.waitForTimeout(1500);
+// AURA(데모) 카드 → 담당자 관리 열기 → 브랜드 이용 중지(확인 단계) → 재개(확인 단계)
+const demoCard = pa.locator('b:text-is("AURA")').locator("xpath=../../..");
+await demoCard.locator('button:has-text("담당자 관리")').first().click();
+await pa.waitForTimeout(1400);
+await demoCard.locator('button:has-text("브랜드 이용 중지")').click();
+await pa.waitForTimeout(500);
 let ta = await pa.evaluate(() => document.body.innerText);
-ok("브랜드 정지 → 정지됨 배지", ta.includes("정지됨"));
-await pa.click('button:has-text("정지 해제(재개)")');
-await pa.waitForTimeout(1500);
+ok("브랜드 중지: 대상 브랜드를 보여주는 확인 단계", ta.includes("이용을 중지할까요") && ta.includes("AURA(aura)"));
+await pa.fill("#suspendReason", "셸 검증 정지");
+await pa.click("#confirmYes");
+await pa.waitForTimeout(1600);
 ta = await pa.evaluate(() => document.body.innerText);
-ok("재개 → 운영 중 복귀", !ta.includes("정지 해제(재개)") && ta.includes("운영 중"));
-await pa.fill('input[placeholder*="이벤트 필터"]', "BRAND_SUSPENDED");
+ok("브랜드 정지 → 이용 중지됨 배지", ta.includes("이용 중지됨"));
+await demoCard.locator('button:has-text("브랜드 이용 재개")').click();
+await pa.waitForTimeout(500);
+await pa.click("#confirmYes");
+await pa.waitForTimeout(1600);
+ta = await pa.evaluate(() => document.body.innerText);
+ok("재개 → 운영 중 복귀", !ta.includes("브랜드 이용 재개") && ta.includes("운영 중"));
+await pa.fill('input[placeholder^="무엇을"]', "BRAND_SUSPENDED");
 await pa.click('button:has-text("조회")');
 await pa.waitForTimeout(1300);
 ta = await pa.evaluate(() => document.body.innerText);
-ok("감사 로그: BRAND_SUSPENDED 기록 조회", ta.includes("BRAND_SUSPENDED") && ta.includes("realco"));
+ok("감사 로그: BRAND_SUSPENDED 기록 조회", ta.includes("BRAND_SUSPENDED") && ta.includes("aura"));
 await pa.screenshot({ path: "tests_e2e/shots/admin-desktop.png" }).catch(() => {});
 
 // ── 어드민 모바일 390 캡처(상단 랩 메뉴 유지) ──
 const pam = await newPage("admin-mobile", { width: 390, height: 844 }, true);
 await pam.goto(`http://localhost:5176/?api=${encodeURIComponent(API)}`);
-await pam.waitForTimeout(1300);
-const skip2 = pam.locator("text=키 모드로 계속");
-if (await skip2.count()) await skip2.click();
-else {
-  await pam.fill('input[placeholder="이메일"]', "admin.ctx@ex.com");
-  await pam.fill('input[placeholder="비밀번호"]', "admin-ctx-pass-1");
-  await pam.click('button:has-text("로그인")');
-}
+await pam.evaluate((t) => localStorage.setItem("CONNECTION_JWT", t), ajwt);
+await pam.goto(`http://localhost:5176/?api=${encodeURIComponent(API)}`);
 await pam.waitForTimeout(1600);
-await pam.click('text=브랜드 운영');
+await pam.click('text=브랜드 관리');
 await pam.waitForTimeout(1400);
 const am = await pam.evaluate(() => ({
-  text: document.body.innerText.slice(0, 2000),
+  text: document.body.innerText,
   noScroll: document.documentElement.scrollWidth <= window.innerWidth + 1 }));
-ok("어드민 모바일: 브랜드 운영 접근 + 가로 넘침 없음", am.text.includes("감사 로그") && am.noScroll);
+ok("어드민 모바일: 브랜드 관리 접근 + 가로 넘침 없음", am.text.includes("변경 기록") && am.noScroll);
 await pam.screenshot({ path: "tests_e2e/shots/admin-mobile.png" }).catch(() => {});
 
 ok("JS 에러 없음", errors.length === 0, errors.join(" | ").slice(0, 300));

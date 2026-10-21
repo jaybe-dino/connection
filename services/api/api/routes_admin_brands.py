@@ -89,6 +89,14 @@ def _assert_not_last_active_owner(conn, brand_id: str, user_id: str,
                                  " 없습니다 — 먼저 다른 소유자를 지정하세요")
 
 
+def invalidate_sessions(conn, user_id) -> int:
+    """역할 변경/중지/전체 로그아웃 공통 — session_epoch 상승 + 미사용
+    1회용 토큰(invite/reset/magic) 전부 폐기. 기존 JWT와 떠 있는 링크가
+    즉시 무효화된다(콘솔 team/role 경로도 이 헬퍼를 공유)."""
+    auth.bump_session_epoch(conn, user_id)
+    return _revoke_tokens(conn, user_id, ("invite", "reset", "magic"))
+
+
 def _revoke_tokens(conn, user_id, kinds: tuple[str, ...]) -> int:
     rows = conn.execute(
         "UPDATE auth_tokens SET used_at=now()"
@@ -111,8 +119,11 @@ class BrandRegisterIn(BaseModel):
 def register_brand(body: BrandRegisterIn,
                    admin: dict = Depends(require_admin_jwt)) -> dict:
     slug = body.slug.lower().strip()
+    name = body.name.strip()
     email = body.manager_email.strip().lower()
     countries = [c.strip().upper() for c in body.countries if c.strip()]
+    if len(name) < 2:
+        raise HTTPException(400, "브랜드 이름을 2자 이상 입력해 주세요")
     if not SLUG_RE.fullmatch(slug) or slug in RESERVED_SLUGS \
             or slug.startswith("qa-"):
         raise HTTPException(400, "slug는 소문자/숫자/하이픈 3~40자이며 예약어"
@@ -125,6 +136,9 @@ def register_brand(body: BrandRegisterIn,
         # 가입 신청(/applications)과 같은 잠금 키로 직렬화 — 동시 중복 방지
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
                      ("application:" + slug,))
+        # 같은 이메일 동시 등록/계정 추가 직렬화 (검사-후-삽입 경합 방지)
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                     ("account-email:" + email,))
         if conn.execute("SELECT 1 FROM brands WHERE brand_id=%s",
                         (slug,)).fetchone():
             raise HTTPException(409, "이미 등록된 브랜드 주소(slug)입니다")
@@ -144,9 +158,9 @@ def register_brand(body: BrandRegisterIn,
         conn.execute(
             "INSERT INTO brands (brand_id, name, category, locale, plan)"
             " VALUES (%s,%s,%s,'ko','per_signup')",
-            (slug, body.name.strip(), body.category.strip()))
+            (slug, name, body.category.strip()))
         from .routes_community import ensure_default_cell
-        ensure_default_cell(conn, slug, body.name.strip())
+        ensure_default_cell(conn, slug, name)
         # 운영자 참고 프로필 v1 — 실제 사용자가 확인한 것처럼 기록하지 않는다
         import json as _json
         fields = {}
@@ -164,14 +178,17 @@ def register_brand(body: BrandRegisterIn,
             (slug, _json.dumps(fields)))
         u = conn.execute(
             "INSERT INTO users (kind, email, brand_id)"
-            " VALUES ('brand',%s,%s) RETURNING user_id",
-            (email, slug)).fetchone()
+            " VALUES ('brand',%s,%s) ON CONFLICT (email) DO NOTHING"
+            " RETURNING user_id", (email, slug)).fetchone()
+        if not u:   # 경합 백스톱 — 유니크 충돌을 500이 아니라 409로, 전체 롤백
+            raise HTTPException(409, "담당자 이메일이 방금 다른 계정에 사용"
+                                     "되었습니다 — 다른 이메일을 사용하세요")
         conn.execute(
             "INSERT INTO brand_team_roles (brand_id, user_id, role)"
             " VALUES (%s,%s,'owner')", (slug, u["user_id"]))
         ledger_append(conn, f"admin:{admin.get('sub','')}",
                       "ADMIN_BRAND_REGISTERED", slug,
-                      {"name": body.name.strip(), "category": body.category.strip(),
+                      {"name": name, "category": body.category.strip(),
                        "countries": countries, "managerEmail": email,
                        "plan": "per_signup", "termsConfirmed": False})
     return {"brandId": slug, "managerUserId": str(u["user_id"]),
@@ -209,6 +226,8 @@ def add_account(brand_id: str, body: AccountIn,
     with connect() as conn:
         _brand_or_404(conn, brand_id)
         brand_account_lock(conn, brand_id)
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                     ("account-email:" + email,))
         existing = conn.execute(
             "SELECT kind, brand_id FROM users WHERE email=%s",
             (email,)).fetchone()
@@ -223,8 +242,11 @@ def add_account(brand_id: str, body: AccountIn,
                                      " 전환은 지원하지 않습니다")
         u = conn.execute(
             "INSERT INTO users (kind, email, brand_id)"
-            " VALUES ('brand',%s,%s) RETURNING user_id",
-            (email, brand_id)).fetchone()
+            " VALUES ('brand',%s,%s) ON CONFLICT (email) DO NOTHING"
+            " RETURNING user_id", (email, brand_id)).fetchone()
+        if not u:   # 경합 백스톱 — 500 대신 409로 정상 롤백
+            raise HTTPException(409, "이 이메일이 방금 다른 계정에 사용"
+                                     "되었습니다 — 다른 이메일을 사용하세요")
         conn.execute(
             "INSERT INTO brand_team_roles (brand_id, user_id, role)"
             " VALUES (%s,%s,%s)", (brand_id, u["user_id"], body.role))
@@ -296,8 +318,7 @@ def set_account_state(brand_id: str, user_id: str, body: StateIn,
             _assert_not_last_active_owner(conn, brand_id, user_id, "중지")
             conn.execute("UPDATE users SET state='disabled' WHERE user_id=%s",
                          (user_id,))
-            auth.bump_session_epoch(conn, user_id)      # 기존 JWT 즉시 무효
-            _revoke_tokens(conn, user_id, ("invite", "reset", "magic"))
+            invalidate_sessions(conn, user_id)          # 기존 JWT·링크 즉시 무효
         ledger_append(conn, f"admin:{admin.get('sub','')}",
                       "BRAND_ACCOUNT_" + ("RESUMED" if body.active
                                           else "SUSPENDED"),
@@ -324,7 +345,7 @@ def set_account_role(brand_id: str, user_id: str, body: RoleChangeIn,
             " VALUES (%s,%s,%s) ON CONFLICT (brand_id, user_id)"
             " DO UPDATE SET role=EXCLUDED.role",
             (brand_id, user_id, body.role))
-        auth.bump_session_epoch(conn, user_id)          # 권한 변경 → 재로그인
+        invalidate_sessions(conn, user_id)              # 권한 변경 → 재로그인 + 링크 폐기
         ledger_append(conn, f"admin:{admin.get('sub','')}",
                       "BRAND_ACCOUNT_ROLE_SET", str(user_id),
                       {"brand": brand_id, "email": a["email"],
@@ -338,8 +359,7 @@ def revoke_sessions(brand_id: str, user_id: str,
     with connect() as conn:
         brand_account_lock(conn, brand_id)
         a = _target_account(conn, brand_id, user_id)
-        auth.bump_session_epoch(conn, user_id)
-        revoked = _revoke_tokens(conn, user_id, ("invite", "reset", "magic"))
+        revoked = invalidate_sessions(conn, user_id)
         ledger_append(conn, f"admin:{admin.get('sub','')}",
                       "BRAND_ACCOUNT_SESSIONS_REVOKED", str(user_id),
                       {"brand": brand_id, "email": a["email"],

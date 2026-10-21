@@ -143,6 +143,19 @@ def test_requires_admin_jwt_not_legacy_key(client, admin):
                       headers=pend).status_code == 401
 
 
+def test_register_rejects_blank_name_and_trims(client, admin):
+    slug = "brand-" + admin["sfx"]
+    # 공백만 있는 이름은 pydantic 길이 검사를 통과해도 서버에서 400
+    assert _register(client, admin, name="   ").status_code == 400
+    assert _register(client, admin, name=" a ").status_code == 400
+    r = _register(client, admin, name="  뷰티 브랜드  ")
+    assert r.status_code == 200, r.text
+    with connect() as c:
+        row = c.execute("SELECT name FROM brands WHERE brand_id=%s",
+                        (slug,)).fetchone()
+        assert row["name"] == "뷰티 브랜드"           # trim 후 저장
+
+
 # ── 초기 설정 링크 → 비밀번호 설정 → 로그인 → 자기 브랜드만 ──────
 
 def test_setup_link_flow_and_isolation(client, admin):
@@ -274,6 +287,35 @@ def test_role_change_bumps_epoch_and_last_owner_guard(client, admin):
     assert client.post(
         f"/admin/brands/{slug}/accounts/{second['userId']}/state",
         json={"active": False}, headers=admin["h"]).status_code == 409
+
+
+def test_role_change_revokes_open_links_both_paths(client, admin):
+    """역할 변경은 epoch 상승뿐 아니라 떠 있는 초기 설정/재설정 링크도
+    폐기해야 한다 — 어드민 경로와 콘솔 team/role 경로 모두."""
+    slug = "brand-" + admin["sfx"]
+    _register(client, admin)
+    uid = _accounts(client, admin, slug)[0]["userId"]
+    owner_tok = _setup_password(client, admin, slug, uid)
+    second = client.post(f"/admin/brands/{slug}/accounts",
+                         json={"email": f"mgr-{admin['sfx']}@brand.example",
+                               "role": "manager"}, headers=admin["h"]).json()
+    # (어드민 경로) 미설정 계정의 열린 초기 설정 링크 → 역할 변경 시 폐기
+    inv = client.post(
+        f"/admin/brands/{slug}/accounts/{second['userId']}/setup-link",
+        headers=admin["h"]).json()["link"].split("invite=")[1]
+    assert client.post(
+        f"/admin/brands/{slug}/accounts/{second['userId']}/role",
+        json={"role": "owner"}, headers=admin["h"]).status_code == 200
+    assert client.post("/auth/accept", json={
+        "token": inv, "password": "brandpass-456"}).status_code >= 400
+    # (콘솔 기존 경로) 열린 재설정 링크 → 역할 변경 시 폐기 (owner 2명 상태)
+    rst = client.post(f"/admin/brands/{slug}/accounts/{uid}/reset-link",
+                      headers=admin["h"]).json()["link"].split("reset=")[1]
+    assert client.post(f"/brands/{slug}/team/role",
+                       json={"user_id": uid, "role": "manager"},
+                       headers=_h(owner_tok)).status_code == 200
+    assert client.post("/auth/reset/confirm", json={
+        "token": rst, "password": "newpassword-45"}).status_code >= 400
 
 
 def test_suspend_resume_and_session_revoke(client, admin):

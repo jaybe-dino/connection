@@ -207,6 +207,29 @@ await A.click('button:has-text("답글 남기기")');
 await A.waitForSelector(`.slack-panel >> text=스레드 답글 ${sfx}`, { timeout: 9000 });
 ok("스레드 패널(원본 slack-panel)에 실답글", true);
 await A.click('button[aria-label="스레드 닫기"]');
+// 리액션 ♡ — 사람당 1개 토글(서버 집계)
+await A.click(`article.message:has-text("${MSG}") >> button:has-text("♡")`);
+await A.waitForSelector(`article.message:has-text("${MSG}") >> button.on:has-text("♡ 1")`, { timeout: 9000 });
+const reacted = await api("GET", `/community/cells/${gCell.cellId}/messages?channel=chat`, null, myTok2);
+ok("메시지 리액션 ♡ 실토글(서버 저장·내 상태 표시)",
+  (reacted.body || []).some((m) => m.original === MSG && m.reactionCount === 1 && m.myReaction === true));
+// 이미지 첨부 — 공개 https 주소 검증 + 렌더
+await A.click('button[aria-label="이미지 첨부"]');
+await A.fill("#chatImage", `https://cdn.example.com/live-${sfx}.jpg`);
+await A.fill("#chatDraft", "이미지 첨부 확인 " + sfx);
+await A.click(".send-btn");
+await A.waitForSelector(`img.message-image[src="https://cdn.example.com/live-${sfx}.jpg"]`, { timeout: 9000 });
+ok("메시지 이미지 첨부(https 검증) + 원본 message-image 렌더", true);
+// 제품이야기 — 접힌 '제품·콘텐츠 더 보기' 안의 실채널
+await A.click(".slack-sidebar details.journey-more summary");
+await A.click('.slack-sidebar button:has-text("제품이야기")');
+await A.waitForSelector("h1:has-text(\"제품 이야기\")", { timeout: 9000 });
+await A.fill("#chatDraft", "제품 채널 첫 글 " + sfx);
+await A.click(".send-btn");
+await A.waitForSelector(`text=제품 채널 첫 글 ${sfx}`, { timeout: 9000 });
+ok("제품이야기(products) 실채널 게시·조회", true);
+await A.click('.slack-sidebar button:has-text("자유대화")');
+await A.waitForTimeout(1200);
 await A.fill('input[aria-label="이 채널에서 검색"]', MSG.slice(0, 8));
 await A.click('button[aria-label="검색"]');
 await A.waitForSelector("text=검색 결과", { timeout: 9000 });
@@ -271,6 +294,18 @@ await A.check(".journey-checkbox input");
 await A.click('button:has-text("수수료 합의 — 확정하기")');
 await A.waitForSelector("text=샘플 발송을 기다려 주세요", { timeout: 9000 });
 ok("조건 합의 → terms_agreed(확정 수수료)", true);
+// 샘플 수령 정보(원본 address 단계) — 당사자(브랜드 담당자)에게만 전달
+await A.waitForSelector("#shipRecipient", { timeout: 9000 });
+await A.fill("#shipRecipient", "라이브 수령인");
+await A.fill("#shipCountry", "KR");
+await A.fill("#shipAddress", "서울시 테스트로 77");
+await A.fill("#shipPhone", "010-7777-" + sfx.slice(0, 4));
+await A.check("#shipConsent");
+await A.click('button:has-text("수령 정보 저장")');
+await A.waitForSelector("text=저장됨: 라이브 수령인", { timeout: 9000 });
+const shipSeen = await api("GET", `/brands/glowlab/campaigns/${CID}/applicants`, null, gjwt);
+ok("수령 정보: 크리에이터 저장 → 해당 브랜드 콘솔에서만 조회",
+  (shipSeen.body || []).some((a) => a.shipping && a.shipping.address === "서울시 테스트로 77"));
 const ship = await api("POST",
   `/brands/glowlab/campaigns/${CID}/terms/${myCreatorId}/sample-shipped`,
   { tracking: "CJ-" + sfx }, gjwt);
@@ -278,9 +313,20 @@ ok("브랜드 샘플 발송(송장)", ship.status === 200 && ship.body.state ===
 await A.click('button:has-text("협업 열기")').catch(() => {});
 await A.waitForSelector(`text=CJ-${sfx}`, { timeout: 12000 });
 ok("샘플 송장 실표시", true);
+// 실패해도 입력이 사라지지 않는다(폼 보존) — 첫 요청만 차단
+let sparkBlocked = false;
+await A.context().route("**/spark-code", (route) => {
+  if (sparkBlocked) return route.continue();
+  sparkBlocked = true; route.abort();
+});
 await A.fill("#sparkCode", "SPARK-" + sfx);
 await A.click('button:has-text("코드 제출")');
 await A.waitForTimeout(1500);
+const sparkKept = await A.evaluate(() => (document.getElementById("sparkCode") || {}).value);
+ok("제출 실패 시 Spark 입력 값 보존(재렌더에도 유지)", sparkKept === "SPARK-" + sfx, sparkKept);
+await A.click('button:has-text("코드 제출")');
+await A.waitForTimeout(1500);
+await A.context().unroute("**/spark-code");
 const sparkSaved = await api("GET", "/me/campaign-offers", null, myTok);
 ok("Spark 코드 서버 저장(브랜드 전용·커뮤니티 비노출)",
   (sparkSaved.body || []).some((o) => o.sparkCode === "SPARK-" + sfx));
@@ -289,9 +335,47 @@ await A.waitForSelector("#journeyContent", { timeout: 9000 });
 await A.fill("#journeyContent", `https://www.tiktok.com/@${HANDLE}/video/${sfx}`);
 await A.fill("#journeyMemo", "첫 장면에 제품명 강조했어요 " + sfx);
 await A.check(".journey-checkbox input");
+let dmBlocked = false;
+await A.context().route("**/community/dm/glowlab", (route) => {
+  if (dmBlocked) return route.continue();
+  dmBlocked = true; route.abort();
+});
 await A.click('button:has-text("콘텐츠 제출")');
 await A.waitForSelector("text=브랜드가 콘텐츠를 검토하고 있어요", { timeout: 12000 });
-ok("콘텐츠 제출 → content_submitted(제출 링크 표시)", true);
+await A.context().unroute("**/community/dm/glowlab");
+const partialToast = await A.evaluate(() => document.getElementById("toast").innerText);
+const stashedDraft = await A.evaluate(() =>
+  Object.values(store.drafts).find((v) => String(v).includes("[콘텐츠 제출 메모]")) || "");
+ok("콘텐츠 제출 성공 + 메모 전달 실패의 부분 성공 안내(완료 오인 없음)",
+  partialToast.includes("초안으로 보관"), partialToast.slice(0, 80));
+ok("실패한 메모는 담당자 DM 초안으로 보관(재제출 불필요)",
+  stashedDraft.includes(sfx), stashedDraft.slice(0, 60));
+
+// ── 브랜드 수정 요청 → 수정본 제출 → 완료 ──
+const rev = await api("POST",
+  `/brands/glowlab/campaigns/${CID}/terms/${myCreatorId}/request-revision`,
+  { note: "첫 장면에 제품명을 더 크게 보여주세요 " + sfx }, gjwt);
+ok("브랜드 수정 요청(콘솔 액션)", rev.status === 200 && rev.body.state === "revision_requested");
+await A.click('.slack-sidebar button:has-text("내 할 일")');
+await A.waitForSelector("text=담당자가 수정을 요청했어요", { timeout: 15000 });
+await A.click('button:has-text("협업 열기")');
+await A.waitForSelector(".revision-note", { timeout: 9000 });
+t = await A.evaluate(() => document.body.innerText);
+ok("수정 요청 단계(원본 revision-note): 피드백·이전 제출 표시",
+  t.includes("제품명을 더 크게") && t.includes("이전 제출"));
+await A.click('button:has-text("수정본 제출")');
+await A.waitForSelector("#journeyContent", { timeout: 9000 });
+t = await A.evaluate(() => document.body.innerText);
+ok("수정본 제출 화면: 요청 내용 함께 표시", t.includes("제품명을 더 크게"));
+await A.fill("#journeyContent", `https://www.tiktok.com/@${HANDLE}/video/${sfx}v2`);
+await A.check(".journey-checkbox input");
+await A.click('button:has-text("수정본 제출")');
+await A.waitForSelector("text=브랜드가 콘텐츠를 검토하고 있어요", { timeout: 12000 });
+const resub = await api("GET", "/me/campaign-offers", null, myTok);
+ok("수정본 재제출 → 요청 해소·content_submitted 복귀",
+  (resub.body || []).some((o) => o.campaignId === CID
+    && o.state === "content_submitted" && !o.revisionNote
+    && (o.contentUrl || "").endsWith(sfx + "v2")));
 const comp = await api("POST",
   `/brands/glowlab/campaigns/${CID}/terms/${myCreatorId}/complete`, {}, gjwt);
 ok("브랜드 완료 처리", comp.status === 200 && comp.body.state === "completed");
@@ -314,6 +398,12 @@ ok("미션: 서버 검증 이벤트 달성(합류/신청/합의/제출/완료)",
   t.includes("달성한 미션") && t.includes("Level"));
 await A.click('button:has-text("브랜드 랭킹")');
 await A.waitForSelector(".ranking-table", { timeout: 9000 });
+await A.click('.tabs button:has-text("이번 주")');
+await A.waitForSelector(".ranking-row.is-me", { timeout: 9000 });
+const weekMe = await A.evaluate(() => document.querySelector(".ranking-row.is-me").innerText.replace(/\n/g, " "));
+ok("주간 랭킹 탭(최근 7일 실집계) — '나' 행 표시", /\d{2,}/.test(weekMe), weekMe.slice(0, 60));
+await A.click('.tabs button:has-text("전체 기록")');
+await A.waitForTimeout(600);
 t = await A.evaluate(() => document.body.innerText);
 const meRow = await A.evaluate(() => { const r = document.querySelector(".ranking-row.is-me");
   return r ? r.innerText.replace(/\n/g, " ") : ""; });
@@ -326,8 +416,13 @@ await A.waitForTimeout(800);
 await A.click('.dm-item >> nth=0');
 await A.waitForTimeout(1800);
 t = await A.evaluate(() => document.body.innerText);
-ok("담당자 DM: 신청 아이디어·제출 메모 실전달",
-  t.includes("캠페인 신청 아이디어") && t.includes("콘텐츠 제출 메모"));
+const dmDraftNow = await A.evaluate(() => (document.getElementById("chatDraft") || {}).value || "");
+ok("담당자 DM: 신청 아이디어 실전달 + 보관된 제출 메모 초안 복원",
+  t.includes("캠페인 신청 아이디어") && dmDraftNow.includes("[콘텐츠 제출 메모]"),
+  dmDraftNow.slice(0, 50));
+await A.click(".send-btn");
+await A.waitForSelector("text=[콘텐츠 제출 메모]", { timeout: 9000 });
+ok("보관 초안 재전송 → 담당자 DM에 메모 실전달(중복 제출 없이)", true);
 
 // ── 설정: 언어 변경·계정·로그아웃 + 권한 부정 ──
 await A.evaluate(() => navigate("settings"));
@@ -338,6 +433,21 @@ await A.waitForTimeout(500);
 t = await A.evaluate(() => document.body.innerText);
 ok("대화 언어 변경(5개 언어·실저장)", t.includes("ไทย"));
 await A.selectOption("#langSelect", "ko");
+await A.click('.setting-nav button:has-text("알림")');
+await A.waitForSelector('button.toggle', { timeout: 9000 });
+t = await A.evaluate(() => document.body.innerText);
+ok("알림 설정: 원본 토글 4종 + 적용 범위 정직 표기",
+  t.includes("담당자 메시지") && t.includes("캠페인·선정 소식")
+  && t.includes("연결 준비 중"));
+await A.click('button[aria-label="캠페인·선정 소식"]');
+await A.waitForTimeout(1200);
+const prefsOff = await api("GET", "/me/notification-prefs", null, myTok);
+ok("알림 설정 실저장(campaign off)", prefsOff.body.prefs && prefsOff.body.prefs.campaign === false,
+  JSON.stringify(prefsOff.body.prefs));
+await A.click('button[aria-label="캠페인·선정 소식"]');
+await A.waitForTimeout(1200);
+const prefsOn = await api("GET", "/me/notification-prefs", null, myTok);
+ok("알림 설정 실저장(campaign on 복귀)", prefsOn.body.prefs && prefsOn.body.prefs.campaign === true);
 await A.click('.setting-nav button:has-text("계정·연결")');
 await A.waitForTimeout(400);
 t = await A.evaluate(() => document.body.innerText);

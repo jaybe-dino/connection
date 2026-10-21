@@ -1460,3 +1460,42 @@ auth_tokens/brand_team_roles 재사용)
   전부 통과. engine-live/콘솔/사인업은 무변경(기존 테스트 마커 보존).
 - 남은 운영 전제: TikTok provider 키·실메일(SENDGRID) 연결 시 데모
   링크 표시가 자동으로 실발송 안내로 바뀐다. 운영 배포는 검수 후 진행.
+
+## 2026-10-21(보완 2) — P0 세션 격리 + P1 원본 요소 실동작 복원
+(branch claude/creator-slack-v3-live-20261021)
+
+- P0(68b00a1): 초안·북마크를 계정(userId)별 localStorage 네임스페이스로
+  격리(레거시 공용 키는 읽지 않고 폐기, 마이그레이션 금지), chatKey에
+  사용자ID 포함 + 세션 소유자 불일치 입력 캡처 차단, 로그아웃 시 메모리
+  민감 상태 전체 초기화, 모든 API 응답에 세션 세대+토큰 stale 가드(늦은
+  응답 폐기·체인 후속 POST 차단·stale 무음), storage 이벤트로 다른 탭
+  로그아웃/계정 교체 반영. 신규 creator-session-isolation.mjs 10단언.
+- P1: 원본 요소를 서버 미지원 사유로 숨기지 않고 최소 API/DB(056)로
+  실동작 복원 —
+  · 메시지 ♡ 리액션(사람당 1 토글, message_reactions, 집계·내 상태 동봉)
+  · 메시지 이미지 첨부(공개 HTTPS 검증, cell_messages.image_url,
+    원본 .message-image 렌더, 컴포저 🖼 입력)
+  · 제품이야기(products) 실채널 — 접힌 '제품·콘텐츠 더 보기' 원형 복원
+  · 주간/전체 랭킹 탭(ranking?period=week — 최근 7일 실집계)
+  · 알림 설정 토글 4종 실저장(기존 notification_prefs 재사용) — campaign
+    은 알림 생성에 즉시 반영(notify_brand_members 필터), deadline·email은
+    기능 연결 전 '준비 중' 정직 표기로 저장만
+  · 협업 샘플 수령 정보(원본 address 단계) — campaign_terms.shipping,
+    선정~합의 단계 저장·수정, 해당 브랜드 콘솔에서만 조회, 발송 후 잠금,
+    감사 원장에 주소·연락처 무기록
+  · 브랜드 수정 요청(원본 revision 단계) — request-revision(메모) →
+    revision_requested + 크리에이터 알림 → revision-note 화면에서 수정본
+    재제출(요청 해소) → 완료. 콘솔 지원자 화면에 수정 요청 입력·배송
+    정보 표시 추가(engine-live 3앱 동기화)
+- 실무 정확성: campExpired를 서버와 동일한 Asia/Seoul 날짜 기준으로,
+  액션 실패 시 폼 값·체크·포커스 보존(페이지별 더티 추적 + softRender,
+  성공 시 해제), 신청 아이디어·콘텐츠 메모의 DM 전달 실패는 부분 성공
+  안내 + DM 초안 보관(신청/콘텐츠 중복 제출 없음, 보관 불가 시 별도 안내).
+- 검증: 신규 pytest test_slack_v3_parity.py 5종(채널·이미지·리액션
+  권한/집계, 알림 설정 실반영, 주간 랭킹, 배송 정보 당사자 격리·무PII·
+  시점 제한, 수정 요청 왕복) — 서버 전체 311 passed. creator-slack-live
+  e2e 69단언으로 확장(리액션/이미지/제품채널/수령 정보/Spark 실패 보존/
+  부분 성공·초안 재전송/수정 요청 왕복/주간 탭/알림 토글) 연속 3회 녹색,
+  isolation 10단언, console-admin-shell 22, admin-brand-accounts 23,
+  tests_ui 96, billing 95, 전 앱 빌드 통과. 운영 배포 없음(Railway 장애
+  중 — 로컬 검증만).

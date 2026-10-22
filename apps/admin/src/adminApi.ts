@@ -214,6 +214,7 @@ export const adminApi = {
     req<{ ok: boolean }>(
       `/admin/brands/${encodeURIComponent(brand)}/accounts/${userId}/revoke-sessions`,
       { method: "POST" }),
+  prelaunchApplications: () => req<{id:string;brand:string;email:string;at:string}[]>('/admin/prelaunch-applications'),
   applications: (status = "pending") =>
     req<Application[]>(`/admin/applications?status=${status}`),
   approveApplication: (id: string) =>

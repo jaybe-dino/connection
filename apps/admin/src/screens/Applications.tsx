@@ -9,6 +9,7 @@ const ANSWER_LABEL: Record<string, string> = {
 
 /** 브랜드 신청 승인 — 승인하면 브랜드 생성 + theprlist 학습 답변으로 프로필 v1 발행 */
 export default function Applications({ onChange }: { onChange: () => void }) {
+  const [prelaunch, setPrelaunch] = useState<{id:string;brand:string;email:string;at:string}[]>([]);
   const [rows, setRows] = useState<Application[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [invitation, setInvitation] = useState<string | null>(null);
@@ -16,7 +17,7 @@ export default function Applications({ onChange }: { onChange: () => void }) {
 
   const load = () =>
     adminApi.applications().then(setRows).catch((e) => setError(String(e)));
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); void adminApi.prelaunchApplications().then(setPrelaunch).catch(e=>setError(String(e))); }, []);
 
   const decide = async (id: string, ok: boolean) => {
     setBusy(id);
@@ -49,6 +50,7 @@ export default function Applications({ onChange }: { onChange: () => void }) {
           <span style={{ fontSize: 12, color: "var(--c500)" }}>{error}</span>
         </Card>
       )}
+      <Card><h2>사전 신청 {prelaunch.length}건</h2><p>브랜드명과 이메일만 남긴 관심 신청입니다. 계정·브랜드가 자동 생성되거나 요금이 청구되지 않습니다.</p>{prelaunch.length===0?<p>아직 사전 신청이 없어요.</p>:prelaunch.map(a=><div key={a.id} style={{borderTop:"1px solid var(--n200)",padding:"12px 0",overflowWrap:"anywhere"}}><b>{a.brand}</b><div>{a.email}</div><small>{new Date(a.at).toLocaleString("ko-KR")}</small></div>)}</Card>
       <SectionTitle>대기 {rows.length}건</SectionTitle>
       {rows.length === 0 && <EmptyState>대기 중인 신청이 없어요</EmptyState>}
       {rows.map((a) => (

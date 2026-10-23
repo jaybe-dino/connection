@@ -7,6 +7,9 @@
     <meta name="theme-color" content="#302037" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="theprlist" />
     <!-- slack-v3 승인 디자인 원본(docs/ui-reference/slack-v3) 자산 — 바이트 동일 복사 -->
     <link rel="stylesheet" href="/slack/editorial-app.css?v=7973e081" />
     <link rel="stylesheet" href="/slack/slack-structure.css?v=df444b1e" />
@@ -22,9 +25,9 @@
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
     <script src="/slack/live-core.js?v=20261021a"></script>
-    <script src="/slack/editorial-app.js?v=20261021a"></script>
+    <script src="/slack/editorial-app.js?v=20261023install"></script>
     <script src="/slack/slack-structure.js?v=20261021a"></script>
-    <script src="/slack/journey.js?v=20261021a"></script>
+    <script src="/slack/journey.js?v=20261023install"></script>
     <script>
       if ("serviceWorker" in navigator && location.protocol === "https:")
         navigator.serviceWorker.register("/sw.js");

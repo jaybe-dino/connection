@@ -35,14 +35,17 @@ COPY services/api ./services/api
 RUN python -m pip install --no-cache-dir --no-deps \
       ./services/core ./services/harvest ./services/api
 
-# 4) 건강 점검 — 현재 이미지 재배포가 놓치던 /health 를 포함한다.
+# 4) 건강 점검 — 엄격한 readiness 경로 /health/ready 를 본다. 기존 /health 는
+#    DB 오류·startup_error 에도 200 을 주므로 native readiness 로는 부적합하다.
+#    /health/ready 는 ok=True & startup_error=None 일 때만 200, 그 외 503.
 #    (slim 에 curl 이 없으므로 표준 라이브러리로 확인)
 HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
   CMD python -c "import os,urllib.request,sys; \
-u='http://127.0.0.1:'+os.environ.get('PORT','8000')+'/health'; \
+u='http://127.0.0.1:'+os.environ.get('PORT','8000')+'/health/ready'; \
 sys.exit(0 if urllib.request.urlopen(u,timeout=4).status==200 else 1)" || exit 1
 
 EXPOSE 8000
 
-# 5) 현재 운영과 동일한 시작 명령 — PORT 존중, 같은 API 만 실행.
-CMD ["sh","-c","exec uvicorn api.main:app --app-dir services/api --host 0.0.0.0 --port ${PORT:-8000}"]
+# 5) 동일한 운영 app 을 감싼 readiness 래퍼 entrypoint 를 실행 — PORT 존중,
+#    같은 API 만 실행(api.main:app 을 import 해 /health/ready 만 추가).
+CMD ["sh","-c","exec uvicorn security_api_entrypoint:app --app-dir services/api --host 0.0.0.0 --port ${PORT:-8000}"]

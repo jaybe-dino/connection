@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>개선 번호 검토 시안 (2026-10-25)</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#stage">제품 화면으로 건너뛰기</a>
+
+<!-- 검토용 바: 제품 UI가 아님 -->
+<header class="rv-bar" aria-label="검토용 도구 (제품 화면 아님)">
+  <div class="rv-row">
+    <span class="rv-tag">검토용 도구</span>
+    <div class="rv-group" role="group" aria-label="역할 전환">
+      <button type="button" class="rv-seg" data-role="brand">브랜드</button>
+      <button type="button" class="rv-seg" data-role="creator">크리에이터</button>
+      <button type="button" class="rv-seg" data-role="admin">관리자</button>
+    </div>
+    <div class="rv-group" role="group" aria-label="보기 전환">
+      <button type="button" class="rv-seg" data-mode="current">현재 UI + 개선번호</button>
+      <button type="button" class="rv-seg" data-mode="proposal">개선 후 시안</button>
+    </div>
+    <label class="rv-toggle"><input type="checkbox" id="rv-show-badges" checked> 번호 보이기</label>
+    <button type="button" class="rv-sel" id="rv-open-sel">선택한 개선(<span id="rv-count">0</span>)</button>
+  </div>
+  <p class="rv-notice" role="note">체크는 <strong>시안 선택</strong>일 뿐 실제 반영·개발 실행이 아닙니다. 반영을 원하면 ‘요청 문장 복사’ 후 채팅에 직접 붙여 주세요.</p>
+</header>
+
+<main id="stage" tabindex="-1"></main>
+
+<!-- 개선 설명 레이어 (검토용) -->
+<div class="rv-scrim" id="rv-scrim" hidden></div>
+<aside class="rv-layer" id="rv-layer" role="dialog" aria-modal="true" aria-labelledby="rv-layer-title" hidden></aside>
+
+<!-- 선택 목록 (검토용) -->
+<aside class="rv-layer rv-wide" id="rv-sel" role="dialog" aria-modal="true" aria-labelledby="rv-sel-title" hidden></aside>
+
+<!-- 제품 시안 안의 레이어 -->
+<div class="pd-scrim" id="pd-scrim" hidden></div>
+<div class="pd-sheet" id="pd-sheet" role="dialog" aria-modal="true" aria-labelledby="pd-sheet-title" hidden></div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -536,3 +536,40 @@ def create_recruitment_workspace(_admin: dict = Depends(require_admin)):
             conn.execute("INSERT INTO brand_profile_versions(brand_id,version,fields,note) VALUES('dino-recruitment',1,%s,'internal workspace')",(_j({'brand_one_liner':{'value':'디노스튜디오 공용 크리에이터 모집','source':'administrator','confirmed':True}}),))
             ledger_append(conn,str(_admin['admin_id']),'RECRUITMENT_WORKSPACE_CREATED','dino-recruitment',{'internal':True})
     return {'brandId':'dino-recruitment','internal':True,'created':created,'emailSent':False}
+
+# 사전 신청은 가입/승인/과금과 분리한다. 외부 메일은 자동 발송하지 않는다.
+class PrelaunchIn(BaseModel):
+    brand: str = Field(max_length=100)
+    email: str = Field(max_length=254)
+    consent: bool = False
+    website: str = Field(default='', max_length=500)
+
+
+@public.post('/prelaunch-applications')
+def submit_prelaunch(body: PrelaunchIn) -> dict:
+    brand, email = body.brand.strip(), body.email.strip().lower()
+    if body.website:  # honeypot — 저장하지 않고 일반 응답
+        return {'ok': True}
+    if not brand or not re.fullmatch(r'[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+', email):
+        raise HTTPException(422, '브랜드명과 올바른 이메일을 입력해 주세요')
+    if not body.consent:
+        raise HTTPException(422, '개인정보 수집·이용 동의가 필요합니다')
+    with connect() as conn:
+        conn.execute("DELETE FROM brand_prelaunch_applications WHERE created_at <= now()-interval '1 year'")
+        # 동일 브랜드/이메일 재시도는 한 건으로 유지한다. 계정 생성은 하지 않는다.
+        conn.execute("INSERT INTO brand_prelaunch_applications(brand,email)"
+                     " VALUES(%s,%s) ON CONFLICT(email,brand) DO NOTHING",
+                     (brand, email))
+    return {'ok': True}
+
+
+@admin.get('/prelaunch-applications')
+def list_prelaunch(_admin: dict = Depends(require_admin)) -> list[dict]:
+    with connect() as conn:
+        conn.execute("DELETE FROM brand_prelaunch_applications WHERE created_at <= now()-interval '1 year'")
+        rows = conn.execute("SELECT request_id,brand,email,created_at"
+                            " FROM brand_prelaunch_applications"
+                            " WHERE created_at > now()-interval '1 year'"
+                            " ORDER BY created_at DESC LIMIT 500").fetchall()
+    return [{'id': str(r['request_id']), 'brand': r['brand'], 'email': r['email'],
+             'at': r['created_at'].isoformat()} for r in rows]

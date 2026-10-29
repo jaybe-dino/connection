@@ -195,13 +195,13 @@ def messages(cell_id: str, channel: str = "", limit: int = 50,
              "at": r["at"].isoformat()} for r in reversed(rows)]
 
 
-CREATOR_CHANNELS = ("chat", "tips", "products")
-BRAND_CHANNELS = ("chat", "tips", "products", "notice")
+CREATOR_CHANNELS = ("chat", "tips", "products", "qna")
+BRAND_CHANNELS = ("chat", "tips", "products", "qna", "notice")
 
 
 class PostIn(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
-    channel: str = "chat"        # chat | tips | products (브랜드는 notice 가능)
+    channel: str = "chat"        # chat | tips | products | qna (브랜드는 notice 가능)
     locale: str = "ko"
     thread_parent: int | None = None       # 스레드 답글이면 부모 msg_id
     image_url: str = Field(default="", max_length=500)   # 공개 HTTPS 이미지만
@@ -229,7 +229,7 @@ def post_message(cell_id: str, body: PostIn,
             author_kind = "creator"
         else:
             if body.channel not in BRAND_CHANNELS:
-                raise HTTPException(400, "channel은 chat/tips/products/notice")
+                raise HTTPException(400, "channel은 chat/tips/products/qna/notice")
             author = cell["brand_id"] if claims.get("kind") == "brand" else "admin"
             author_kind = "brand" if claims.get("kind") == "brand" else "ari"
         # 원문 선저장(pending) — 번역 API 장애에도 메시지는 잃지 않는다.

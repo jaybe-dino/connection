@@ -29,7 +29,7 @@ for (const w of [1280, 390]) {
   await p.goto(APP + "/"); await p.evaluate(([t, a]) => { localStorage.setItem("CONNECTION_API_URL", a); localStorage.setItem("CONNECTION_JWT", t); }, [T.creator, API]);
   await p.reload(); await p.waitForFunction(() => window.__ME && window.LIVE && LIVE.campaigns && LIVE.offers, null, { timeout: 15000 });
   const go = async (brand, page) => { await p.evaluate((b) => { slackBrand(b); }, brand); await p.waitForTimeout(400); await p.evaluate((pg) => navigate(pg), page); await p.waitForTimeout(700); };
-  const main = () => p.locator(".slack-primary, .slack-main").first().innerText();
+  const main = () => p.locator(".v2-main, .slack-primary, .slack-main").first().innerText();
 
   await go("fau", "campaigns");
   let t = await main();

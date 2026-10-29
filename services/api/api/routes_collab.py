@@ -416,6 +416,7 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
             "SELECT c.campaign_id, c.brand_id, c.name, c.product, c.usp,"
             " c.reward_type, c.affiliate_pct, c.deadline, c.status,"
             " c.countries, b.name AS brand_name, b.logo_url,"
+            " c.reward_amount, c.capacity, c.conditions,"
             " a.status AS my_status, t.state AS terms_state,"
             # 캠페인 제품 이미지 — 반드시 같은 브랜드의 제품만 연결(타 브랜드
             # 이미지 금지). 초대 소개 이미지(최신 운영 입력)를 사용한다.
@@ -456,6 +457,11 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
              "affiliatePct": (float(r["affiliate_pct"])
                               if r["affiliate_pct"] is not None else None),
              "deadline": r["deadline"].isoformat() if r["deadline"] else None,
+             # 브랜드가 저장한 값 그대로 — 비어 있으면 화면이 '브랜드 안내 대기'로 표시
+             "rewardAmount": r["reward_amount"],
+             "capacity": r["capacity"] or 0,
+             "conditions": [str(x) for x in (r["conditions"] or [])
+                            if isinstance(x, (str, int, float))],
              "myStatus": r["my_status"] or "none",
              "termsState": r["terms_state"],
              "countries": list(countries), "eligible": eligible,

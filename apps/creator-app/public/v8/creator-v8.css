@@ -1,0 +1,7 @@
+/* 운영 셸 보정 — v8-kit.css(시안 생성본) 다음에 로드. 시안의 검토 툴바 높이 변수를 0으로 둔다. */
+:root, body.v8-live { --sp-rv: 0px; }
+body.v8-live { margin: 0; }
+.v2-creator .badge-n { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: var(--c-accent, #4a2c5a); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; vertical-align: 1px; }
+.v2-creator .v2-navbtn[aria-current="page"] .badge-n { background: #fff; color: var(--c-accent, #4a2c5a); }
+.v2-creator .v2-search input { cursor: pointer; }
+.v2-creator .sp-reply[aria-pressed="true"] { color: var(--c-accent, #4a2c5a); font-weight: 700; }

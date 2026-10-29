@@ -248,7 +248,7 @@ var commVersion=0;
 window.openCell=function(id,name,channel){
   var cell=(LIVE.cells||[]).find(function(c){return c.cellId===id;});
   if(cell)ui.brand=cell.brandId;
-  var ch=cell&&cell.kind==='dm'?'chat':(['chat','tips','products','notice'].indexOf(channel)>=0?channel:(ui.channel&&cell&&cell.kind!=='dm'?ui.channel:'chat'));
+  var ch=cell&&cell.kind==='dm'?'chat':(['chat','tips','products','qna','notice'].indexOf(channel)>=0?channel:(ui.channel&&cell&&cell.kind!=='dm'?ui.channel:'chat'));
   ui.channel=ch;
   var version=++commVersion,token=jwtGet();
   LIVE.open={cellId:id,name:name,channel:ch,msgs:[],loading:true,error:'',dm:!!(cell&&cell.kind==='dm')};

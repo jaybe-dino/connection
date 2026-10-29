@@ -11,10 +11,13 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="theprlist" />
     <!-- slack-v3 승인 디자인 원본(docs/ui-reference/slack-v3) 자산 — 바이트 동일 복사 -->
-    <link rel="stylesheet" href="/slack/editorial-app.css?v=7973e081" />
-    <link rel="stylesheet" href="/slack/slack-structure.css?v=df444b1e" />
-    <link rel="stylesheet" href="/slack/journey.css?v=7b5df616" />
-    <link rel="stylesheet" href="/slack/live.css?v=20261021a" />
+    <link rel="stylesheet" data-live-css href="/slack/editorial-app.css?v=7973e081" />
+    <link rel="stylesheet" data-live-css href="/slack/slack-structure.css?v=df444b1e" />
+    <link rel="stylesheet" data-live-css href="/slack/journey.css?v=7b5df616" />
+    <link rel="stylesheet" data-live-css href="/slack/live.css?v=20261021a" />
+    <!-- v8.1 승인 시안 CSS(생성본) — 로그인 워크스페이스에서만 켠다 -->
+    <link rel="stylesheet" data-v8-css href="/v8/v8-kit.css?v=20261030a" disabled />
+    <link rel="stylesheet" data-v8-css href="/v8/creator-v8.css?v=20261030a" disabled />
     <title>theprlist · Channel workspace</title>
   </head>
   <body>
@@ -29,6 +32,7 @@
     <script src="/slack/slack-structure.js?v=20261021a"></script>
     <script src="/slack/journey.js?v=20261023install"></script>
     <script src="/slack/v8-scope.js?v=20261030a"></script>
+    <script src="/v8/creator-v8.js?v=20261030a"></script>
     <script>
       if ("serviceWorker" in navigator && location.protocol === "https:")
         navigator.serviceWorker.register("/sw.js");

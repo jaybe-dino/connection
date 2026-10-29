@@ -4,12 +4,34 @@ TikTok 소유 인증은 서버 테스트(tests/conftest.py)와 같이 로컬 DB�
 API/DB 주소가 localhost가 아니면 실행을 거부한다. 운영 데이터에 쓰지 않는다.
 사용: API_URL=http://localhost:8765 DATABASE_URL=postgresql://…@localhost:5432/v8dev python scripts/dev/seed_local_v8.py
 """
-import os, sys, json, httpx, psycopg
+import os, re, sys, json, httpx, psycopg
+from urllib.parse import urlparse, parse_qs
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'services', 'api'))
 from api import auth
 API = os.environ.get('API_URL', 'http://localhost:8765'); DB = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/v8dev')
-if 'localhost' not in API or 'localhost' not in DB:
-    raise SystemExit('로컬 전용 시드입니다 (localhost API/DB만 허용)')
+LOCAL_HOSTS = {'localhost', '127.0.0.1', '::1'}
+TEST_DB = re.compile(r'^(v8dev|v8test|[a-z0-9_]+_(dev|test))$')
+
+
+def local_only(api: str, db: str) -> None:
+    """문자열 포함 검사가 아니라 URL을 해석해 호스트·DB 이름을 허용목록으로 확인한다.
+    운영 URL의 비밀번호·쿼리에 'localhost'가 들어 있어도 호스트가 다르면 거부한다."""
+    a = urlparse(api)
+    if a.scheme not in ('http', 'https') or a.hostname not in LOCAL_HOSTS:
+        raise SystemExit(f'로컬 전용 시드입니다: API 호스트 {a.hostname!r} 거부 (허용 {sorted(LOCAL_HOSTS)})')
+    d = urlparse(db)
+    if d.scheme not in ('postgresql', 'postgres') or d.hostname not in LOCAL_HOSTS:
+        raise SystemExit(f'로컬 전용 시드입니다: DB 호스트 {d.hostname!r} 거부 (허용 {sorted(LOCAL_HOSTS)})')
+    # libpq 는 쿼리의 host= 가 URL 호스트보다 우선한다 — 쿼리 호스트도 허용목록만
+    for h in parse_qs(d.query).get('host', []) + parse_qs(d.query).get('hostaddr', []):
+        if h not in LOCAL_HOSTS:
+            raise SystemExit(f'로컬 전용 시드입니다: DB 쿼리 host {h!r} 거부')
+    name = d.path.lstrip('/')
+    if not TEST_DB.fullmatch(name):
+        raise SystemExit(f'로컬 전용 시드입니다: DB 이름 {name!r} 거부 (v8dev·v8test·*_dev·*_test 만 허용)')
+
+
+local_only(API, DB)
 c = httpx.Client(base_url=API, timeout=20)
 def ok(r):
     if r.status_code >= 400: raise SystemExit(f'{r.request.method} {r.request.url} {r.status_code} {r.text[:300]}')

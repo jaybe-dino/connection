@@ -18,7 +18,42 @@ def client():
     try:
         with TestClient(app) as c:
             assert c.get('/health').json()['db']=='ok'
+            # Synthetic fixtures are relative to today's Korean date. Production
+            # seed deadlines remain untouched; expired campaign tests use cmp-1.
+            import psycopg
+            with psycopg.connect(os.environ['DATABASE_URL']) as conn:
+                conn.execute("UPDATE campaigns SET deadline=(now() AT TIME ZONE 'Asia/Seoul')::date + 30 WHERE campaign_id='cmp-2'")
+                conn.execute("UPDATE campaigns SET deadline=(now() AT TIME ZONE 'Asia/Seoul')::date - 1 WHERE campaign_id='cmp-1'")
             yield c
     finally:
         os.environ.clear();os.environ.update(previous)
         subprocess.run(['dropdb',name],check=True)
+
+
+def tiktok_connect(client, headers, open_id):
+    """로컬 fake provider로 TikTok OAuth 성공을 재현 — 외부 호출 없음.
+
+    신규 회원 입장 게이트(온보딩+TikTok 소유 인증)의 정상 여정 테스트용.
+    운영에서 키 미설정이면 신규 가입 검수는 외부 승인 blocker로 남는다."""
+    import unittest.mock as mock
+    from urllib.parse import parse_qs, urlparse
+
+    class _R:
+        def __init__(self, v):
+            self.v = v
+
+        def json(self):
+            return self.v
+    with mock.patch.dict(os.environ, {"TIKTOK_CLIENT_KEY": "test-key",
+                                      "TIKTOK_CLIENT_SECRET": "test-secret"}):
+        start = client.post("/me/tiktok/connect-start", headers=headers)
+        assert start.status_code == 200, start.text
+        state = parse_qs(urlparse(start.json()["authUrl"]).query)["state"][0]
+        with mock.patch("httpx.post", lambda *a, **k: _R(
+                {"access_token": "t", "open_id": open_id})), \
+             mock.patch("httpx.get", lambda *a, **k: _R(
+                {"data": {"user": {"open_id": open_id,
+                                   "display_name": "QA"}},
+                 "error": {"code": "ok"}})):
+            r = client.get(f"/tiktok/callback?code=c&state={state}")
+        assert r.status_code == 200, r.text

@@ -42,6 +42,10 @@ def test_signup_to_recruitment(client, monkeypatch, round_no, country):
     magic_token = parse_qs(urlparse(magic['demoLink']).query)['magic'][0]
     creator_token = ok(client.post('/auth/magic/verify',json={'token':magic_token}))['token']
     creator = {'Authorization':'Bearer '+creator_token}
+    ok(client.put('/me/profile',headers=creator,json={'country':country if len(country)==2 else 'KR','languages':['ko'],'ship_countries':[country if len(country)==2 else 'KR'],'consent_terms':True,'consent_privacy':True}))  # 신규 여정: 온보딩 선행
+    from conftest import tiktok_connect
+    from uuid import uuid4 as _u4
+    tiktok_connect(client,creator,'oid-'+_u4().hex[:12])  # 신규 필수: TikTok 소유 인증
     assert client.post(f'/campaigns/{cid}/apply',headers=creator,json={'creator_id':'ignored'}).status_code == 403
     ok(client.post('/me/join',headers=creator,json={'brand_id':slug}))
     ok(client.post(f'/community/cells/cell-{slug}-main/messages',headers=creator,json={'text':f'Hello {country}','locale':'en'}))

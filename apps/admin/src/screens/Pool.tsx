@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card, SectionTitle } from "@connection/ui";
 import { adminApi } from "../adminApi";
+import RecruitmentSetup from './RecruitmentSetup';
 
 /** 후보 풀 — 운영자 수동/CSV 등록·미리보기·현황.
  *  이메일은 형식 검사만으로 '검증'이 되지 않는다: 등록분은 전부
@@ -52,7 +53,7 @@ export default function Pool() {
       <Card>
         {!status ? "불러오는 중…" : (
           <div style={{ fontSize: 13, lineHeight: 1.9 }}>
-            전체 후보 <b>{status.total}</b>명 · 추천 가능 <b>{status.recommendable}</b>명
+            전체 후보 레코드 <b>{status.total.toLocaleString()}</b>건 · 추천 검토 가능 <b>{status.recommendable.toLocaleString()}</b>건
             (검증 이메일 {status.verifiedEmail} · 미검증 {status.unverifiedEmail})
             <br />제외: 이메일 없음 {ex.noEmail} · 검증 실패(risky) {ex.riskyEmail} ·
             제외 상태 {ex.excludedState} · 수신거부 이메일 {ex.optedOutEmails}
@@ -63,6 +64,7 @@ export default function Pool() {
         <button onClick={() => void loadStatus()} style={{ marginTop: 8 }}>새로고침</button>
       </Card>
 
+      <RecruitmentSetup mode="pool" />
       <SectionTitle>CSV 등록 (헤더 필수 · 최대 500행/256KB)</SectionTitle>
       <Card>
         <div style={{ fontSize: 12, color: "var(--n500)", marginBottom: 6 }}>

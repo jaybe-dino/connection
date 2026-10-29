@@ -8,7 +8,7 @@ import logging
 import os
 
 from fastapi import APIRouter, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import auth
 from .db import connect, ledger_append
@@ -258,6 +258,8 @@ def accept_invite(body: AcceptIn) -> dict:
 
 class MagicIn(BaseModel):
     email: str
+    application: str = Field(default="",max_length=60)
+    locale: str = Field(default="ko",pattern=r"^(en|ko)$")
     brand: str = ""      # 초대 브랜드 slug(선택) — 로그인 후 합류 카드 유지용
 
 
@@ -277,6 +279,14 @@ def magic_request(body: MagicIn) -> dict:
     if brand and not _re.fullmatch(r"[a-z0-9][a-z0-9-]{2,39}", brand):
         brand = ""
     with connect() as conn:
+        if body.application:
+            from .routes_recruitment_links import resolve
+            context=resolve(conn,body.application)
+            if context['email'].strip().lower()!=email:
+                raise HTTPException(403,'이 제안을 받은 이메일로 로그인하세요')
+            if brand and brand!=context['target']:
+                raise HTTPException(409,'모집 링크와 브랜드가 다릅니다')
+            brand=context['target']
         u = conn.execute("SELECT * FROM users WHERE email=%s",
                          (email,)).fetchone()
         if u and u["kind"] != "creator":
@@ -289,15 +299,14 @@ def magic_request(body: MagicIn) -> dict:
                                       (brand,)).fetchone():
             brand = ""                      # 실존 브랜드만 보존
         raw = auth.one_time_token(conn, u["user_id"], "magic", MAGIC_TTL_MIN)
-    link = f"{APP_SITE}/?{('brand=' + _q(brand) + '&') if brand else ''}magic={raw}"
+    link = f"{APP_SITE}/?{('brand=' + _q(brand) + '&') if brand else ''}{('lang=en&') if body.locale=='en' else ''}magic={raw}{('&application='+_q(body.application)) if body.application else ''}"
     out = {"ok": True, "sent": True}
     if _mail_demo_mode():
         out["demoLink"] = link
     else:
         out["sent"] = _send_system_mail(
-            email, "theprlist — 로그인 링크",
-            f"안녕하세요! 아래 링크를 누르면 바로 로그인됩니다 (15분 유효).\n\n"
-            f"{link}\n\n본인이 요청하지 않았다면 이 메일은 무시하세요.\n— theprlist")
+            email, "theprlist — Your sign-in link" if body.locale=="en" else "theprlist — 로그인 링크",
+            (f"Sign in or get started with theprlist using the link below (valid for 15 minutes).\n\n{link}\n\nIf you did not request this email, you can ignore it.\n— theprlist" if body.locale=="en" else f"안녕하세요! 아래 링크를 누르면 바로 로그인됩니다 (15분 유효).\n\n{link}\n\n본인이 요청하지 않았다면 이 메일은 무시하세요.\n— theprlist"))
         if not out["sent"]:
             out["hint"] = "메일 발송 실패 — 잠시 후 다시 시도해 주세요"
     return out

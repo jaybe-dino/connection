@@ -30,13 +30,13 @@ def get_identity(brand_id: str) -> dict:
     """공개 표시 정보 — 가입/커뮤니티 화면이 브랜드명·로고를 그릴 때 사용."""
     with connect() as conn:
         b = conn.execute(
-            "SELECT brand_id, name, category, logo_url, tagline, is_demo"
+            "SELECT brand_id, name, category, logo_url, tagline, is_demo,is_internal"
             " FROM brands WHERE brand_id=%s", (brand_id,)).fetchone()
     if not b:
         raise HTTPException(404, "brand not found")
     return {"brandId": b["brand_id"], "name": b["name"],
             "category": b["category"], "logoUrl": b["logo_url"],
-            "tagline": b["tagline"], "isDemo": b["is_demo"]}
+            "tagline": b["tagline"], "isDemo": b["is_demo"], "isInternal": b["is_internal"]}
 
 
 class IdentityIn(BaseModel):
@@ -108,11 +108,17 @@ def join_brand(body: JoinIn,
                authorization: str = Header(default="")) -> dict:
     claims = _require_creator(authorization)
     with connect() as conn:
-        b = conn.execute("SELECT brand_id, name, is_demo FROM brands"
+        b = conn.execute("SELECT brand_id, name, is_demo,is_internal FROM brands"
                          " WHERE brand_id=%s", (body.brand_id,)).fetchone()
         if not b:
             raise HTTPException(404, "brand not found")
         cid = _ensure_creator_row(conn, claims)
+        # 신규 크리에이터는 온보딩(국가·배송·필수동의) 완료 전 합류 불가.
+        # legacy(마이그레이션 시점 기존 회원)만 재연결 안내 대상으로 통과.
+        from . import auth as _auth
+        from .routes_service import require_onboarded
+        require_onboarded(conn, cid, "브랜드 합류")
+        _auth.check_suspended(conn, body.brand_id)
         ins = conn.execute(
             "INSERT INTO memberships (creator_id, brand_id) VALUES (%s,%s)"
             " ON CONFLICT DO NOTHING RETURNING creator_id",
@@ -123,13 +129,15 @@ def join_brand(body: JoinIn,
             "SELECT 1 FROM signup_usage WHERE brand_id=%s AND creator_id=%s",
             (body.brand_id, cid)).fetchone()
         if ins:
+            from .routes_service import award_xp
+            award_xp(conn, cid, body.brand_id, "join", body.brand_id)
             ledger_append(conn, f"creator:{cid}", "MEMBERSHIP_JOINED",
                           body.brand_id, {"verified": c["verified"],
                                           "demo": b["is_demo"]})
     return {"creatorId": cid, "brandId": body.brand_id,
             "joined": bool(ins), "alreadyMember": not bool(ins),
             "verified": c["verified"], "billable": bool(billed),
-            "note": ("검증 완료 후 과금 대상이 됩니다" if not c["verified"]
+            "note": ("공용 모집 공간 가입 · 고객 가입 과금 제외" if b["is_internal"] else "검증 완료 후 과금 대상이 됩니다" if not c["verified"]
                      else "중복 가입은 재과금되지 않습니다" if not ins else "")}
 
 
@@ -165,6 +173,12 @@ def verify_creator(creator_id: str,
         usage = conn.execute(
             "SELECT brand_id, unit_price FROM signup_usage WHERE creator_id=%s",
             (creator_id,)).fetchall()
+        # 중앙 모집 링크 경유 가입자면 verify 전환 기록 (과금은 기존 규칙 그대로)
+        from .routes_recruitment_links import record_event
+        for ra in conn.execute(
+                "SELECT link_id FROM recruitment_applications WHERE creator_id=%s",
+                (creator_id,)).fetchall():
+            record_event(conn, ra["link_id"], "verify", {"creatorId": creator_id})
         ledger_append(conn, f"admin:{admin_user.get('admin_id', 'jwt')}",
                       "CREATOR_VERIFIED", creator_id,
                       {"billedBrands": [u["brand_id"] for u in usage]})

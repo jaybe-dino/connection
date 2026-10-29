@@ -63,7 +63,11 @@ def _terms_out(t: dict, extra: dict | None = None) -> dict:
            "sampleTracking": t["sample_tracking"],
            "contentUrl": t["content_url"],
            "sparkCode": t["spark_code"],
-           "affiliateLink": t["affiliate_link"]}
+           "affiliateLink": t["affiliate_link"],
+           "shipping": t.get("shipping"),
+           "revisionNote": t.get("revision_note") or "",
+           "revisionRequestedAt": (t["revision_requested_at"].isoformat()
+                                   if t.get("revision_requested_at") else None)}
     if extra:
         out.update(extra)
     return out
@@ -78,7 +82,7 @@ def brand_campaigns(brand: str,
     with connect() as conn:
         rows = conn.execute(
             "SELECT c.campaign_id, c.name, c.product, c.status,"
-            " c.affiliate_pct,"
+            " c.affiliate_pct, c.lifecycle, c.countries, c.deadline,"
             " (SELECT count(*) FROM campaign_applications a"
             "   WHERE a.campaign_id=c.campaign_id) AS applicants,"
             " (SELECT count(*) FROM campaign_terms t"
@@ -88,6 +92,8 @@ def brand_campaigns(brand: str,
             " ORDER BY c.campaign_id", (brand,)).fetchall()
     return [{"campaignId": r["campaign_id"], "name": r["name"],
              "product": r["product"], "status": r["status"],
+             "lifecycle": r["lifecycle"], "countries": list(r["countries"] or []),
+             "deadline": r["deadline"].isoformat() if r["deadline"] else None,
              "affiliatePct": (float(r["affiliate_pct"])
                               if r["affiliate_pct"] is not None else None),
              "applicants": r["applicants"], "selected": r["selected"]}
@@ -104,7 +110,9 @@ def applicants(brand: str, campaign_id: str,
             "SELECT a.creator_id, a.status, a.applied_at, c.handle,"
             " c.platform, c.verified, t.state AS terms_state,"
             " t.commission_pct, t.agreed_commission_pct, t.tiktok_handle,"
-            " t.sample_tracking, t.content_url, t.spark_code, t.affiliate_link"
+            " t.sample_tracking, t.content_url, t.spark_code,"
+            " t.affiliate_link, t.shipping, t.revision_note,"
+            " t.revision_requested_at"
             " FROM campaign_applications a"
             " JOIN creators c USING (creator_id)"
             " LEFT JOIN campaign_terms t"
@@ -114,7 +122,7 @@ def applicants(brand: str, campaign_id: str,
     return [{"creatorId": r["creator_id"], "handle": r["handle"],
              "platform": r["platform"], "verified": r["verified"],
              "appliedAt": r["applied_at"].isoformat(),
-             "termsState": r["terms_state"],
+             "status": r["status"], "termsState": r["terms_state"],
              "commissionPct": (float(r["commission_pct"])
                                if r["commission_pct"] is not None else None),
              "agreedCommissionPct": (float(r["agreed_commission_pct"])
@@ -124,7 +132,9 @@ def applicants(brand: str, campaign_id: str,
              "sampleTracking": r["sample_tracking"] or "",
              "contentUrl": r["content_url"] or "",
              "sparkCode": r["spark_code"] or "",
-             "affiliateLink": r["affiliate_link"] or ""} for r in rows]
+             "affiliateLink": r["affiliate_link"] or "",
+             "shipping": r["shipping"],
+             "revisionNote": r["revision_note"] or ""} for r in rows]
 
 
 class SelectIn(BaseModel):
@@ -254,6 +264,124 @@ def issue_affiliate_link(brand: str, campaign_id: str, creator_id: str,
     return _terms_out(t)
 
 
+class ShippingIn(BaseModel):
+    """공백만 입력한 값이 길이 검사를 통과해 빈 값으로 저장되지 않도록
+    strip 후 길이·형식을 검증한다(검수 반영)."""
+    recipient: str = Field(max_length=80)
+    country: str = Field(max_length=10)
+    address: str = Field(max_length=300)
+    phone: str = Field(max_length=40)
+
+    @field_validator('recipient', 'country', 'address', 'phone', mode='before')
+    @classmethod
+    def _strip(cls, v):
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator('recipient')
+    @classmethod
+    def _recipient(cls, v):
+        if len(v) < 1:
+            raise ValueError('수령인을 입력해 주세요')
+        return v
+
+    @field_validator('country')
+    @classmethod
+    def _country(cls, v):
+        import re as _re
+        if not _re.fullmatch(r'[A-Za-z]{2}', v):
+            raise ValueError('수령 국가는 영문 2자리 코드입니다 (예: KR)')
+        return v.upper()
+
+    @field_validator('address')
+    @classmethod
+    def _address(cls, v):
+        if len(v) < 4:
+            raise ValueError('배송 주소를 4자 이상 입력해 주세요')
+        return v
+
+    @field_validator('phone')
+    @classmethod
+    def _phone(cls, v):
+        if len(v) < 4:
+            raise ValueError('연락처를 4자 이상 입력해 주세요')
+        return v
+
+
+@router.post("/me/campaign-offers/{campaign_id}/shipping")
+def submit_shipping(campaign_id: str, body: ShippingIn,
+                    authorization: str = Header(default="")) -> dict:
+    """샘플 수령 정보 — 협업 당사자(크리에이터 본인 ↔ 해당 브랜드)만
+    저장·조회한다. 감사 원장에는 주소·연락처를 남기지 않는다."""
+    import json as _json
+    with connect() as conn:
+        cid = _creator(conn, authorization)
+        t = _terms(conn, campaign_id, cid)
+        if t["state"] not in ("selected", "terms_agreed"):
+            raise HTTPException(409, "샘플 발송 전(선정~합의)에만 수령 정보를"
+                                     f" 등록할 수 있어요 (현재 {t['state']})")
+        t = conn.execute(
+            "UPDATE campaign_terms SET shipping=%s::jsonb"
+            " WHERE campaign_id=%s AND creator_id=%s RETURNING *",
+            (_json.dumps({"recipient": body.recipient.strip(),
+                          "country": body.country.strip().upper(),
+                          "address": body.address.strip(),
+                          "phone": body.phone.strip()}),
+             campaign_id, cid)).fetchone()
+        ledger_append(conn, f"creator:{cid}", "SHIPPING_INFO_SUBMITTED",
+                      campaign_id, {"country": body.country.strip().upper()})
+    return _terms_out(t)
+
+
+class RevisionIn(BaseModel):
+    note: str = Field(max_length=500)
+
+    @field_validator('note', mode='before')
+    @classmethod
+    def _strip_note(cls, v):
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator('note')
+    @classmethod
+    def _note(cls, v):
+        if len(v) < 4:
+            raise ValueError('요청 내용을 4자 이상 적어 주세요')
+        return v
+
+
+@router.post("/brands/{brand}/campaigns/{campaign_id}/terms/{creator_id}/request-revision")
+def request_revision(brand: str, campaign_id: str, creator_id: str,
+                     body: RevisionIn,
+                     authorization: str = Header(default="")) -> dict:
+    """브랜드 수정 요청 — 제출된 콘텐츠에 피드백을 남기고 재제출을 받는다."""
+    _brand_guard(brand, authorization)
+    with connect() as conn:
+        _campaign(conn, brand, campaign_id)
+        t = _terms(conn, campaign_id, creator_id)
+        if t["state"] != "content_submitted":
+            raise HTTPException(409, "제출된 콘텐츠에만 수정을 요청할 수"
+                                     f" 있어요 (현재 {t['state']})")
+        t = conn.execute(
+            "UPDATE campaign_terms SET state='revision_requested',"
+            " revision_note=%s, revision_requested_at=now()"
+            " WHERE campaign_id=%s AND creator_id=%s RETURNING *",
+            (body.note.strip(), campaign_id, creator_id)).fetchone()
+        camp = conn.execute("SELECT name FROM campaigns WHERE campaign_id=%s",
+                            (campaign_id,)).fetchone()
+        # 해당 크리에이터에게만 알림(배지+카드, 강제 이동 없음)
+        import json as _json
+        conn.execute(
+            "INSERT INTO notifications (user_id, type, title, body, target)"
+            " SELECT u.user_id::text, 'campaign', %s, %s, %s::jsonb"
+            " FROM users u WHERE u.creator_id=%s",
+            (f"수정 요청: {(camp or {}).get('name') or campaign_id}",
+             body.note.strip()[:200],
+             _json.dumps({"brandId": brand, "campaignId": campaign_id}),
+             creator_id))
+        ledger_append(conn, f"brand:{brand}", "CAMPAIGN_REVISION_REQUESTED",
+                      campaign_id, {"creator": creator_id})
+    return _terms_out(t)
+
+
 @router.post("/brands/{brand}/campaigns/{campaign_id}/terms/{creator_id}/complete")
 def complete_terms(brand: str, campaign_id: str, creator_id: str,
                    authorization: str = Header(default="")) -> dict:
@@ -270,6 +398,8 @@ def complete_terms(brand: str, campaign_id: str, creator_id: str,
         conn.execute(
             "UPDATE campaign_applications SET status='passed'"
             " WHERE campaign_id=%s AND creator_id=%s", (campaign_id, creator_id))
+        from .routes_service import award_xp
+        award_xp(conn, creator_id, brand, "completed", campaign_id)
         ledger_append(conn, f"brand:{brand}", "CAMPAIGN_TERMS_COMPLETED",
                       campaign_id, {"creator": creator_id})
     return _terms_out(t)
@@ -283,27 +413,57 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
     with connect() as conn:
         cid = _creator(conn, authorization)
         rows = conn.execute(
-            "SELECT c.campaign_id, c.brand_id, c.name, c.product,"
+            "SELECT c.campaign_id, c.brand_id, c.name, c.product, c.usp,"
             " c.reward_type, c.affiliate_pct, c.deadline, c.status,"
-            " b.name AS brand_name, b.logo_url,"
-            " a.status AS my_status, t.state AS terms_state"
+            " c.countries, b.name AS brand_name, b.logo_url,"
+            " a.status AS my_status, t.state AS terms_state,"
+            # 캠페인 제품 이미지 — 반드시 같은 브랜드의 제품만 연결(타 브랜드
+            # 이미지 금지). 초대 소개 이미지(최신 운영 입력)를 사용한다.
+            " pip.image_url AS product_image"
             " FROM campaigns c JOIN brands b USING (brand_id)"
             " JOIN memberships m ON m.brand_id=c.brand_id AND m.creator_id=%s"
+            " LEFT JOIN brand_products bp ON bp.product_id=c.product_id"
+            "   AND bp.brand_id=c.brand_id"
+            " LEFT JOIN product_invitation_profiles pip"
+            "   ON pip.product_id=bp.product_id"
             " LEFT JOIN campaign_applications a"
             "   ON a.campaign_id=c.campaign_id AND a.creator_id=%s"
             " LEFT JOIN campaign_terms t"
             "   ON t.campaign_id=c.campaign_id AND t.creator_id=%s"
-            " WHERE c.status='open' ORDER BY c.campaign_id",
+            " WHERE c.status='open' AND c.lifecycle='published'"
+            " ORDER BY c.campaign_id",
             (cid, cid, cid)).fetchall()
-    return [{"campaignId": r["campaign_id"], "brandId": r["brand_id"],
+        prof = conn.execute(
+            "SELECT country, ship_countries FROM creator_profiles"
+            " WHERE creator_id=%s", (cid,)).fetchone()
+    my_countries = set()
+    if prof:
+        if prof["country"]:
+            my_countries.add(prof["country"])
+        my_countries.update(prof["ship_countries"] or [])
+    out = []
+    for r in rows:
+        countries = r["countries"] or []
+        eligible = not countries or bool(my_countries & set(countries))
+        out.append(
+            {"campaignId": r["campaign_id"], "brandId": r["brand_id"],
              "brandName": r["brand_name"], "logoUrl": r["logo_url"],
+             "imageUrl": (r["product_image"]
+                          if (r["product_image"] or "").startswith("https://")
+                          else None),
              "name": r["name"], "product": r["product"],
-             "rewardType": r["reward_type"],
+             "usp": r["usp"] or "", "rewardType": r["reward_type"],
              "affiliatePct": (float(r["affiliate_pct"])
                               if r["affiliate_pct"] is not None else None),
              "deadline": r["deadline"].isoformat() if r["deadline"] else None,
              "myStatus": r["my_status"] or "none",
-             "termsState": r["terms_state"]} for r in rows]
+             "termsState": r["terms_state"],
+             "countries": list(countries), "eligible": eligible,
+             "ineligibleReason": (None if eligible else
+                                  "이 캠페인은 " + ", ".join(countries)
+                                  + " 지역 대상입니다 — 프로필의 국가/배송 가능"
+                                  " 국가가 조건과 맞지 않습니다")})
+    return out
 
 
 @router.get("/me/campaign-offers")
@@ -311,14 +471,26 @@ def my_offers(authorization: str = Header(default="")) -> list[dict]:
     with connect() as conn:
         cid = _creator(conn, authorization)
         rows = conn.execute(
-            "SELECT t.*, c.name AS campaign_name, c.brand_id,"
-            " b.name AS brand_name FROM campaign_terms t"
+            "SELECT t.*, c.name AS campaign_name, c.brand_id, c.product,"
+            " b.name AS brand_name, b.logo_url,"
+            " pip.image_url AS product_image"
+            " FROM campaign_terms t"
             " JOIN campaigns c USING (campaign_id)"
             " JOIN brands b ON b.brand_id=c.brand_id"
+            " LEFT JOIN brand_products bp ON bp.product_id=c.product_id"
+            "   AND bp.brand_id=c.brand_id"
+            " LEFT JOIN product_invitation_profiles pip"
+            "   ON pip.product_id=bp.product_id"
             " WHERE t.creator_id=%s ORDER BY t.selected_at", (cid,)).fetchall()
     return [_terms_out(r, {"campaignName": r["campaign_name"],
                            "brandId": r["brand_id"],
-                           "brandName": r["brand_name"]}) for r in rows]
+                           "brandName": r["brand_name"],
+                           "product": r["product"],
+                           "logoUrl": r["logo_url"],
+                           "imageUrl": (r["product_image"]
+                                        if (r["product_image"] or "")
+                                        .startswith("https://") else None)})
+            for r in rows]
 
 
 class AgreeIn(BaseModel):
@@ -352,6 +524,11 @@ def agree_offer(campaign_id: str, body: AgreeIn,
             " agreed_at=now()"
             " WHERE campaign_id=%s AND creator_id=%s RETURNING *",
             (handle, campaign_id, cid)).fetchone()
+        from .routes_service import award_xp
+        _b = conn.execute("SELECT brand_id FROM campaigns WHERE"
+                          " campaign_id=%s", (campaign_id,)).fetchone()
+        if _b:
+            award_xp(conn, cid, _b["brand_id"], "agreement", campaign_id)
         ledger_append(conn, f"creator:{cid}", "CAMPAIGN_TERMS_AGREED",
                       campaign_id,
                       {"commissionPct": float(t["agreed_commission_pct"])})
@@ -375,7 +552,7 @@ def submit_spark_code(campaign_id: str, body: SparkIn,
         cid = _creator(conn, authorization)
         t = _terms(conn, campaign_id, cid)
         if t["state"] not in ("terms_agreed", "sample_shipped",
-                              "content_submitted"):
+                              "content_submitted", "revision_requested"):
             raise HTTPException(409, f"합의 후 제출 가능 (현재 {t['state']})")
         t = conn.execute(
             "UPDATE campaign_terms SET spark_code=%s"
@@ -399,16 +576,27 @@ def submit_content(campaign_id: str, body: ContentIn,
     with connect() as conn:
         cid = _creator(conn, authorization)
         t = _terms(conn, campaign_id, cid)
-        if t["state"] not in ("terms_agreed", "sample_shipped"):
+        if t["state"] not in ("terms_agreed", "sample_shipped",
+                              "revision_requested", "content_submitted"):
+            # 완료(completed) 후에는 기록 보존을 위해 변경 금지
             raise HTTPException(409, f"합의/샘플 수령 후 제출 가능 (현재 {t['state']})")
+        edited = t["state"] == "content_submitted"   # 검토 중 링크 수정
         t = conn.execute(
             "UPDATE campaign_terms SET state='content_submitted',"
-            " content_url=%s, submitted_at=now()"
+            " content_url=%s, submitted_at=now(),"
+            " revision_note='', revision_requested_at=NULL"
             " WHERE campaign_id=%s AND creator_id=%s RETURNING *",
             (body.content_url, campaign_id, cid)).fetchone()
         conn.execute(
             "UPDATE campaign_applications SET status='submitted'"
             " WHERE campaign_id=%s AND creator_id=%s", (campaign_id, cid))
+        from .routes_service import award_xp
+        _b = conn.execute("SELECT brand_id FROM campaigns WHERE"
+                          " campaign_id=%s", (campaign_id,)).fetchone()
+        if _b:
+            award_xp(conn, cid, _b["brand_id"], "content_submitted",
+                     campaign_id)
         ledger_append(conn, f"creator:{cid}", "CAMPAIGN_CONTENT_SUBMITTED",
-                      campaign_id, {"url": body.content_url})
+                      campaign_id, {"url": body.content_url,
+                                    "edited": edited})
     return _terms_out(t)

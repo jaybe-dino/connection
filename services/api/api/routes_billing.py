@@ -17,7 +17,7 @@ def billing_summary(brand_id: str, authorization: str = Header(default=''),
         raise HTTPException(401, '2단계 인증을 완료하세요')
     require_brand(brand_id, authorization, x_admin_key)
     with connect() as conn:
-        brand = conn.execute('SELECT is_demo FROM brands WHERE brand_id=%s',
+        brand = conn.execute('SELECT is_demo,is_internal FROM brands WHERE brand_id=%s',
                              (brand_id,)).fetchone()
         if not brand:
             raise HTTPException(404, '브랜드를 찾을 수 없습니다')
@@ -25,6 +25,8 @@ def billing_summary(brand_id: str, authorization: str = Header(default=''),
             'SELECT count(*) AS quantity, COALESCE(sum(unit_price),0) AS amount '
             'FROM signup_usage WHERE brand_id=%s', (brand_id,)).fetchone()
         policy = conn.execute('SELECT effective_at, unit_price FROM signup_billing_policy').fetchone()
+    if brand['is_internal']:
+        return {'model':'internal','unitPrice':0,'fixedFee':0,'quantity':totals['quantity'],'usageAmount':totals['amount'],'currency':'KRW','demo':False,'internal':True,'collectionEnabled':False,'collection':'none','message':'디노 공용 모집 공간 · 고객 가입 과금 제외'}
     return {'model': 'per_signup', 'unitPrice': policy['unit_price'], 'fixedFee': 0,
             'quantity': totals['quantity'], 'usageAmount': totals['amount'],
             'currency': 'KRW', 'demo': brand['is_demo'],

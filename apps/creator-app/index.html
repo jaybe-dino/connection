@@ -1,30 +1,33 @@
 <!doctype html>
 <html lang="ko">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#faf8f4" />
+    <meta charset="utf-8" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="theme-color" content="#302037" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/demo.css?v=e3498f40" />
-    <link rel="stylesheet" href="/product.css?v=dc70343c" /><link rel="stylesheet" href="/live-theme.css?v=24271834" />
-    <link rel="stylesheet" href="/mobile.css?v=58dda4e6" />
-    <title>theprlist</title>
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="theprlist" />
+    <!-- slack-v3 승인 디자인 원본(docs/ui-reference/slack-v3) 자산 — 바이트 동일 복사 -->
+    <link rel="stylesheet" href="/slack/editorial-app.css?v=7973e081" />
+    <link rel="stylesheet" href="/slack/slack-structure.css?v=df444b1e" />
+    <link rel="stylesheet" href="/slack/journey.css?v=7b5df616" />
+    <link rel="stylesheet" href="/slack/live.css?v=20261021a" />
+    <title>theprlist · Channel workspace</title>
   </head>
   <body>
-    <div class="svcbar">
-      <span class="bm">theprlist</span>
-      <div class="apps">
-        <button id="ac"></button><button id="ab"></button>
-        <button id="abj"></button><button id="ap"></button>
-      </div>
-      <span class="hint" id="hint"></span>
-    </div>
-    <div class="stage" id="stage"></div>
-    <div id="toastWrap"></div>
-    <script>window.__SURFACE = "creator";</script>
-    <script src="/engine.js?v=db3ee9df"></script>
-    <script src="/engine-live.js?v=06de8a45"></script>
+    <div id="root"></div>
+    <dialog id="modal" aria-labelledby="modalTitle">
+      <button class="modal-close" onclick="closeModal()" aria-label="닫기">×</button>
+      <div id="modalBody"></div>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script src="/slack/live-core.js?v=20261021a"></script>
+    <script src="/slack/editorial-app.js?v=20261023install"></script>
+    <script src="/slack/slack-structure.js?v=20261021a"></script>
+    <script src="/slack/journey.js?v=20261023install"></script>
     <script>
       if ("serviceWorker" in navigator && location.protocol === "https:")
         navigator.serviceWorker.register("/sw.js");

@@ -106,9 +106,115 @@ export interface Submission {
 }
 
 export const adminApi = {
+  batchMail:(id:string,q='',view='all',offset=0)=>req<any>('/admin/recruitment/mail/batches/'+encodeURIComponent(id)+'?'+new URLSearchParams({q,view,offset:String(offset)})),
+  batchMailRecipient:(id:string,rid:string,cursor:any={})=>req<any>('/admin/recruitment/mail/batches/'+encodeURIComponent(id)+'/recipients/'+encodeURIComponent(rid)+'?'+new URLSearchParams(cursor)),
+  crmMessage:(id:string,mid:number,account_id='')=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/message/'+mid+'?'+new URLSearchParams(account_id?{account_id}:{})),
+  crmList:(q='',status='',offset=0,account_id='',folder='replied')=>req<any>('/admin/recruitment/contacts?'+new URLSearchParams({q,status,offset:String(offset),...(account_id?{account_id}:{}),folder})),
+  mailboxMessageAuthentication:(aid:string,mid:number)=>req<any>('/admin/recruitment/mailboxes/'+encodeURIComponent(aid)+'/messages/'+mid+'/authentication'),
+  mailboxRead:(aid:string,mid:number)=>req<any>('/admin/recruitment/mailboxes/'+encodeURIComponent(aid)+'/messages/'+mid+'/read',{method:'POST'}),
+  mailboxAuthentication:(aid:string)=>req<any>('/admin/recruitment/mailboxes/'+encodeURIComponent(aid)+'/authentication'),
+  mailboxMessages:(aid:string,folder:string,q:string,offset=0)=>req<any>('/admin/recruitment/mailboxes/'+encodeURIComponent(aid)+'/messages?'+new URLSearchParams({folder,q,offset:String(offset)})),
+  crmMailboxes:()=>req<any>('/admin/recruitment/contacts/mailboxes'),
+  crmRead:(id:string,account_id:string,through_msg_id:number)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/read',{method:'POST',body:JSON.stringify({account_id,through_msg_id})}),
+  crmRefresh:()=>req<any>('/admin/recruitment/contacts/refresh-records',{method:'POST'}),
+  crmUnlinked:(account_id='',offset=0)=>req<any>('/admin/recruitment/contacts/unlinked?'+new URLSearchParams({...(account_id?{account_id}:{}),offset:String(offset)})),
+  crmUnlinkedThread:(id:string,account_id='')=>req<any>('/admin/recruitment/contacts/unlinked/'+encodeURIComponent(id)+'?'+new URLSearchParams(account_id?{account_id}:{})),
+  crmRegister:(id:string)=>req<any>('/admin/recruitment/contacts/register-thread',{method:'POST',body:JSON.stringify({thread_id:id,confirmed_creator:true})}),
+  crmDetail:(id:string,account_id='')=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'?'+new URLSearchParams(account_id?{account_id}:{})),
+  crmMessages:(id:string,cursor:any,account_id='')=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/messages?'+new URLSearchParams({...cursor,...(account_id?{account_id}:{})})),
+  crmSave:(id:string,body:unknown)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify(body)}),
+  crmNote:(id:string,body:unknown)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/notes',{method:'POST',body:JSON.stringify(body)}),
+  crmAIReply:(id:string,body:unknown)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/ai-reply',{method:'POST',body:JSON.stringify(body)}),
+  crmDraft:(id:string,body:unknown)=>req<any>('/admin/recruitment/contacts/'+encodeURIComponent(id)+'/drafts',{method:'POST',body:JSON.stringify(body)}),
+  crmSend:(id:string,mid:number)=>req<any>(`/admin/recruitment/contacts/${encodeURIComponent(id)}/drafts/${mid}/send`,{method:'POST',body:JSON.stringify({confirmed:true})}),
+  crmCancel:(id:string,mid:number)=>req<any>(`/admin/recruitment/contacts/${encodeURIComponent(id)}/drafts/${mid}/cancel`,{method:'POST'}),
+  crmSync:(account_id='')=>req<any>('/admin/recruitment/contacts/sync?'+new URLSearchParams(account_id?{account_id}:{}),{method:'POST'}),
+  recruitmentCohort:(id:string,body:unknown)=>req<any>(`/admin/recruitment/mappings/${encodeURIComponent(id)}/cohort`,{method:'POST',body:JSON.stringify(body)}),
+  recruitmentInbox:(label='')=>req<any>('/admin/recruitment/inbox?label='+encodeURIComponent(label)),
+  recruitmentTask:(id:string,body:unknown)=>req<any>('/admin/recruitment/inbox/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify(body)}),
+  recruitmentReplyDraft:(id:string,body:string)=>req<any>('/inbox/threads/'+encodeURIComponent(id)+'/reply',{method:'POST',body:JSON.stringify({body})}),
+  recruitmentSafety:()=>req<any>('/admin/recruitment/safety'),
+  recruitmentFeedback:(body:unknown)=>req<any>('/admin/recruitment/feedback',{method:'POST',body:JSON.stringify(body)}),
+  recruitmentMetrics:(start:string,end:string,brand='')=>req<any>('/admin/recruitment/metrics?start='+encodeURIComponent(start)+'&end='+encodeURIComponent(end)+'&brand='+encodeURIComponent(brand)),
+  recruitmentCost:(body:unknown)=>req<any>('/admin/recruitment/costs',{method:'POST',body:JSON.stringify(body)}),
+  recruitmentApplications: (brand:string) => req<any>('/recruitment-links/brands/'+encodeURIComponent(brand)+'/applications'),
   base: BASE,
   summary: () => req<Summary>("/admin/summary"),
+  recruitmentWorkspace: () => req<{workspace: {brandId:string;name:string;internal:boolean}|null}>("/admin/recruitment/workspace"),
+  createRecruitmentWorkspace: () => req<{brandId:string;internal:boolean;created:boolean}>("/admin/recruitment/workspace", {method:"POST"}),
+  recruitmentOptions: () => req<any>("/admin/recruitment/options"),
+  repeatPlans: () => req<any>('/admin/recruitment/repeat-plans'),
+  saveRepeatPlan: (body:unknown,id?:string) => req<any>('/admin/recruitment/repeat-plans'+(id?'/'+encodeURIComponent(id):''),{method:id?'PUT':'POST',body:JSON.stringify(body)}),
+  archiveRepeatPlan: (id:string) => req<any>('/admin/recruitment/repeat-plans/'+encodeURIComponent(id)+'/archive',{method:'POST',body:'{}'}),
+  multiRecruitmentPreview: (body:unknown) => req<any>('/admin/recruitment/repeat-plans/multi/preview',{method:'POST',body:JSON.stringify(body)}),
+  multiRecruitmentDrafts: (body:unknown) => req<any>('/admin/recruitment/repeat-plans/multi/drafts',{method:'POST',body:JSON.stringify(body)}),
+  setupBrands: () => req<any>('/admin/recruitment/setup/brands'),
+  setupBrand: (body:unknown) => req<any>('/admin/recruitment/setup/brands',{method:'POST',body:JSON.stringify(body)}),
+  setupBrandActivation: (id:string) => req<any>(`/admin/recruitment/setup/brands/${encodeURIComponent(id)}/activation-link`,{method:'POST',body:'{}'}),
+  poolImportJobs: () => req<any>('/admin/recruitment/setup/imports'),
+  startPoolImport: (body:unknown) => req<any>('/admin/recruitment/setup/imports',{method:'POST',body:JSON.stringify(body)}),
+  poolImportChunk: (id:string,index:number,rows:unknown[]) => req<any>(`/admin/recruitment/setup/imports/${id}/chunks/${index}`,{method:'POST',body:JSON.stringify({rows})}),
+  registerRecruitmentProduct: (body: unknown) => req<any>("/admin/recruitment/catalog",{method:"POST",body:JSON.stringify(body)}),
+  connectRecruitmentGmail: () => req<{authUrl?:string}>("/brands/dino-recruitment/gmail/connect",{method:"POST",body:"{}"}),
+  recruitmentMappings: () => req<any>("/admin/recruitment/mappings"),
+  saveRecruitmentMapping: (body: unknown, id?: string) => req<any>("/admin/recruitment/mappings"+(id?"/"+encodeURIComponent(id):""), {method:id?"PUT":"POST",body:JSON.stringify(body)}),
+  recruitmentBatches: (id: string) => req<any>(`/admin/recruitment/mappings/${encodeURIComponent(id)}/batches`),
+  previewRecruitment: (id: string, body: unknown) => req<any>(`/admin/recruitment/mappings/${encodeURIComponent(id)}/preview`,{method:"POST",body:JSON.stringify(body)}),
+  draftRecruitment: (id: string, body: unknown) => req<any>(`/admin/recruitment/mappings/${encodeURIComponent(id)}/drafts`,{method:"POST",body:JSON.stringify(body)}),
+  previewDistributedRecruitment: (id:string,body:unknown) => req<any>(`/admin/recruitment/mappings/${encodeURIComponent(id)}/distributed/preview`,{method:"POST",body:JSON.stringify(body)}),
+  draftDistributedRecruitment: (id:string,body:unknown) => req<any>(`/admin/recruitment/mappings/${encodeURIComponent(id)}/distributed/drafts`,{method:"POST",body:JSON.stringify(body)}),
+  sendRecruitmentBatch: (id:string) => req<any>(`/brands/dino-recruitment/outreach/${encodeURIComponent(id)}/send`,{method:"POST"}),
+  cancelRecruitmentBatch: (id: string) => req<any>(`/brands/dino-recruitment/outreach/${encodeURIComponent(id)}/cancel`,{method:"POST"}),
+  pauseRecruitmentBatch: (id: string) => req<any>(`/brands/dino-recruitment/outreach/${encodeURIComponent(id)}/control`,{method:"POST",body:JSON.stringify({paused:true})}),
+  reviewRecruitmentBatch: (id: string) => req<any>(`/brands/dino-recruitment/outreach/${encodeURIComponent(id)}/review`),
+  invitationProduct: (brand:string,id:string) => req<any>(`/brands/${encodeURIComponent(brand)}/products/${encodeURIComponent(id)}/invitation`),
+  saveInvitationProduct: (brand:string,id:string,body:unknown) => req<any>(`/admin/recruitment/setup/brands/${encodeURIComponent(brand)}/products/${encodeURIComponent(id)}/invitation`,{method:"PUT",body:JSON.stringify(body)}),
+  testMailPreview: (body: unknown) => req<any>("/admin/recruitment/test-mail/preview",{method:"POST",body:JSON.stringify(body)}),
+  testMailSend: (body: unknown) => req<any>("/admin/recruitment/test-mail/send",{method:"POST",body:JSON.stringify(body)}),
+  testMailHistory: () => req<any>("/admin/recruitment/test-mail/history"),
+  communitySetup: () => req<any>("/admin/recruitment/setup/communities"),
+  saveCommunity: (id:string,name:string) => req<any>(`/admin/recruitment/setup/brands/${encodeURIComponent(id)}/community`,{method:"PUT",body:JSON.stringify({name})}),
   gmailStatus: () => req<any>("/admin/gmail/status"),
+  brands: () => req<AdminBrand[]>("/admin/brands"),
+  suspendBrand: (id: string, reason: string) =>
+    req<{ ok: boolean; suspended: boolean; already?: boolean }>(
+      `/admin/brands/${encodeURIComponent(id)}/suspend`,
+      { method: "POST", body: JSON.stringify({ reason }) }),
+  resumeBrand: (id: string) =>
+    req<{ ok: boolean; suspended: boolean }>(
+      `/admin/brands/${encodeURIComponent(id)}/resume`, { method: "POST" }),
+  audit: (actor = "", event = "", limit = 100) =>
+    req<AuditRow[]>(`/admin/audit?actor=${encodeURIComponent(actor)}&event=${encodeURIComponent(event)}&limit=${limit}`),
+  registerBrand: (body: { name: string; slug: string; category: string;
+    countries: string[]; manager_email: string }) =>
+    req<{ brandId: string; managerUserId: string }>("/admin/brands",
+      { method: "POST", body: JSON.stringify(body) }),
+  brandAccounts: (brand: string) =>
+    req<BrandAccount[]>(`/admin/brands/${encodeURIComponent(brand)}/accounts`),
+  addBrandAccount: (brand: string, email: string, role: string) =>
+    req<BrandAccount>(`/admin/brands/${encodeURIComponent(brand)}/accounts`,
+      { method: "POST", body: JSON.stringify({ email, role }) }),
+  accountSetupLink: (brand: string, userId: string) =>
+    req<{ link: string; ttlHours: number; note: string }>(
+      `/admin/brands/${encodeURIComponent(brand)}/accounts/${userId}/setup-link`,
+      { method: "POST" }),
+  accountResetLink: (brand: string, userId: string) =>
+    req<{ link: string; ttlMinutes: number; note: string }>(
+      `/admin/brands/${encodeURIComponent(brand)}/accounts/${userId}/reset-link`,
+      { method: "POST" }),
+  accountState: (brand: string, userId: string, active: boolean) =>
+    req<{ ok: boolean; state: string }>(
+      `/admin/brands/${encodeURIComponent(brand)}/accounts/${userId}/state`,
+      { method: "POST", body: JSON.stringify({ active }) }),
+  accountRole: (brand: string, userId: string, role: string) =>
+    req<{ ok: boolean; role: string }>(
+      `/admin/brands/${encodeURIComponent(brand)}/accounts/${userId}/role`,
+      { method: "POST", body: JSON.stringify({ role }) }),
+  accountRevokeSessions: (brand: string, userId: string) =>
+    req<{ ok: boolean }>(
+      `/admin/brands/${encodeURIComponent(brand)}/accounts/${userId}/revoke-sessions`,
+      { method: "POST" }),
+  prelaunchApplications: () => req<{id:string;brand:string;email:string;at:string}[]>('/admin/prelaunch-applications'),
   applications: (status = "pending") =>
     req<Application[]>(`/admin/applications?status=${status}`),
   approveApplication: (id: string) =>
@@ -144,3 +250,17 @@ export const adminApi = {
       body: JSON.stringify({ result, reviewer: ADMIN_ID, note }),
     }),
 };
+
+export interface AdminBrand {
+  brandId: string; name: string; demo: boolean;
+  members: number; team: number; suspendedAt: string | null;
+}
+export interface AuditRow {
+  actor: string; event: string; subject: string;
+  payload: Record<string, unknown>; at: string;
+}
+
+export interface BrandAccount {
+  userId: string; email: string; state: string; role: string;
+  passwordSet: boolean; lastLoginAt: string | null; createdAt: string;
+}

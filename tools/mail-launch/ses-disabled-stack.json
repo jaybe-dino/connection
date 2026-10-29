@@ -1,0 +1,291 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Theprlist mail preparation. Sending disabled. No email identities, IAM credentials, DNS changes or send worker.",
+  "Parameters": {
+    "Domain": {
+      "Type": "String",
+      "AllowedPattern": "(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}",
+      "Description": "Owned domain only. Reuse existing SES identity instead of deploying a duplicate."
+    }
+  },
+  "Resources": {
+    "Configuration": {
+      "Type": "AWS::SES::ConfigurationSet",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "${AWS::StackName}-campaign"
+        },
+        "SendingOptions": {
+          "SendingEnabled": false
+        },
+        "DeliveryOptions": {
+          "TlsPolicy": "REQUIRE"
+        },
+        "ReputationOptions": {
+          "ReputationMetricsEnabled": true
+        },
+        "SuppressionOptions": {
+          "SuppressedReasons": [
+            "BOUNCE",
+            "COMPLAINT"
+          ]
+        }
+      }
+    },
+    "Identity": {
+      "Type": "AWS::SES::EmailIdentity",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "EmailIdentity": {
+          "Ref": "Domain"
+        },
+        "DkimAttributes": {
+          "SigningEnabled": true
+        },
+        "DkimSigningAttributes": {
+          "NextSigningKeyLength": "RSA_2048_BIT"
+        },
+        "ConfigurationSetAttributes": {
+          "ConfigurationSetName": {
+            "Ref": "Configuration"
+          }
+        },
+        "MailFromAttributes": {
+          "MailFromDomain": {
+            "Fn::Sub": "bounce.${Domain}"
+          },
+          "BehaviorOnMxFailure": "REJECT_MESSAGE"
+        },
+        "FeedbackAttributes": {
+          "EmailForwardingEnabled": true
+        }
+      }
+    },
+    "FeedbackTopic": {
+      "Type": "AWS::SNS::Topic",
+      "DeletionPolicy": "Retain",
+      "Properties": {}
+    },
+    "FeedbackTopicPolicy": {
+      "Type": "AWS::SNS::TopicPolicy",
+      "Properties": {
+        "Topics": [
+          {
+            "Ref": "FeedbackTopic"
+          }
+        ],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ses.amazonaws.com"
+              },
+              "Action": "sns:Publish",
+              "Resource": {
+                "Ref": "FeedbackTopic"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "AWS:SourceAccount": {
+                    "Ref": "AWS::AccountId"
+                  }
+                },
+                "ArnLike": {
+                  "AWS:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${Configuration}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "DeadLetter": {
+      "Type": "AWS::SQS::Queue",
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "SqsManagedSseEnabled": true,
+        "MessageRetentionPeriod": 1209600
+      }
+    },
+    "FeedbackQueue": {
+      "Type": "AWS::SQS::Queue",
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "SqsManagedSseEnabled": true,
+        "MessageRetentionPeriod": 1209600,
+        "VisibilityTimeout": 120,
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "DeadLetter",
+              "Arn"
+            ]
+          },
+          "maxReceiveCount": 5
+        }
+      }
+    },
+    "FeedbackQueuePolicy": {
+      "Type": "AWS::SQS::QueuePolicy",
+      "Properties": {
+        "Queues": [
+          {
+            "Ref": "FeedbackQueue"
+          }
+        ],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "sns.amazonaws.com"
+              },
+              "Action": "sqs:SendMessage",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "FeedbackQueue",
+                  "Arn"
+                ]
+              },
+              "Condition": {
+                "ArnEquals": {
+                  "aws:SourceArn": {
+                    "Ref": "FeedbackTopic"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "FeedbackSubscription": {
+      "Type": "AWS::SNS::Subscription",
+      "DependsOn": "FeedbackQueuePolicy",
+      "Properties": {
+        "TopicArn": {
+          "Ref": "FeedbackTopic"
+        },
+        "Protocol": "sqs",
+        "Endpoint": {
+          "Fn::GetAtt": [
+            "FeedbackQueue",
+            "Arn"
+          ]
+        },
+        "RawMessageDelivery": true
+      }
+    },
+    "Events": {
+      "Type": "AWS::SES::ConfigurationSetEventDestination",
+      "DependsOn": [
+        "FeedbackTopicPolicy",
+        "FeedbackSubscription"
+      ],
+      "Properties": {
+        "ConfigurationSetName": {
+          "Ref": "Configuration"
+        },
+        "EventDestination": {
+          "Name": "operations-events",
+          "Enabled": true,
+          "MatchingEventTypes": [
+            "SEND",
+            "DELIVERY",
+            "BOUNCE",
+            "COMPLAINT",
+            "REJECT",
+            "RENDERING_FAILURE",
+            "DELIVERY_DELAY"
+          ],
+          "SnsDestination": {
+            "TopicARN": {
+              "Ref": "FeedbackTopic"
+            }
+          }
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "ConfigurationName": {
+      "Value": {
+        "Ref": "Configuration"
+      }
+    },
+    "FeedbackQueueURL": {
+      "Value": {
+        "Ref": "FeedbackQueue"
+      }
+    },
+    "MailFromMXHost": {
+      "Value": {
+        "Fn::Sub": "bounce.${Domain}"
+      }
+    },
+    "MailFromMXValue": {
+      "Value": {
+        "Fn::Sub": "10 feedback-smtp.${AWS::Region}.amazonses.com"
+      }
+    },
+    "MailFromSPF": {
+      "Value": "v=spf1 include:amazonses.com ~all"
+    },
+    "DKIM1Name": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Identity",
+          "DkimDNSTokenName1"
+        ]
+      }
+    },
+    "DKIM1Value": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Identity",
+          "DkimDNSTokenValue1"
+        ]
+      }
+    },
+    "DKIM2Name": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Identity",
+          "DkimDNSTokenName2"
+        ]
+      }
+    },
+    "DKIM2Value": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Identity",
+          "DkimDNSTokenValue2"
+        ]
+      }
+    },
+    "DKIM3Name": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Identity",
+          "DkimDNSTokenName3"
+        ]
+      }
+    },
+    "DKIM3Value": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Identity",
+          "DkimDNSTokenValue3"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "date": "2026-10-17",
+  "purpose": "Approved design reference only; sample data is not production data",
+  "files": {
+    "slack.html": "0024879ac9b9d45646c842cc7e3593f4af1b910a916bc8a4db46f0926cb1df2c",
+    "editorial-app.css": "7973e0815982c0a3ae5db6309911f2ed9541994c6ade8c09dc4c1080b08cacd4",
+    "editorial-app.js": "921f6e8ef464acf5ec88520542edcf89f4991d87aaf9642fe8f4b02879050f84",
+    "slack-structure.css": "df444b1e49666baff0bb2726cf7444f75a565b635d493e14fc2bb569a427d96a",
+    "slack-structure.js": "64aade4ed12baf818ef6e9483561726d53df96320788f798acf98bbffaa040c2",
+    "journey.css": "7b5df61663c85b06f895aa7df40ce4fd01ceb75944551e3ed25b55e7ec32e259",
+    "journey.js": "af8b7b119c73b5e939394061e099b13ff43c2a0672d9315ac684f75db3945ebb",
+    "assets/glowlab-editorial.png": "ccea94fb3258e08c21e3f51d2cca011b82f6a6028e58537750075d886a2d6650",
+    "assets/mellow-editorial.png": "14a733979784d1e4c0f7f1f4645d0330de0d595d8ed072cce44b2b8bb043f591"
+  }
+}

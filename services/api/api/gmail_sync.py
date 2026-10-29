@@ -52,6 +52,9 @@ def _import_account(conn, brand, account, token):
             sender=parseaddr(headers.get('from',''))[1].lower()
             if '@' not in sender:continue
             content=text_body(payload) or '(본문이 없거나 지원하지 않는 형식입니다. Gmail에서 확인하세요.)'
+            from .mail_safety import verified_dsn
+            verified_dsn(conn,account,message,content)
+            gmail.record_explicit_optout(conn,brand,sender,content)
             at=datetime.fromtimestamp(int(message['internalDate'])/1000,UTC)
             subject=headers.get('subject','').replace('\r',' ').replace('\n',' ')[:500]
             thread=conn.execute("INSERT INTO mail_threads(brand_id,creator_email,subject,ari_label,last_direction,last_message_at) VALUES(%s,%s,%s,%s,'in',%s) ON CONFLICT(brand_id,creator_email) DO UPDATE SET subject=CASE WHEN EXCLUDED.last_message_at>=mail_threads.last_message_at THEN EXCLUDED.subject ELSE mail_threads.subject END,ari_label=CASE WHEN EXCLUDED.last_message_at>=mail_threads.last_message_at THEN EXCLUDED.ari_label ELSE mail_threads.ari_label END,last_direction=CASE WHEN EXCLUDED.last_message_at>=mail_threads.last_message_at THEN 'in' ELSE mail_threads.last_direction END,last_message_at=GREATEST(mail_threads.last_message_at,EXCLUDED.last_message_at) RETURNING thread_id",(brand,sender,subject,gmail._ari_label(content),at)).fetchone()
@@ -60,7 +63,7 @@ def _import_account(conn, brand, account, token):
         return added,page.get('nextPageToken','')
 
 
-def sync(brand):
+def sync(brand, account_id=None, include_sent=False):
     """브랜드의 '읽기 동의(gmail.readonly)가 있는 모든 연결 계정'을 동기화.
 
     검수 반영: 발송 전용(gmail.send) 계정이 먼저 연결돼 있어도 그 계정을
@@ -71,7 +74,7 @@ def sync(brand):
     with gmail.connect() as conn:
         if not conn.execute('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0)) AS locked',('gmail-sync:'+brand,)).fetchone()['locked']:
             raise HTTPException(409,'이미 동기화 중입니다.')
-        accounts=conn.execute("SELECT * FROM gmail_accounts WHERE brand_id=%s AND state='connected' ORDER BY connected_at,account_id FOR UPDATE",(brand,)).fetchall()
+        accounts=conn.execute("SELECT * FROM gmail_accounts WHERE brand_id=%s AND state='connected'"+(" AND account_id=%s" if account_id else "")+" ORDER BY connected_at,account_id FOR UPDATE",(brand,account_id) if account_id else (brand,)).fetchall()
         if not accounts:raise HTTPException(409,'Google 이메일을 먼저 연결하세요.')
         readable=[a for a in accounts if gmail.READ_SCOPE in a['scopes'].split()]
         if not readable:raise HTTPException(409,'받은 메일 권한이 필요합니다. Google 계정을 다시 연결하세요.')
@@ -87,13 +90,27 @@ def sync(brand):
                 with conn.transaction():
                     added,more=_import_account(conn,brand,account,token)
                     conn.execute("UPDATE gmail_accounts SET sync_page_token=%s,synced_at=now(),sync_error='' WHERE account_id=%s",(more,account['account_id']))
-                total+=added;has_more=has_more or bool(more)
-                per.append({'email':account['email'],'imported':added,'error':''})
+                sent_added,sent_more,sent_error=0,'',''
+                if include_sent:
+                    try:
+                        from .gmail_sent_sync import import_sent
+                        with conn.transaction():
+                            sent_added,sent_more=import_sent(conn,brand,account,token)
+                            conn.execute('UPDATE gmail_accounts SET sent_sync_page_token=%s WHERE account_id=%s',(sent_more,account['account_id']))
+                    except Exception as e:sent_error='보낸 메일 가져오기 실패 ('+type(e).__name__+') — 받은 메일은 보존했습니다'
+                    conn.execute('UPDATE gmail_accounts SET sent_sync_error=%s WHERE account_id=%s',(sent_error,account['account_id']))
+                total+=added+sent_added;has_more=has_more or bool(more) or bool(sent_more)
+                result={'email':account['email'],'imported':added+sent_added,'error':''}
+                if include_sent:result.update(inboundImported=added,sentImported=sent_added,sentError=sent_error)
+                per.append(result)
             except Exception as e:
                 # 이 계정만 오류 기록 — 다른 읽기 계정은 계속 진행 (계정별 격리)
                 msg=e.detail if isinstance(e,HTTPException) else f'동기화 실패({type(e).__name__}) — 연결 상태를 확인하세요'
                 conn.execute("UPDATE gmail_accounts SET sync_error=%s WHERE account_id=%s",(msg,account['account_id']))
                 per.append({'email':account['email'],'imported':0,'error':msg})
+        if brand=='dino-recruitment':
+            from .recruitment_crm import register_known_threads
+            register_known_threads(conn)
     # 여기서부터는 connect 블록 밖 = 트랜잭션 커밋 완료 — 전 계정 실패라도
     # 계정별 sync_error 기록은 영속화된 뒤에 실패를 응답한다(검수 반영).
     if all(p['error'] for p in per):

@@ -1224,3 +1224,307 @@ Claude의 62f9c1d UI 가이드·개편을 인수한 뒤 직접 검수하여 다�
 검사 근거: 격리 API·청구 258개 통과(기존 5개 브랜드/크리에이터 여정 포함), UI·가입 48개 통과, 4개 앱 빌드 성공. 실제 브라우저로 새 가입 폼의 빈 필드 오류 → 수동 입력 신청 접수, 키보드 비밀번호 찾기/돌아가기/Enter 로그인, 제품 등록·프로필 저장·캠페인 개설·후보 조회, 크리에이터 매직링크 로그인·브랜드 합류·캠페인 지원·담당자 DM 게시·브랜드 수신을 확인했다. 모바일 랜딩 375, 콘솔·크리에이터 390, 관리자 375, 콘솔 대화 768 화면을 직접 확인했다. 외부 메일·실결제·실제 고객 가입은 수행하지 않았다.
 
 운영 계정: 비밀번호 재설정 메일의 실제 수신까지 확인했다. 새 비밀번호 입력과 로그인은 사용자 대기다. Google gmail.readonly는 사용자 승인 후 기존 세 범위를 유지하여 저장 완료 메시지를 확인했다. 이어진 Google Cloud 본인 인증은 사용자 대기다. 공개 OAuth 게시·검증 승인, 신규 브랜드 실메일 왕복은 완료되지 않았다.
+
+## 2026-10-17 — theprlist 실서비스 전환 1차 (claude/theprlist-service)
+
+기준 d3886a9 → c867f9a(서버 핵심) → f0a37a1(독립 검토 3건 수정) → 이번 커밋.
+
+- 서버: 044/045 마이그레이션(스레드·고정·읽음커서·creator_profiles·XP·팀·
+  lifecycle·정지·전환이벤트·legacy_creators·tiktok_open_id·알림 target),
+  routes_service 신규. 입장 게이트 = 프로필 온보딩 + TikTok 소유 인증
+  (connected+open_id, 신규만 — legacy 고정분은 재연결 안내로 통과),
+  /me/join·초대신청·커뮤니티 쓰기·캠페인 신청에 서버 강제. 정지 브랜드는
+  require_brand·커뮤니티·가입·모집 링크에서 일관 차단. XP는 서버 검증
+  이벤트 유니크 1회. 알림은 target(brandId/campaignId/cellId/msgId) 포함.
+- UI: 크리에이터 앱 Slack-v3 Aubergine 셸(탑바 #350D36 · rail #3F0E40 ·
+  사이드 #F9EDFF · active #1264A3 · 버튼 #007A5A, 모바일 4열 하단네비+
+  브랜드 스트립), 채널 미읽음 배지·스레드 패널·공지 고정 표시·채널 검색·
+  알림 패널(딥링크, 강제 이동 없음)·온보딩/TikTok 상태 4종·XP/미션/랭킹.
+  콘솔: 공지 채널 게시·고정/해제, 캠페인 초안→발행(알림)→수정→마감·반려,
+  팀(owner/manager) 화면, 홈 알림 카드. 어드민: 브랜드 정지/재개 + 감사
+  로그 화면(/admin/brands, /admin/audit).
+- 테스트: API pytest 230(코덱스 인수 3개 포함, fake provider OAuth 여정),
+  tests_billing 95(격리 스키마에 실제 DB 주입 — 정지 검사 실쿼리),
+  tests_ui 70, Playwright e2e 기존 7종 + 신규 creator-service.mjs 14
+  단언(데스크톱 1440/모바일 390 스크린샷 tests_e2e/shots/).
+- 미검증/blocker: TikTok provider 키(신규 가입 검수 외부 승인 대기),
+  Shop 자격 실연동, 실제 대량 발송, 아웃리치 최종 계약(초안만), 운영
+  도메인 연결·배포(소유자/Codex), 디자인 픽셀 대조(Codex).
+
+## 2026-10-17 (2차) — 3역할 공통 Slack-v3 워크스페이스 셸 + 최종 플럼 팔레트
+
+- 팔레트 정정: 초기 Slack 색(#350D36/#1264A3/#007A5A)을 journey.css
+  최종값으로 교체 — 탑 #302037 · rail #3A2843 · 사이드 #F3EFF6 ·
+  active #6B5478 · CTA #695177(hover #594365) · 링크 #795D90. 크리에이터
+  앱·브랜드 콘솔·어드민이 같은 토큰을 공유한다.
+- 브랜드 콘솔: 베이지 랜딩형 상단 가로 메뉴/홈 히어로를 제거하고
+  크리에이터와 같은 워크스페이스 셸로 이식 — 플럼 탑바(브랜드 칩·관리자
+  전환·계정) + 좌측 브랜드 로고 rail + 업무 메뉴 사이드바(홈/학습/제품·
+  캠페인/커뮤니티·DM/아웃리치·인박스/팀/청구) + 중앙 업무 영역. 모바일은
+  버거→접는 드로어 + 4열 고정 하단 네비. 기존 기능/API/권한·입력 보존
+  로직 전부 유지(index.html은 legacy-compat 유지, live-theme는 런타임
+  주입). 로그인 후 플로팅 authChip은 숨기고 탑바 아바타가 위임 클릭.
+- 어드민: 같은 토큰·내비 규칙의 전사 운영 구조 — 플럼 탑바(ADMIN · 전사
+  운영) + 플럼 rail, active #6B5478, CTA #695177 (apps/admin/src/plum.css).
+- 검증: tests_ui 70, e2e 9종 전부 PASS — 기존 7종 + creator-service(14)
+  + 신규 console-admin-shell(21: 팔레트 computed-style 검증, 전 업무
+  페이지 네비, 공지 게시→고정 조작, 모바일 드로어/하단 네비, 어드민
+  정지→재개→감사 로그 조회, PC 1440/모바일 390 캡처 tests_e2e/shots/).
+  운영 배포는 하지 않음.
+
+## 2026-10-17 (3차) — 실시간 갱신(폴링) : 대화 서비스 완성 요건
+
+- engine-live.js에 크리에이터/콘솔 공용 규칙의 폴러 추가.
+  크리에이터(5s 기본): 알림·미읽음·열린 채널/DM 메시지·열린 스레드.
+  콘솔(6s 기본): 알림·미읽음(사이드바 '커뮤니티·DM' 배지 + 대화 목록
+  '새 N')·열린 대화. 열람 중 수신분은 읽음 커서 자동 저장.
+- 안전 규칙: document.hidden(백그라운드)·로그아웃 시 중단, visibility
+  복귀 시 즉시 1회 갱신, busy 플래그로 interval/요청 중복 방지, 오류
+  지수 backoff(→최대 60s, 성공 시 복귀), 세션 교체·브랜드 전환·셀 전환
+  stale 응답 무시, 현재 브랜드/채널 강제 이동 없음.
+- softRender: 변경 감지 시에만 렌더하고 입력 중 초안·포커스·커서 위치·
+  각 스크롤 컨테이너 위치(채팅은 바닥 근처면 바닥 유지)를 보존. 모달
+  (dialog)은 body 소속이라 영향 없음. 주기적 전체 render 없음.
+- 검증: tests_ui 78(신규 live-poll 8: 로그아웃/백그라운드 중단, 단일
+  비행, backoff, stale 무시, 변경시에만 softRender, 읽음 커서),
+  Playwright 10종 전부 PASS — 신규 live-updates.mjs(11 단언)가 실브라우저
+  2세션으로 크리에이터↔크리에이터 메시지/스레드, 콘솔 열린 대화 수신,
+  공지→알림 배지 자동 증가를 "새로고침 없이" 확인하고 입력 중 초안·
+  포커스·스크롤 보존을 단언. 운영 배포는 소유자 검증 후.
+
+## 2026-10-17 (4차) — 모바일 터치·P1 폼 소실 수정·캠페인 여정 E2E·릴리즈 체크리스트
+
+- 모바일(≤760px): 헤더만 48px(PC 36px 밀도 유지), 알림·계정·버거 버튼
+  44×44 고정(flex-shrink:0 — `.crtop>button` 전역 수축금지가 검색까지
+  잡던 특이성 버그 수정), 검색/브랜드 칩만 min-width:0으로 남는 폭 사용,
+  grid item min-width:auto로 헤더가 내용폭(409px)으로 커지던 오버플로
+  수정(`.crapp>*{min-width:0}`). 신규 tests_e2e/mobile-touch.mjs 24단언:
+  375/390에서 버튼 실측 ≥44×44·화면 안, 긴 브랜드명 칩 공존, 가로 넘침
+  없음, 설정/드로어 실제 탭 진입, 플로팅 칩이 하단 네비를 가리지 않음.
+- P1 수정: campCreate가 busy=true;render() 뒤 DOM을 읽어 빈 name으로
+  422+입력 소실 → payload를 render 전에 캡처(crProfileSave 동일 수정).
+  폼 초안 범용 보존 추가 — 브랜드|페이지(콘솔)/탭(크리에이터) 키로
+  input/textarea/select 값·checked를 렌더마다 스냅샷·복원(폴링
+  softRender가 포커스 외 필드를 지우지 않음), 저장 성공 시 해당 필드
+  명시 클리어, 브랜드 전환·로그아웃·계정 교체 시 전부 폐기(타 브랜드
+  유출 금지), password·결제(bc*) 필드 제외.
+- 크리에이터 캠페인 카드/상세에 대상 국가·'내 지역 아님' 사유 표시,
+  대상 외면 신청 버튼 대신 프로필 안내(서버 409와 일치).
+- 신규 tests_e2e/campaign-flow.mjs 12단언(실 로컬 DB, mock 없음): 콘솔
+  초안 6필드 입력 → 타 세션 메시지로 폴링 렌더 발생 중 복수 필드·포커스
+  보존 → 잘못된 마감일 400에도 입력 유지 → 초안 저장(422 회귀 고정) →
+  발행 → 다른 크리에이터 UI 신청 → 지원자 선정(termsState=selected).
+- 전체 회귀: tests_ui 78, Playwright 12종 전부 PASS.
+- docs/RELEASE_CHECKLIST_2026-10-17.md: 044→045 적용 순서(자동/수동)·
+  기존 데이터 보존·롤백 SQL·Vercel/Railway 대상·설정명(값 제외)·TikTok
+  외부 승인 pending·배포 후 스모크. 운영 배포는 보류(소유자 실행).
+
+## 2026-10-17 (5차) — 실사용 공백 3건: 협업 최신화·캠페인 상세·늦은 Spark
+
+- (1) 캠페인/내 협업 탭 진입과 알림 딥링크 시 /me/campaigns·
+  /me/campaign-offers를 즉시 재조회(crCollabRefresh — 단일 비행·세션
+  교체 stale 무시), 폴링 틱도 활성 탭이면 같은 데이터를 sig 비교로
+  동기화(visibility 복귀 포함, softRender라 초안 보존). 콘솔 제품·캠페인
+  재진입(liveNav) 시 loadProducts로 지원/선정 수 최신화. → 브랜드 선정
+  직후 크리에이터가 탭 전환만으로 최신 조건을 본다(reload 불필요).
+- (2) 캠페인 상세 다이얼로그에 서버 저장 데이터 전면 표시 — 소개·조건
+  요약(usp, my_campaigns에 필드 추가), 보상 유형 라벨, 대상 국가(+내
+  지역 아님), 마감일(+마감됨). 마감일이 지난 캠페인은 카드·상세 모두
+  '모집 마감'으로 표시하고 신청 버튼 대신 서버 409와 같은 사유를 안내.
+- (3) content_submitted 상태에서도 Spark 코드 입력/수정 UI 제공(서버는
+  기존부터 허용) — 제출됨 ✓ 표시, 브랜드 전달 전용·커뮤니티 비노출 안내.
+- tests_e2e/campaign-flow.mjs 17단언으로 확장(실 로컬 DB 2세션):
+  선정→탭 전환만으로 12.5% 표시, 상세 usp/보상/대상/마감 확인, 합의→
+  송장→콘텐츠 먼저 제출→Spark 늦은 등록(서버 저장 확인)→콘솔 수령 표시
+  →완료 처리→탭 전환만으로 완료 반영. 회귀: API 230, tests_ui 78,
+  Playwright 12종 전부 PASS. 운영 배포 보류 유지.
+
+## 2026-10-17 (6차) — 브랜드 측 Spark 코드 원문 조회·완료 기록 보존
+
+- 콘솔 지원자/협업 카드에서 Spark 코드 '✓'만 보이던 공백 → 브랜드 권한
+  화면(require_brand 라우트 데이터)에 readonly 원문 입력 + 복사 버튼
+  (sparkRowHtml/wkCopy, 클립보드 실패 시 선택-복사 안내). terms_agreed/
+  sample_shipped/content_submitted/completed 전 상태에서 표시되고,
+  completed는 확정 수수료·송장·콘텐츠 링크(새 탭)·코드 원문을 함께 보존
+  조회. readonly 입력은 폼 초안 스토어에서 제외(서버 최신값 우선). 공개
+  커뮤니티/크리에이터 측에는 렌더하지 않음(API 권한도 기존 브랜드 가드
+  그대로 — 서버 무변경).
+- campaign-flow.mjs 20단언으로 확장: 콘텐츠 먼저 제출→Spark 늦은 등록→
+  브랜드 화면에서 원문 SPARK-LATE-77 readonly+복사 버튼 확인→공개
+  커뮤니티 비노출 확인→완료 처리 후 재진입에도 확정 수수료 12.5%·송장·
+  콘텐츠·코드 원문 조회. tests_ui 78, e2e 12종 전부 PASS. 운영 배포 보류.
+
+## 2026-10-21 — 어드민 고객 브랜드 직접 등록 + 로그인 계정 관리
+(branch claude/admin-brand-accounts-20261021, 기준 b0f5ade — 메일함/
+아웃리치/도메인 서명 최신본 보존, 스키마 변경 없음: 기존 users/
+auth_tokens/brand_team_roles 재사용)
+
+- 서버 routes_admin_brands.py (전부 require_admin_jwt — JWT+OTP 완료
+  필수, 간이 키 불가): POST /admin/brands 일반 등록(브랜드명/slug/
+  카테고리/타깃국가/담당자이메일 → 기본 커뮤니티·운영 참고 프로필 v1·
+  owner 계정, plan per_signup 5,000원 VAT 월합산). slug는 가입 신청
+  pending 과 같은 advisory lock으로 직렬화 + 중복 409, 담당자 이메일이
+  기존 타브랜드/크리에이터/어드민이면 전환 금지 409, 원자적 + 감사 로그
+  (termsConfirmed:false — 동의/학습 확인 대리 기록 금지). 기존
+  chief+theprlist 회사 관리 셋업(routes_recruitment_setup)은 그대로.
+- 계정 관리 API: 목록(이메일/owner·manager(legacy 최초=owner fallback
+  일치)/활성·중지/비밀번호 설정 여부/최근 로그인), 계정 추가, 초기 설정
+  72h·재설정 30m 1회용 링크 "준비"(자동 발송 없음, 응답에만 원문 — 감사
+  payload/로그 무토큰, 새 발급 시 동종 기존 토큰 폐기, 비밀번호 있는
+  계정에 초기 링크 금지), 활성/중지·역할 변경·세션 철회(각각
+  session_epoch 상승 + 미사용 토큰 폐기), 마지막 활성 owner 중지/강등
+  409, 타 브랜드·어드민 계정 404 차단. 이메일 이전/삭제 범위 밖.
+- 독립 QA 반영: 기존 콘솔 /brands/{b}/team/role 도 같은 공통 헬퍼 적용 —
+  브랜드 단위 락 + 마지막 활성 owner 강등 409 + 역할 변경 시 대상 epoch
+  상승(낡은 역할 JWT 즉시 차단).
+- 어드민 UI(Brands.tsx): 등록 폼·브랜드 검색·선택 브랜드 계정 패널
+  (명시 버튼 클릭 시에만 링크 표시, 브랜드 전환/계정 상태 변경 시 링크
+  비움, readonly+복사), 기존 정지/재개·감사 로그 유지, 플럼 토큰.
+- 검증(실 로컬 disposable DB): 신규 pytest 8(등록 원자성/중복 slug·
+  pending slug·예약어/이메일 전환 금지 3종/비어드민·OTP pending 401/
+  초기링크→비번설정→로그인→자기브랜드만·구링크 폐기·무토큰 감사/reset
+  만료·재사용·폐기·epoch/역할 변경 epoch·기존 경로 마지막 owner 보호/
+  중지·재개·세션 철회) — 전체 서버 304+billing 95+tests_ui 96, admin
+  tsc+build 통과. 신규 Playwright admin-brand-accounts.mjs 16단언
+  (PC 1440 + 모바일 375 실측·캡처). 운영 배포·실메일·DNS 변경 없음.
+
+## 2026-10-21(보완) — 어드민 초보자 UX 전면 재구성 + 보안 검수 4건
+(같은 branch claude/admin-brand-accounts-20261021)
+
+- 보안/동시성 검수 반영(서버):
+  (1) 역할 변경이 epoch만 올리고 열린 링크를 남기던 공백 — 공통 헬퍼
+  invalidate_sessions(epoch 상승+미사용 invite/reset/magic 전부 폐기)로
+  통일, 어드민 role/state(중지)/revoke-sessions 와 기존 콘솔
+  /brands/{b}/team/role 모두 적용. (2) 공백 브랜드명(' ')이 길이 검사를
+  통과하던 문제 — trim 후 2자 미만 400, trim 저장. (3) 같은 담당자
+  이메일 동시 등록/계정 추가 시 unique 500 — 'account-email:' advisory
+  lock + INSERT ON CONFLICT DO NOTHING 백스톱으로 409 정상 롤백(브랜드
+  행 포함 전체 롤백 유지). 신규 pytest 2(공백 이름 400·trim, 역할 변경
+  시 열린 invite/reset 폐기 — 어드민·콘솔 양 경로) → 서버 306 passed.
+- 어드민 /brands 초보자(설명 없이 진행 가능) UX 재작성:
+  3단계 안내(브랜드 추가→담당자 계정 준비→운영 시작), 큰 '새 브랜드
+  추가' 접이식 폼(라벨 지속 표시+예시+인라인 오류), 'slug'→'브랜드
+  주소'(app.theprlist.net/?brand= 미리보기, 이름 기반 자동 추천+직접
+  수정), 국가는 한국/태국/미국/베트남/일본 체크박스+기타 2자리 코드
+  보조 입력, owner/manager→'소유자/담당자'+권한 한 줄 설명, 등록 완료
+  카드에 다음 단계(링크 만들기→복사→직접 전달) 안내, 요금은 "1명당
+  5,000원(부가세 포함) 월 단위 합산" 자연 문구, 409/per_signup/JSON 등
+  구현 용어 일반 안내에서 제거(e2e로 미노출 검증).
+- 계정 패널: '담당자 관리' 단일 진입, 미설정 계정은 '비밀번호 설정 링크
+  만들기'+복사+전달 안내, 설정됨은 상태/최근 로그인 표시. 위험 작업
+  (브랜드 이용 중지, 역할 변경, 계정 이용 중지, '모든 기기에서
+  로그아웃'(구 세션 철회))은 '관리 메뉴' 뒤 대상 브랜드·이메일을
+  보여주는 확인 단계 경유. busy 중 폼 전체 잠금(중복 클릭 방지).
+- 요청 세대(generation) 가드: 브랜드 빠른 전환 시 늦게 도착한 이전
+  브랜드의 계정/링크 응답을 버리고, 브랜드 변경 시 폼/링크/확인 단계
+  초기화, 링크 응답은 같은 브랜드일 때만 표시.
+- 레일 메뉴 '브랜드 운영'→'브랜드 관리'. plum.css .wkb-*(버튼 44px,
+  480px 이하 세로 흐름 전체 폭).
+- 검증: 서버 306 + billing 95 + tests_ui 96, admin tsc/build,
+  admin-brand-accounts.mjs 23단언(PC 1440 + 모바일 375·390 실측 —
+  버튼 44px·가로 넘침 없음·라벨 지속·확인 단계·구현 용어 미노출),
+  console-admin-shell.mjs 22단언(새 확인 단계 흐름 포함) 전부 PASS.
+  운영 배포·실메일·DNS 변경 없음.
+
+## 2026-10-21 — 크리에이터 slack-v3 원본 실서비스 전환 1차
+(branch claude/creator-slack-v3-live-20261021, 기준 b0832a9 + 검수
+82d7f86 cherry-pick — 메일함/아웃리치/도메인 서명 보존)
+
+- app.theprlist.net 루트(apps/creator-app/index.html)가 승인 디자인
+  docs/ui-reference/slack-v3 기반 셸로 열린다. CSS 3종 바이트 동일
+  복사(+live.css 추가분 2종), JS 3종은 원본 마크업·클래스 유지 각색,
+  live-core.js가 예시 데이터를 전부 실서버 상태로 대체. 요소별 매핑은
+  docs/SLACK_V3_LIVE_MAPPING.md (시안 전용 요소는 삭제가 아니라 실제
+  이용 안내/다음 단계/협업 상태로 치환, 가짜 데이터 없음 — 빈 상태 표기).
+- 실연결: 초대(?brand=/?product=/?application=) → 매직링크 로그인 →
+  온보딩(/me/profile, 동의 대리 기록 없음) → TikTok 입장 게이트(서버
+  강제·UI 안내) → /me/join → 커뮤니티(메시지·번역·원문·스레드·검색·
+  읽음·공지 고정·초안 보존) → 캠페인(실모집·국가명·마감·지역/게이트
+  차단) → 신청(아이디어는 담당자 DM 실전송) → 선정 → 수수료 합의 →
+  샘플 송장 → Spark 코드 → 콘텐츠 제출(+메모 DM) → 완료 기록.
+  알림(딥링크·모두 읽음), 랭킹(me 플래그 — 서버 소규모 추가)·미션·배지
+  (서버 XP), 내 공간, 설정(언어 5종 자동/수동·알림 목록·계정·로그아웃),
+  ?invite=/?reset= 계정 링크, 5s 폴링+softRender(입력·포커스·스크롤
+  보존) 전부 실데이터.
+- 검증: 신규 Playwright creator-slack-live.mjs 54단언 — disposable DB
+  (e2e_c3)에서 브랜드 2곳(두 번째는 어드민 일반 등록 경로로 생성),
+  크리에이터 등록→협업 완료 전 여정 + 권한 부정(타 브랜드 랭킹 403·셀
+  비노출·미가입 DM 차단·게이트 중 join 차단) + 원본 slack.html을 같은
+  뷰포트에 띄워 플럼 색(top/rail/side)·구조 비교 + PC 1440/모바일
+  375·390 실측·대조 스크린샷(shots/creator-slack-*.png, REF 포함).
+  TikTok은 공식 연동 승인 대기라 서버 테스트와 동일하게 DB 대리
+  (tiktok_owner_state/open_id)로 게이트 통과를 검증 — 실키 연결 전까지
+  운영에서는 '미연결·대기' 상태가 그대로 노출된다(pending 정확 표기).
+- 회귀: 서버 pytest 306, tests_billing 95, tests_ui 96, admin-brand-
+  accounts 23, console-admin-shell 22, console/admin/signup/creator 빌드
+  전부 통과. engine-live/콘솔/사인업은 무변경(기존 테스트 마커 보존).
+- 남은 운영 전제: TikTok provider 키·실메일(SENDGRID) 연결 시 데모
+  링크 표시가 자동으로 실발송 안내로 바뀐다. 운영 배포는 검수 후 진행.
+
+## 2026-10-21(보완 2) — P0 세션 격리 + P1 원본 요소 실동작 복원
+(branch claude/creator-slack-v3-live-20261021)
+
+- P0(68b00a1): 초안·북마크를 계정(userId)별 localStorage 네임스페이스로
+  격리(레거시 공용 키는 읽지 않고 폐기, 마이그레이션 금지), chatKey에
+  사용자ID 포함 + 세션 소유자 불일치 입력 캡처 차단, 로그아웃 시 메모리
+  민감 상태 전체 초기화, 모든 API 응답에 세션 세대+토큰 stale 가드(늦은
+  응답 폐기·체인 후속 POST 차단·stale 무음), storage 이벤트로 다른 탭
+  로그아웃/계정 교체 반영. 신규 creator-session-isolation.mjs 10단언.
+- P1: 원본 요소를 서버 미지원 사유로 숨기지 않고 최소 API/DB(056)로
+  실동작 복원 —
+  · 메시지 ♡ 리액션(사람당 1 토글, message_reactions, 집계·내 상태 동봉)
+  · 메시지 이미지 첨부(공개 HTTPS 검증, cell_messages.image_url,
+    원본 .message-image 렌더, 컴포저 🖼 입력)
+  · 제품이야기(products) 실채널 — 접힌 '제품·콘텐츠 더 보기' 원형 복원
+  · 주간/전체 랭킹 탭(ranking?period=week — 최근 7일 실집계)
+  · 알림 설정 토글 4종 실저장(기존 notification_prefs 재사용) — campaign
+    은 알림 생성에 즉시 반영(notify_brand_members 필터), deadline·email은
+    기능 연결 전 '준비 중' 정직 표기로 저장만
+  · 협업 샘플 수령 정보(원본 address 단계) — campaign_terms.shipping,
+    선정~합의 단계 저장·수정, 해당 브랜드 콘솔에서만 조회, 발송 후 잠금,
+    감사 원장에 주소·연락처 무기록
+  · 브랜드 수정 요청(원본 revision 단계) — request-revision(메모) →
+    revision_requested + 크리에이터 알림 → revision-note 화면에서 수정본
+    재제출(요청 해소) → 완료. 콘솔 지원자 화면에 수정 요청 입력·배송
+    정보 표시 추가(engine-live 3앱 동기화)
+- 실무 정확성: campExpired를 서버와 동일한 Asia/Seoul 날짜 기준으로,
+  액션 실패 시 폼 값·체크·포커스 보존(페이지별 더티 추적 + softRender,
+  성공 시 해제), 신청 아이디어·콘텐츠 메모의 DM 전달 실패는 부분 성공
+  안내 + DM 초안 보관(신청/콘텐츠 중복 제출 없음, 보관 불가 시 별도 안내).
+- 검증: 신규 pytest test_slack_v3_parity.py 5종(채널·이미지·리액션
+  권한/집계, 알림 설정 실반영, 주간 랭킹, 배송 정보 당사자 격리·무PII·
+  시점 제한, 수정 요청 왕복) — 서버 전체 311 passed. creator-slack-live
+  e2e 69단언으로 확장(리액션/이미지/제품채널/수령 정보/Spark 실패 보존/
+  부분 성공·초안 재전송/수정 요청 왕복/주간 탭/알림 토글) 연속 3회 녹색,
+  isolation 10단언, console-admin-shell 22, admin-brand-accounts 23,
+  tests_ui 96, billing 95, 전 앱 빌드 통과. 운영 배포 없음(Railway 장애
+  중 — 로컬 검증만).
+
+## 2026-10-21(보완 3) — AUTH_REQUIRED=1 운영 경계 + 실버튼/실데이터 대조
+(branch claude/creator-slack-v3-live-20261021)
+
+- 운영 차단 해소: legacy_access_boundary self_checked 에
+  /me/notification-prefs(GET/PUT)·/me/campaign-offers/{id}/shipping(POST)
+  정확 경로만 추가(핸들러 본인 JWT 검사 유지, 넓은 /me/* 허용 없음).
+  독립 검수 재실행용 tests/test_creator_parity_strict_independent.py
+  4종: AUTH_REQUIRED=1에서 본인 성공·익명 401·타 크리에이터 shipping 404·
+  수정요청 note strip 검증·DM 배지 실반영(준비는 개발 모드, 검증 구간만
+  운영 모드 전환 — 메일 미발송 유지).
+- 입력 검증: ShippingIn recipient/address/phone strip 후 길이,
+  country 영문 2자리(소문자→대문자), RevisionIn note strip 후 4자 —
+  공백만 입력이 빈 값으로 저장되는 경로 차단(422).
+- '담당자 메시지' 토글 실반영: off 시 /me/unread 가 DM 셀 배지를
+  제외(라운지 유지·대화 열람 가능), applied=active 로 표기. 알림 설정
+  로드 실패는 영구 스켈레톤 대신 오류+다시 불러오기 UI.
+- 실버튼/API 대조 2건: ① 검토 중(content_submitted) '제출 링크 수정'이
+  실제로 동작 — submit_content 가 content_submitted 수정 허용(본인 terms
+  만, 완료 후 409, XP 유니크로 중복 지급 없음, ledger edited 표기),
+  수정 화면은 현재 링크 프리필. ② /me/campaigns·/me/campaign-offers 가
+  캠페인의 같은 브랜드 제품 이미지(imageUrl)를 동반 — 캠페인 카드·상세·
+  협업 카드에 실제 제품 이미지 표시(타 브랜드 연결·비https 는 무시,
+  중립 fallback 유지).
+- 검증: 서버 pytest 317(parity 7 + strict 4 포함), creator-slack-live
+  e2e 76단언 — **AUTH_REQUIRED=1 서버**로 로그인부터 전 여정(제품 이미지
+  카드/협업 카드, 링크 수정·XP 1회, DM 배지 토글 등) 통과, isolation 10,
+  admin-brand-accounts 23, console-admin-shell 22, tests_ui 96, billing
+  95, 전 앱 빌드. 운영 미배포(Railway 장애 지속 — 로컬 검증만).

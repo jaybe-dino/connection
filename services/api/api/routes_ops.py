@@ -193,12 +193,13 @@ def approve_application(app_id: str, admin_user: dict = Depends(require_admin)) 
                 "INSERT INTO users (kind, email, brand_id)"
                 " VALUES ('brand',%s,%s) RETURNING *",
                 (contact, app_row["slug"])).fetchone()
+            conn.execute("INSERT INTO brand_team_roles(brand_id,user_id,role) VALUES(%s,%s,'owner') ON CONFLICT DO NOTHING", (app_row["slug"], target["user_id"]))
             raw = _auth.one_time_token(conn, target["user_id"], "invite",
                                        60 * 72)
             ledger_append(conn, "system", "BRAND_INVITED",
                           str(target["user_id"]),
                           {"email": contact, "brand": app_row["slug"]})
-            site = _os.environ.get("SITE_URL", "https://theprlist.net")
+            site = _os.environ.get("BRAND_CONSOLE_URL", "https://console.theprlist.net")
             invite_link = f"{site}/?invite={raw}"
     out = {"ok": True, "brandId": app_row["slug"]}
     if invite_link:
@@ -510,3 +511,65 @@ def admin_summary(_admin: dict = Depends(require_admin)) -> dict:
                 "SELECT count(*) n FROM gate_requests WHERE state IN ('PENDING','HELD')"),
             "ledgerEvents": count("SELECT count(*) n FROM ledger"),
         }
+
+
+@admin.get('/recruitment/workspace')
+def recruitment_workspace(_admin: dict = Depends(require_admin)):
+    with connect() as conn:
+        row = conn.execute("SELECT brand_id,name,is_internal FROM brands WHERE brand_id='dino-recruitment'").fetchone()
+    return {'workspace': ({'brandId':row['brand_id'],'name':row['name'],'internal':row['is_internal']} if row else None)}
+
+
+@admin.post('/recruitment/workspace')
+def create_recruitment_workspace(_admin: dict = Depends(require_admin)):
+    """Explicit administrator action. No invite, credential, import, or email side effect."""
+    with connect() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('workspace:dino-recruitment',0))")
+        row=conn.execute("SELECT is_internal FROM brands WHERE brand_id='dino-recruitment'").fetchone()
+        if row and not row['is_internal']:
+            raise HTTPException(409,'동일 주소의 고객 브랜드가 있습니다. 운영팀에서 확인하세요.')
+        created=not bool(row)
+        if created:
+            conn.execute("INSERT INTO brands(brand_id,name,category,plan,is_internal) VALUES('dino-recruitment','DINOSTUDIO 공용 모집','creator recruitment','internal',true)")
+            from .routes_community import ensure_default_cell
+            ensure_default_cell(conn,'dino-recruitment','DINOSTUDIO 공용 모집')
+            conn.execute("INSERT INTO brand_profile_versions(brand_id,version,fields,note) VALUES('dino-recruitment',1,%s,'internal workspace')",(_j({'brand_one_liner':{'value':'디노스튜디오 공용 크리에이터 모집','source':'administrator','confirmed':True}}),))
+            ledger_append(conn,str(_admin['admin_id']),'RECRUITMENT_WORKSPACE_CREATED','dino-recruitment',{'internal':True})
+    return {'brandId':'dino-recruitment','internal':True,'created':created,'emailSent':False}
+
+# 사전 신청은 가입/승인/과금과 분리한다. 외부 메일은 자동 발송하지 않는다.
+class PrelaunchIn(BaseModel):
+    brand: str = Field(max_length=100)
+    email: str = Field(max_length=254)
+    consent: bool = False
+    website: str = Field(default='', max_length=500)
+
+
+@public.post('/prelaunch-applications')
+def submit_prelaunch(body: PrelaunchIn) -> dict:
+    brand, email = body.brand.strip(), body.email.strip().lower()
+    if body.website:  # honeypot — 저장하지 않고 일반 응답
+        return {'ok': True}
+    if not brand or not re.fullmatch(r'[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+', email):
+        raise HTTPException(422, '브랜드명과 올바른 이메일을 입력해 주세요')
+    if not body.consent:
+        raise HTTPException(422, '개인정보 수집·이용 동의가 필요합니다')
+    with connect() as conn:
+        conn.execute("DELETE FROM brand_prelaunch_applications WHERE created_at <= now()-interval '1 year'")
+        # 동일 브랜드/이메일 재시도는 한 건으로 유지한다. 계정 생성은 하지 않는다.
+        conn.execute("INSERT INTO brand_prelaunch_applications(brand,email)"
+                     " VALUES(%s,%s) ON CONFLICT(email,brand) DO NOTHING",
+                     (brand, email))
+    return {'ok': True}
+
+
+@admin.get('/prelaunch-applications')
+def list_prelaunch(_admin: dict = Depends(require_admin)) -> list[dict]:
+    with connect() as conn:
+        conn.execute("DELETE FROM brand_prelaunch_applications WHERE created_at <= now()-interval '1 year'")
+        rows = conn.execute("SELECT request_id,brand,email,created_at"
+                            " FROM brand_prelaunch_applications"
+                            " WHERE created_at > now()-interval '1 year'"
+                            " ORDER BY created_at DESC LIMIT 500").fetchall()
+    return [{'id': str(r['request_id']), 'brand': r['brand'], 'email': r['email'],
+             'at': r['created_at'].isoformat()} for r in rows]

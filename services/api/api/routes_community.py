@@ -9,6 +9,7 @@ translations 구조, ai.translate. 레거시 /cells/* 는 검사가 없어 관�
 
 import json
 import logging
+import re
 import uuid
 
 from fastapi import APIRouter, Header, HTTPException
@@ -70,11 +71,25 @@ def _dm_cell_id(brand_id: str, creator_id: str) -> str:
     return f"dm-{brand_id}--{creator_id}"
 
 
+def _reaction_actor(claims: dict, who: str, cell: dict) -> str:
+    """리액션 소유자 키 — 같은 사람의 중복 리액션을 막는 단위."""
+    kind = claims.get("kind")
+    if kind == "creator":
+        return f"creator:{who}"
+    if kind == "brand":
+        return f"brand:{cell['brand_id']}"
+    return "admin"
+
+
+IMAGE_URL_RE = None  # 아래에서 컴파일 (import 순서 유지)
+
+
 def _member_or_owner(conn, claims: dict, cell: dict) -> str:
     """접근 자격: 그 브랜드의 멤버 크리에이터 / 그 브랜드 계정 / 어드민."""
     kind = claims.get("kind")
     if kind == "admin":
         return "admin"
+    auth.check_suspended(conn, cell["brand_id"])  # 정지 브랜드는 운영만 접근
     if kind == "brand":
         if claims.get("brand_id") == cell["brand_id"]:
             return "brand"
@@ -149,11 +164,22 @@ def messages(cell_id: str, channel: str = "", limit: int = 50,
     limit = max(1, min(limit, 200))
     with connect() as conn:
         cell = _cell(conn, cell_id)
-        _member_or_owner(conn, claims, cell)
-        q = ("SELECT * FROM cell_messages WHERE cell_id=%s"
-             + (" AND channel=%s" if channel else "")
-             + " ORDER BY at DESC LIMIT %s")
-        args = (cell_id, channel, limit) if channel else (cell_id, limit)
+        who = _member_or_owner(conn, claims, cell)
+        actor = _reaction_actor(claims, who, cell)
+        # 스레드 답글은 기본 목록에서 제외(스레드 API로 조회),
+        # 고정/답글 수/리액션 수/내 리액션/이미지 동봉
+        q = ("SELECT m.*, (SELECT count(*) FROM cell_messages t"
+             "  WHERE t.thread_parent=m.msg_id) AS reply_count,"
+             " (SELECT count(*) FROM message_reactions rr"
+             "  WHERE rr.msg_id=m.msg_id) AS reaction_count,"
+             " EXISTS(SELECT 1 FROM message_reactions rr"
+             "  WHERE rr.msg_id=m.msg_id AND rr.actor=%s) AS my_reaction"
+             " FROM cell_messages m WHERE m.cell_id=%s"
+             " AND m.thread_parent IS NULL"
+             + (" AND m.channel=%s" if channel else "")
+             + " ORDER BY m.pinned_at DESC NULLS LAST, m.at DESC LIMIT %s")
+        args = ((actor, cell_id, channel, limit) if channel
+                else (actor, cell_id, limit))
         rows = conn.execute(q, args).fetchall()
     return [{"msgId": r["msg_id"], "channel": r["channel"],
              "author": r["author"], "authorKind": r["author_kind"],
@@ -161,13 +187,24 @@ def messages(cell_id: str, channel: str = "", limit: int = 50,
              "translations": r["translations"],
              "translationState": r["translation_state"],
              "campaignId": r["campaign_id"],
+             "imageUrl": r["image_url"] or "",
+             "reactionCount": r["reaction_count"],
+             "myReaction": bool(r["my_reaction"]),
+             "pinnedAt": r["pinned_at"].isoformat() if r["pinned_at"] else None,
+             "replyCount": r["reply_count"],
              "at": r["at"].isoformat()} for r in reversed(rows)]
+
+
+CREATOR_CHANNELS = ("chat", "tips", "products")
+BRAND_CHANNELS = ("chat", "tips", "products", "notice")
 
 
 class PostIn(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
-    channel: str = "chat"                  # chat | tips (브랜드는 notice 가능)
+    channel: str = "chat"        # chat | tips | products (브랜드는 notice 가능)
     locale: str = "ko"
+    thread_parent: int | None = None       # 스레드 답글이면 부모 msg_id
+    image_url: str = Field(default="", max_length=500)   # 공개 HTTPS 이미지만
 
 
 @router.post("/cells/{cell_id}/messages")
@@ -176,31 +213,63 @@ def post_message(cell_id: str, body: PostIn,
     claims = _actor(authorization)
     if body.locale not in ALL_LOCALES:
         raise HTTPException(400, "지원 언어: ko/th/en/vi/ja")
+    image = (body.image_url or "").strip()
+    if image and not re.fullmatch(r"https://[^\s\"'<>]{8,480}", image):
+        raise HTTPException(400, "이미지는 공개 https:// 주소만 첨부할 수 있습니다")
     with connect() as conn:
         cell = _cell(conn, cell_id)
         who = _member_or_owner(conn, claims, cell)
         if claims.get("kind") == "creator":
-            if body.channel not in ("chat", "tips"):
+            if body.channel not in CREATOR_CHANNELS:
                 raise HTTPException(403, "공지는 브랜드·운영만 게시할 수 있습니다")
+            from .routes_service import require_onboarded
+            require_onboarded(conn, who, "커뮤니티 글 작성")
             author = conn.execute("SELECT handle FROM creators WHERE creator_id=%s",
                                   (who,)).fetchone()["handle"]
             author_kind = "creator"
         else:
-            if body.channel not in ("chat", "tips", "notice"):
-                raise HTTPException(400, "channel은 chat/tips/notice")
+            if body.channel not in BRAND_CHANNELS:
+                raise HTTPException(400, "channel은 chat/tips/products/notice")
             author = cell["brand_id"] if claims.get("kind") == "brand" else "admin"
             author_kind = "brand" if claims.get("kind") == "brand" else "ari"
         # 원문 선저장(pending) — 번역 API 장애에도 메시지는 잃지 않는다.
         # 이 블록이 커밋된 뒤에야 번역을 시도하고, 실패하면 러너가 재시도한다.
+        parent = None
+        if body.thread_parent:
+            parent = conn.execute(
+                "SELECT msg_id, thread_parent FROM cell_messages WHERE"
+                " msg_id=%s AND cell_id=%s",
+                (body.thread_parent, cell_id)).fetchone()
+            if not parent:
+                raise HTTPException(404, "스레드 원문을 찾을 수 없습니다")
+            if parent["thread_parent"]:
+                raise HTTPException(400, "답글에는 스레드를 달 수 없습니다 —"
+                                         " 원문 스레드에 남겨 주세요")
         m = conn.execute(
             "INSERT INTO cell_messages (cell_id, channel, author, author_kind,"
-            " original, original_locale, translations, translation_state)"
-            " VALUES (%s,%s,%s,%s,%s,%s,'{}','pending') RETURNING msg_id, at",
+            " original, original_locale, translations, translation_state,"
+            " thread_parent, image_url)"
+            " VALUES (%s,%s,%s,%s,%s,%s,'{}','pending',%s,%s)"
+            " RETURNING msg_id, at",
             (cell_id, body.channel, author, author_kind, body.text,
-             body.locale)).fetchone()
+             body.locale, body.thread_parent, image)).fetchone()
+        if author_kind == "creator":
+            from .routes_service import award_xp
+            award_xp(conn, who, cell["brand_id"], "first_message",
+                     cell["brand_id"])
+        if body.channel == "notice" and not body.thread_parent:
+            # 공지 발행 → 브랜드 멤버 전원 알림(배지+카드, 강제 이동 없음)
+            from .routes_service import notify_brand_members
+            notify_brand_members(conn, cell["brand_id"], "notice",
+                                 "새 공지: " + body.text[:60],
+                                 "커뮤니티 공지 채널에서 전체 내용을 확인"
+                                 "하세요.", {"cellId": cell_id,
+                                             "msgId": m["msg_id"],
+                                             "channel": "notice"})
         ledger_append(conn, f"{author_kind}:{author}", "CELL_MESSAGE_POSTED",
                       cell_id, {"channel": body.channel,
-                                "msgId": m["msg_id"]})
+                                "msgId": m["msg_id"],
+                                "thread": bool(body.thread_parent)})
     tr, state = {}, "pending"
     try:
         tr = ai.translate(body.text, body.locale, ALL_LOCALES) or {}
@@ -218,6 +287,38 @@ def post_message(cell_id: str, body: PostIn,
     return {"msgId": m["msg_id"], "at": m["at"].isoformat(),
             "translations": tr, "translationState": state,
             "original": body.text}
+
+
+class ReactionIn(BaseModel):
+    on: bool = True
+
+
+@router.post("/cells/{cell_id}/messages/{msg_id}/reaction")
+def toggle_reaction(cell_id: str, msg_id: int, body: ReactionIn,
+                    authorization: str = Header(default="")) -> dict:
+    """메시지 ♡ 리액션 — 사람당 1개 토글. 멤버십/브랜드 가드 동일."""
+    claims = _actor(authorization)
+    with connect() as conn:
+        cell = _cell(conn, cell_id)
+        who = _member_or_owner(conn, claims, cell)
+        actor = _reaction_actor(claims, who, cell)
+        msg = conn.execute(
+            "SELECT 1 FROM cell_messages WHERE msg_id=%s AND cell_id=%s",
+            (msg_id, cell_id)).fetchone()
+        if not msg:
+            raise HTTPException(404, "메시지를 찾을 수 없습니다")
+        if body.on:
+            conn.execute(
+                "INSERT INTO message_reactions (msg_id, actor)"
+                " VALUES (%s,%s) ON CONFLICT DO NOTHING", (msg_id, actor))
+        else:
+            conn.execute(
+                "DELETE FROM message_reactions WHERE msg_id=%s AND actor=%s",
+                (msg_id, actor))
+        count = conn.execute(
+            "SELECT count(*) c FROM message_reactions WHERE msg_id=%s",
+            (msg_id,)).fetchone()["c"]
+    return {"msgId": msg_id, "count": count, "mine": body.on}
 
 
 @router.post("/cells/{cell_id}/messages/{msg_id}/translation-retry")

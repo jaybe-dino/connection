@@ -1,0 +1,40 @@
+Theprlist recruitment release candidate — 2026-10-14
+LOCAL DEVELOPMENT / NO PRODUCTION RELEASE OR REAL EMAIL IN THIS TURN
+Rollback tag: theprlist-finish-base-20261014 (7677879)
+
+API + billing: 285 passed in isolated PostgreSQL databases.
+UI: 48 passed in Node VM.
+All workspace builds: passed (pnpm -r build, including TypeScript).
+External Gmail, AI and payment calls: mocked in verification.
+No credentials provisioned, reset, read or shared in this development turn.
+No real contacts imported; no production workspace created.
+
+Five perspectives:
+Owner — dedicated company recruitment workspace, creation idempotency,
+ five sender accounts, customer target + signup link pinned to each draft.
+Customer brand — existing verified signup price retained; company membership
+ excluded from signup usage/invoices/automatic card charge; company cannot
+ silently reuse a customer brand sender for another brand.
+Operator — max 200 email recipients/batch; readonly preview; max 200/account/
+ rolling 24h; minimum 60s spacing; paused batch stops next attempt; no rotation;
+ missing old account assignments remain blocked.
+Creator — explicit unsubscribe first lines suppress further outreach and reply;
+ quoted unsubscribe link does not become a false optout; original mailbox/thread
+ retained; company + customer suppression lists both respected.
+Security — admin-only company creation; target requires existing brand access;
+ customer profile/product scoped to target; late AI results rejected after target
+ change; approval sender and target are immutable; uncertain sends never replay.
+
+Migrations:
+037: saved Gmail sender on batch (prior reviewed change).
+038: internal company workspace flag, signup usage excludes internal.
+039: accepted-message rolling window, sender cooldown, batch pause.
+040: customer proposal target on company batch.
+No historical signup prices or invoice amounts rewritten.
+
+Remaining live checks:
+Production release approval and backup; existing OAuth config/key check;
+user-authorized OAuth connection; approved explicit-recipient email acceptance test.
+Google direct-send usage is not counted by the application event ledger.
+No delivery/complaint performance guarantee; daily 10k new creators and monthly
+30k actual operations remain scaling outcomes to validate, not completed features.

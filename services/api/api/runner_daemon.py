@@ -93,6 +93,9 @@ def _enroll_from_pool(runner) -> int:
             rows = conn.execute(
                 "SELECT email, handle, country FROM creator_pool"
                 " WHERE email IS NOT NULL AND email_status='valid'"
+                " AND state<>'EXCLUDED'"
+                " AND NOT EXISTS(SELECT 1 FROM outreach_contact_blocks x WHERE x.email=lower(trim(creator_pool.email)))"
+                " AND NOT EXISTS(SELECT 1 FROM outreach_optouts x WHERE x.email=lower(trim(creator_pool.email)) AND x.brand_id IN ('glowlab','dino-recruitment') AND x.opted_out_at IS NOT NULL)"
                 " LIMIT 200").fetchall()
     except Exception:                       # 테이블 없는 환경(부분 배포)도 계속 돈다
         return 0
@@ -109,7 +112,7 @@ _PROC_STARTED = datetime.now(UTC)
 
 _gmail_ops = {"lastSync": {}, "lastResume": {}, "synced": 0, "resumed": 0,
               "errors": [], "lastSyncAt": None, "lastResumeAt": None}
-SYNC_EVERY_SEC, RESUME_EVERY_SEC = 600, 900
+SYNC_EVERY_SEC, RESUME_EVERY_SEC = 600, 60
 
 
 def send_resume_enabled() -> bool:
@@ -140,7 +143,8 @@ def _gmail_ops_tick() -> list[str]:
                 r["brand_id"] for r in conn.execute(
                     "SELECT DISTINCT b.brand_id FROM outreach_batches b"
                     " JOIN outreach_recipients r USING (batch_id)"
-                    " WHERE b.state='approved' AND r.state='pending'").fetchall()]
+                    " WHERE b.state='approved' AND NOT b.sending_paused AND r.state='pending'"
+                    " AND (%s<>'scoped' OR b.auto_resume)", (os.environ.get("GMAIL_SEND_RESUME_ENABLED","1"),)).fetchall()]
     except Exception as e:
         _gmail_ops["errors"] = ([f"scan: {e}"] + _gmail_ops["errors"])[:5]
         return []
@@ -169,10 +173,12 @@ def _gmail_ops_tick() -> list[str]:
             from .routes_outreach import deliver_pending
             with connect() as conn:
                 batches = conn.execute(
-                    "SELECT DISTINCT b.batch_id FROM outreach_batches b"
+                    "SELECT DISTINCT ON (b.gmail_account_id) b.batch_id FROM outreach_batches b"
                     " JOIN outreach_recipients r USING (batch_id)"
                     " WHERE b.brand_id=%s AND b.state='approved'"
-                    "   AND r.state='pending' LIMIT 1", (brand,)).fetchall()
+                    "   AND NOT b.sending_paused AND r.state='pending'"
+                    " AND (%s<>'scoped' OR b.auto_resume)"
+                    " ORDER BY b.gmail_account_id,b.approved_at,b.created_at,b.batch_id", (brand,os.environ.get("GMAIL_SEND_RESUME_ENABLED","1"))).fetchall()
             for b in batches:
                 n = deliver_pending(brand, b["batch_id"])
                 if n:
@@ -296,7 +302,7 @@ def _billing_tick() -> list[str]:
         from .routes_payments import close_months
         with connect() as conn:
             brands = [r["brand_id"] for r in conn.execute(
-                "SELECT brand_id FROM brands WHERE NOT is_demo").fetchall()]
+                "SELECT brand_id FROM brands WHERE NOT is_demo AND NOT is_internal").fetchall()]
         for brand in brands:
             with connect() as conn:
                 before = conn.execute(

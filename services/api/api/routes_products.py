@@ -255,6 +255,7 @@ def product_candidates(brand: str, product_id: UUID, country: str = "",
             # 검증을 주장하지 않는다. 'risky'(검증 실패 이력)와 EXCLUDED
             # 상태는 제외, 이 브랜드 수신거부 이메일 제외(보존).
             " WHERE email IS NOT NULL AND email_status IN ('valid','none')"
+            "   AND NOT EXISTS (SELECT 1 FROM outreach_contact_blocks x WHERE x.email=lower(trim(creator_pool.email)))"
             "   AND state <> 'EXCLUDED'"
             "   AND (%s = '' OR country = %s)"
             "   AND NOT EXISTS (SELECT 1 FROM outreach_optouts o"

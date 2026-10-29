@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { adminApi, authApi, setJwt, clearJwt, type Summary } from "./adminApi";
 import Dashboard from "./screens/Dashboard";
 import Applications from "./screens/Applications";
@@ -7,7 +7,10 @@ import Reports from "./screens/Reports";
 import Disputes from "./screens/Disputes";
 import Submissions from "./screens/Submissions";
 import GmailOps from "./screens/GmailOps";
+import Recruitment from "./screens/RecruitmentWorkspace";
+import AccountMailboxes from "./screens/AccountMailboxes";
 import Pool from "./screens/Pool";
+import Brands from "./screens/Brands";
 
 const RAIL = [
   { to: "/dashboard", label: "대시보드", icon: "◐" },
@@ -15,6 +18,9 @@ const RAIL = [
   { to: "/reports", label: "신고 처리함", icon: "⚑", badge: "openReports" },
   { to: "/disputes", label: "분쟁 심판", icon: "⚖", badge: "openDisputes" },
   { to: "/submissions", label: "검수 현황", icon: "◑", badge: "inReviewSubmissions" },
+  { to: "/recruitment", label: "디노 공용 모집", icon: "◈" },
+  { to: "/brands", label: "브랜드 관리", icon: "◆" },
+  { to: "/mail", label: "계정별 메일함", icon: "✉" },
   { to: "/gmail", label: "Gmail 운영", icon: "✉" },
   { to: "/pool", label: "후보 풀", icon: "◎" },
 ] as const;
@@ -181,6 +187,7 @@ function TwoFA() {
 }
 
 export default function App() {
+  const mailLayout=useLocation().pathname==='/mail';
   const [summary, setSummary] = useState<Summary | null>(null);
   const [live, setLive] = useState(true);
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -216,9 +223,17 @@ export default function App() {
   if (authed === false) return <AuthGate onDone={() => setAuthed(true)} />;
 
   return (
+    <div className={mailLayout?"admin-mail-layout":undefined} style={{ display: "flex", flexDirection: "column", minHeight: "100dvh",
+      height: narrow ? "auto" : "100dvh", background: "var(--n50)" }}>
+    <header className="wk-admin-top">
+      theprlist <small>ADMIN · 전사 운영</small>
+      <span className="live" style={{ color: live ? "var(--t300)" : "var(--c300)" }}>
+        {live ? "● 서버 연결됨" : "● 서버 연결 확인 필요"}
+      </span>
+    </header>
     <div style={{ display: "flex", flexDirection: narrow ? "column" : "row",
-      minHeight: "100dvh", height: narrow ? "auto" : "100dvh", background: "var(--n50)" }}>
-      <nav style={narrow ? {
+      flex: 1, minHeight: 0 }}>
+      <nav className="admin-app-nav" style={narrow ? {
         /* 모바일(≤760px): 좌측 고정 레일 대신 상단 랩 메뉴 — 본문 폭 확보 */
         width: "100%", boxSizing: "border-box", background: "var(--d800)",
         color: "var(--d400)", display: "flex", flexDirection: "row",
@@ -267,7 +282,7 @@ export default function App() {
           {!narrow && <>모든 조치는 원장에 기록됩니다.<br />기획: docs/ADMIN_PLAN.md</>}
         </div>
       </nav>
-      <main style={{ flex: 1, overflowY: "auto", minWidth: 0,
+      <main className="admin-app-main" style={{ flex: 1, overflowY: "auto", minWidth: 0,
         padding: narrow ? "14px 12px" : "20px 24px" }}>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -276,10 +291,14 @@ export default function App() {
           <Route path="/reports" element={<Reports onChange={refresh} />} />
           <Route path="/disputes" element={<Disputes onChange={refresh} />} />
           <Route path="/submissions" element={<Submissions onChange={refresh} />} />
+          <Route path="/recruitment" element={<Recruitment />} />
+          <Route path="/brands" element={<Brands />} />
+          <Route path="/mail" element={<AccountMailboxes />} />
           <Route path="/gmail" element={<GmailOps />} />
           <Route path="/pool" element={<Pool />} />
         </Routes>
       </main>
+    </div>
     </div>
   );
 }

@@ -96,9 +96,11 @@ def invoices(brand_id: str, authorization: str = Header(default=''),
              x_admin_key: str = Header(default='')):
     guard(brand_id, authorization, x_admin_key)
     with connect() as conn:
-        brand = conn.execute('SELECT is_demo FROM brands WHERE brand_id=%s', (brand_id,)).fetchone()
+        brand = conn.execute('SELECT is_demo,is_internal FROM brands WHERE brand_id=%s', (brand_id,)).fetchone()
         if not brand:
             raise HTTPException(404, '브랜드 없음')
+        if brand['is_internal']:
+            return {'invoices': [], 'configured': False, 'internal': True}
         if not brand['is_demo']:
             close_months(conn, brand_id)
         rows = conn.execute('SELECT * FROM signup_invoices WHERE brand_id=%s ORDER BY period DESC',
@@ -113,9 +115,9 @@ def checkout(brand_id: str, invoice_id: str, authorization: str = Header(default
     if not nicepay.configured():
         raise HTTPException(503, '결제사 설정 중입니다. 이용 내역은 보관됩니다.')
     with connect() as conn:
-        row = conn.execute('SELECT i.*, b.is_demo FROM signup_invoices i JOIN brands b USING(brand_id) '
+        row = conn.execute('SELECT i.*, b.is_demo,b.is_internal FROM signup_invoices i JOIN brands b USING(brand_id) '
                            'WHERE invoice_id=%s AND brand_id=%s', (invoice_id, brand_id)).fetchone()
-    if not row or row['is_demo']:
+    if not row or row['is_demo'] or row['is_internal']:
         raise HTTPException(404, '결제할 청구서 없음')
     if row['amount'] < 1000:
         raise HTTPException(409, '카드 결제 최소 금액은 1,000원입니다. 청구 내역은 보관됩니다.')
@@ -360,6 +362,10 @@ async def billing_card_register(brand_id: str, request: Request,
     쓰지 않고 직접 파싱하는 이유: 422 자동 응답이 입력 원문(카드번호)을
     되돌려주는 것을 원천 차단하기 위해서다."""
     u = _brand_owner(brand_id, authorization)
+    with connect() as conn:
+        brand = conn.execute('SELECT is_internal FROM brands WHERE brand_id=%s',(brand_id,)).fetchone()
+        if brand and brand['is_internal']:
+            raise HTTPException(409,'공용 모집 공간은 카드 등록·가입 과금 대상이 아닙니다.')
     if not nicepay_billing.billing_enabled():
         raise HTTPException(503, '자동청구 준비 중입니다 — 청구서 수동 카드 결제는'
                                  ' 계속 이용할 수 있습니다.')
@@ -524,7 +530,7 @@ def autocharge_tick(limit: int = 10) -> dict:
             " k.bid_enc FROM signup_invoices i"
             " JOIN brand_billing_keys k ON k.brand_id=i.brand_id"
             "  AND k.state='active'"
-            " JOIN brands b ON b.brand_id=i.brand_id AND NOT b.is_demo"
+            " JOIN brands b ON b.brand_id=i.brand_id AND NOT b.is_demo AND NOT b.is_internal"
             " WHERE i.status='open' AND i.amount>=1000"
             "  AND i.cancel_reported_at IS NULL"
             "  AND i.period < date_trunc('month',"

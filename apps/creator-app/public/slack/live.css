@@ -1,0 +1,20 @@
+/* 실서비스 추가분 최소 CSS — 원본 slack-v3 3개 CSS는 바이트 동일 유지.
+   여기에는 원본에 없는 '실데이터 전용' 요소만 담는다. */
+.live-head-search { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
+.live-head-search input {
+  font-size: 11px; padding: 6px 10px; border: 1px solid #d7cfdd;
+  border-radius: 8px; width: 150px; box-sizing: border-box;
+}
+@media (max-width: 860px) { .live-head-search { display: none; } }
+.live-search-res {
+  background: #f6f2f8; border: 1px solid #e3dae8; border-radius: 12px;
+  padding: 12px 14px; margin: 10px 0 16px; font-size: 12px;
+}
+.live-search-res .live-search-head { display: flex; justify-content: space-between; align-items: center; }
+.live-search-res p { margin: 8px 0 0; }
+.live-attach { margin: 0 0 8px; display: flex; flex-direction: column; gap: 4px; }
+.live-attach label { font-size: 10px; font-weight: 700; color: #8a7f90; letter-spacing: .04em; }
+.live-attach input {
+  font-size: 12px; padding: 8px 10px; border: 1px solid #d7cfdd;
+  border-radius: 8px; box-sizing: border-box; width: 100%;
+}

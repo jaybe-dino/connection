@@ -38,7 +38,7 @@ def test_publish_approval_executes_cell_post(client):
     assert len(after) == before + 1          # 승인 = 실행: 공지가 실제로 게시됨
     assert after[-1]["channel"] == "notice"
 
-    ledger = client.get("/ledger").json()
+    ledger = client.get("/ledger", params={"limit": 1000}).json()  # 시드 GATE_REQUESTED가 기본 50건 창 밖으로 밀리지 않게
     types = [e["type"] for e in ledger["entries"] if e["subject"] == g["id"]]
     assert set(types) >= {"GATE_REQUESTED", "GATE_APPROVED", "GATE_EXECUTED"}
     assert ledger["chain_ok"] is True

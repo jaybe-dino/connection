@@ -33,6 +33,7 @@ def dbname():
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/029_invoice_supplements.sql')],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/033_invoice_cancel_marker.sql')],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/034_brand_billing_keys.sql')],check=True,stdout=subprocess.DEVNULL)
+    subprocess.run(['psql','-v','ON_ERROR_STOP=1','-d',name,'-f', str(ROOT/'db/migrations/038_internal_recruitment.sql')],check=True,stdout=subprocess.DEVNULL)
     yield name
     subprocess.run(['dropdb',name],check=True)
 
@@ -47,14 +48,18 @@ def setup(dbname, monkeypatch):
         with psycopg.connect(dbname=dbname,row_factory=dict_row) as conn:
             yield conn
     with db() as conn:
+        # 정지 검사(auth._brand_suspended)가 이 격리 DB를 실제로 조회하도록 스키마 보강
+        conn.execute('ALTER TABLE brands ADD COLUMN IF NOT EXISTS suspended_at timestamptz')
         conn.execute('TRUNCATE signup_usage,signup_invoices,memberships,creators,brands CASCADE')
-        conn.execute("INSERT INTO brands VALUES ('real',false,'per_signup'),('other',false,'per_signup')")
+        conn.execute("INSERT INTO brands(brand_id,is_demo,plan) VALUES ('real',false,'per_signup'),('other',false,'per_signup')")
         conn.execute("INSERT INTO creators VALUES ('c1',true),('c2',true),('c3',true)")
         conn.execute("UPDATE signup_billing_policy SET effective_at='2020-01-01'")
         conn.execute("INSERT INTO memberships VALUES ('c1','real',now()),('c2','real',now()),('c3','real',now())")
         conn.execute("UPDATE signup_usage SET verified_at='2026-01-15' WHERE creator_id<>'c3'")
     monkeypatch.setattr(routes,'connect',db)
     monkeypatch.setattr(routes_billing,'connect',db)
+    from api import db as dbmod
+    monkeypatch.setattr(dbmod,'connect',db)  # auth 정지 검사도 같은 격리 DB를 실조회
     events=[]
     monkeypatch.setattr(routes,'ledger_append',lambda *args: events.append(args[2]))
     monkeypatch.setenv('NICEPAY_ENABLED','1')

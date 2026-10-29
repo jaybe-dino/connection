@@ -6,12 +6,15 @@ from html import escape
 import logging
 import hmac
 import os
+import re
+from uuid import UUID
 from datetime import UTC, datetime, timedelta
 from email.mime.text import MIMEText
+from email.utils import format_datetime,make_msgid
 
 from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .db import connect, ledger_append
 
@@ -20,8 +23,8 @@ router = APIRouter()
 
 READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 SCOPES = "https://www.googleapis.com/auth/gmail.send " + READ_SCOPE + " openid email"
-# 실제 발송한 날에만 증가. 전달/반송 피드백 연결 전에는 최대 20통으로 제한.
-WARMUP_PLAN = (2, 4, 6, 8, 12, 16, 20)
+# Initial operating cap approved by owner. Provider quotas are separate.
+SEND_INTERVAL_SECONDS = 60
 REPLY_DOMAIN = os.environ.get("REPLY_DOMAIN", "reply.theprlist.net")
 
 
@@ -103,21 +106,37 @@ def _dec(v: str) -> str:
 
 # ── 계정 연결 ────────────────────────────────────────────────────
 
+def _with_delivery_usage(conn, row):
+    row=dict(row)
+    row['sent_last_24h']=conn.execute("SELECT count(*) AS n FROM gmail_delivery_events WHERE account_id=%s AND accepted_at>now()-interval '24 hours'",(row['account_id'],)).fetchone()['n']
+    return row
+
+
 def _acct_out(r: dict) -> dict:
     today = datetime.now(UTC).date()
     completed_days = max(0, r.get('warmup_days', 0) - int(r.get('warmup_last_date') == today))
-    cap = WARMUP_PLAN[min(completed_days, len(WARMUP_PLAN)-1)]
+    # Explicit operating limit approved by the owner: 200/account/day.
+    # Lower overrides are allowed; higher values require a separate reviewed change.
+    try:
+        cap = max(0, min(200, int(os.environ.get('GMAIL_DAILY_CAP', '200'))))
+    except ValueError:
+        cap = 0  # Invalid configuration must never grant capacity.
     sent = r["sent_today"] if r["sent_date"] == datetime.now(UTC).date() else 0
+    used=max(sent,r.get('sent_last_24h',0))
+    next_send=(r['last_send_at']+timedelta(seconds=SEND_INTERVAL_SECONDS)) if r.get('last_send_at') else None
     return {"accountId": str(r["account_id"]), "brandId": r["brand_id"],
             "email": r["email"], "state": r["state"],
             "connectedAt": r["connected_at"].isoformat(),
-            "todayCap": cap, "sentToday": sent,
+            "todayCap": cap, "sentToday": sent, "sentLast24Hours": used,
+            "quotaWindow":"rolling_24h", "nextSendAt":next_send.isoformat() if next_send else None,
+            "sendIntervalSeconds": SEND_INTERVAL_SECONDS,
             "canRead": READ_SCOPE in r.get("scopes", "").split(),
             "syncedAt": r["synced_at"].isoformat() if r.get("synced_at") else None,
             "syncError": r.get("sync_error", ""),
-            "remainingToday": max(0, cap-sent) if not r.get('sending_paused') else 0,
+            "remainingToday": max(0, cap-used) if not r.get('sending_paused') else 0,
             "sendingPaused": r.get('sending_paused',False), "pauseReason": r.get('pause_reason',''),
-            "warmupDay": completed_days+1, "warmupPlan": list(WARMUP_PLAN),
+            "warmupDay": completed_days+1, "warmupPlan": [cap],
+            "capacitySource": "application_limit_not_provider_remaining",
             "deliveryVerified": False, "healthStatus": "unverified",
             "replyTo": (f"reply+{r['brand_id']}@{REPLY_DOMAIN}"
                         if _inbound_ready() else r["email"])}
@@ -132,7 +151,8 @@ def list_gmail(brand_id: str,
         rows = conn.execute(
             "SELECT * FROM gmail_accounts WHERE brand_id=%s AND state='connected'"
             " ORDER BY connected_at,account_id", (brand_id,)).fetchall()
-    return {"demo": _demo_mode(), "inboundReady": _inbound_ready(), "accounts": [_acct_out(r) for r in rows]}
+        accounts=[_acct_out(_with_delivery_usage(conn,r)) for r in rows]
+    return {"demo": _demo_mode(), "inboundReady": _inbound_ready(), "accounts": accounts}
 
 
 class SendingControl(BaseModel):
@@ -251,8 +271,6 @@ def _gmail_callback(code: str, state: str, error: str) -> HTMLResponse:
         if conn.execute("SELECT 1 FROM gmail_accounts WHERE email=%s AND brand_id<>%s AND state<>'revoked'",(email,brand_id)).fetchone():
             raise HTTPException(409,'다른 브랜드에 연결된 이메일입니다. 브랜드별 전용 계정을 사용하세요.')
         conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('gmail-brand:'+brand_id,))
-        if conn.execute("SELECT 1 FROM gmail_accounts WHERE brand_id=%s AND email<>%s AND state='connected'",(brand_id,email)).fetchone():
-            raise HTTPException(409,'기존 이메일 연결을 해제한 뒤 새 계정을 연결하세요. 브랜드당 하나의 발신 계정을 사용합니다.')
         existing = conn.execute('SELECT refresh_token FROM gmail_accounts WHERE brand_id=%s AND email=%s',
                                 (brand_id, email)).fetchone()
         if not tok.get('refresh_token') and not (existing and existing['refresh_token']):
@@ -318,19 +336,26 @@ def _refresh_if_needed(conn, r: dict) -> str:
 
 
 def send_via_brand_gmail(conn, brand_id: str, to: str, subject: str,
-                         body: str, *, account_id=None, reply_headers=None) -> dict | None:
+                         body: str, *, account_id=None, reply_headers=None, unsubscribe_url=None) -> dict | None:
     """연결된 지메일이 있으면 그 주소로 발송. 없으면 None(호출측이 폴백).
 
     중지 또는 일일 한도 초과 시 None. 아웃리치는 다른 계정으로 우회하지 않고 대기한다.
     """
+    from .mail_safety import blocked
+    if blocked(conn,to):
+        raise HTTPException(409,'영구 반송·불만·연락 중지로 차단된 수신 주소입니다')
     r = conn.execute(
         "SELECT * FROM gmail_accounts WHERE brand_id=%s AND state='connected'"
         " AND (%s::uuid IS NULL OR account_id=%s::uuid) ORDER BY connected_at,account_id LIMIT 1 FOR UPDATE", (brand_id,account_id,account_id)).fetchone()
     if not r:
         return None
-    out = _acct_out(r)
-    if out['sendingPaused'] or out["sentToday"] >= out["todayCap"]:
+    out = _acct_out(_with_delivery_usage(conn,r))
+    if r.get("last_send_at") and datetime.now(UTC)<r["last_send_at"]+timedelta(seconds=SEND_INTERVAL_SECONDS):
         return None
+    if out['sendingPaused'] or out["sentLast24Hours"] >= out["todayCap"]:
+        return None
+    if unsubscribe_url and not re.fullmatch(r'https://api\.theprlist\.net/outreach/unsubscribe/[0-9a-fA-F-]{36}',unsubscribe_url):
+        raise HTTPException(400,'수신거부 주소 형식 확인 필요')
     message_id = None
     if not _demo_mode():
         token = _refresh_if_needed(conn, r)
@@ -338,6 +363,11 @@ def send_via_brand_gmail(conn, brand_id: str, to: str, subject: str,
         msg["To"], msg["Subject"] = to, subject
         msg["From"] = r["email"]
         msg["Reply-To"] = out["replyTo"]
+        msg['Date']=format_datetime(datetime.now(UTC))
+        msg['Message-ID']=make_msgid(domain=r['email'].rsplit('@',1)[-1])
+        if unsubscribe_url:
+            msg['List-Unsubscribe']='<'+unsubscribe_url+'>'
+            msg['List-Unsubscribe-Post']='List-Unsubscribe=One-Click'
         if reply_headers and reply_headers.get('rfc_message_id'):
             mid=reply_headers['rfc_message_id']
             if '\r' not in mid and '\n' not in mid:
@@ -352,17 +382,22 @@ def send_via_brand_gmail(conn, brand_id: str, to: str, subject: str,
             json=payload, timeout=20)
         if resp.status_code >= 300:
             raise HTTPException(502, "지메일 발송 실패 — Gmail에서 발송 여부를 확인하세요")
-        message_id = resp.json().get("id")
+        provider_result = resp.json()
+        message_id = provider_result.get("id")
         if not message_id:
             raise HTTPException(502, "발송 결과 확인 필요")
+    if message_id:
+        conn.execute("INSERT INTO gmail_delivery_events(account_id,provider_message_id) VALUES(%s,%s) ON CONFLICT DO NOTHING",(r['account_id'],message_id))
     conn.execute(
-        "UPDATE gmail_accounts SET sent_today=CASE WHEN sent_date=(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date"
+        "UPDATE gmail_accounts SET last_send_at=now(),sent_today=CASE WHEN sent_date=(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date"
         " THEN sent_today+1 ELSE 1 END, sent_date=(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date,"
         " warmup_days=warmup_days+CASE WHEN warmup_last_date=(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date THEN 0 ELSE 1 END,"
         " warmup_last_date=(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date"
         " WHERE account_id=%s", (r["account_id"],))
     return {"via": "gmail" if not _demo_mode() else "demo",
-            "fromEmail": r["email"], "messageId": message_id}
+            "fromEmail": r["email"], "messageId": message_id,
+            "accountId": str(r["account_id"]),
+            "threadId": provider_result.get("threadId") if not _demo_mode() else None}
 
 
 # ── 답장 인박스 — Reply-To 인바운드 수신 → 스레드 → 게이트 답장 ──
@@ -371,6 +406,17 @@ _DECLINE_KW = ("not interested", "no thanks", "stop", "unsubscribe",
                "ไม่สนใจ", "không quan tâm", "안 할게요", "관심 없")
 _INTEREST_KW = ("interested", "yes", "sounds good", "love to", "let's do",
                 "สนใจ", "ได้ค่ะ", "quan tâm", "đồng ý", "관심 있", "할게요", "좋아요")
+
+
+def record_explicit_optout(conn, brand, sender, text):
+    # Only an unambiguous first line. Quoted invitations contain unsubscribe
+    # links and must never be mistaken for the creator's request.
+    import re
+    first=next((line.strip().lower() for line in text.splitlines() if line.strip()),'')
+    if not re.fullmatch(r"(?:unsubscribe|stop|수신거부|수신 거부|please unsubscribe me|please stop emailing me|please remove me from (?:your|the) mailing list)[.! ]*",first):
+        return False
+    conn.execute("INSERT INTO outreach_optouts(brand_id,email,opted_out_at) VALUES(%s,%s,now()) ON CONFLICT(brand_id,email) DO UPDATE SET opted_out_at=COALESCE(outreach_optouts.opted_out_at,EXCLUDED.opted_out_at)",(brand,sender.strip().lower()))
+    return True
 
 
 def _ari_label(text: str) -> str:
@@ -407,6 +453,7 @@ def inbound_reply(body: InboundIn, x_inbound_key: str = Header(default="")) -> d
     sender = body.from_email.strip().lower()
     label = _ari_label(body.text)
     with connect() as conn:
+        record_explicit_optout(conn,brand,sender,body.text)
         t = conn.execute(
             "INSERT INTO mail_threads (brand_id, creator_email, creator_handle,"
             " subject, ari_label, last_direction, last_message_at)"
@@ -471,11 +518,22 @@ def get_thread(thread_id: str,
     return {**_thread_out(t), "messages": [
         {"msgId": m["msg_id"], "direction": m["direction"], "body": m["body"],
          "state": m["state"], "sentVia": m["sent_via"],
+         "gmailAccountId": str(m["gmail_account_id"]) if m["gmail_account_id"] else None,
+         "fromEmail": m["from_email"], "toEmail": m["to_email"],
          "at": m["created_at"].isoformat()} for m in msgs]}
 
 
 class ReplyIn(BaseModel):
-    body: str
+    body: str = Field(max_length=20000)
+    request_id: UUID | None = None
+    reply_to_msg_id: int | None = None
+    expected_account_id: UUID | None = None
+
+
+def _same_sender_conversation(conn,thread_id,message):
+    # A creator record can contain several provider threads/mailboxes. Only
+    # an already established conversation permits an older sender to continue.
+    return bool(message.get('gmail_thread_id') and conn.execute("SELECT 1 FROM mail_messages WHERE thread_id=%s AND direction='out' AND state='sent' AND gmail_account_id=%s AND gmail_thread_id=%s LIMIT 1",(thread_id,message['gmail_account_id'],message['gmail_thread_id'])).fetchone())
 
 
 @router.post("/inbox/threads/{thread_id}/reply")
@@ -491,11 +549,32 @@ def reply_thread(thread_id: str, body: ReplyIn,
     """답장 작성 → OUTBOUND 게이트 접수. 승인되면 다음 조회 때 발송된다."""
     if not body.body.strip():
         raise HTTPException(400, "본문이 비어 있습니다")
+    from .auth import current_user
+    reply_actor=str((current_user(authorization) or {}).get('sub') or 'user:console')
     with connect() as conn:
-        t = conn.execute("SELECT * FROM mail_threads WHERE thread_id=%s",
+        t = conn.execute("SELECT * FROM mail_threads WHERE thread_id=%s FOR UPDATE",
                          (thread_id,)).fetchone()
         if not t:
             raise HTTPException(404, "thread not found")
+        import hashlib
+        digest=hashlib.sha256(json.dumps({'thread':str(thread_id),'body':body.body.strip(),'reply_to':body.reply_to_msg_id,'account':str(body.expected_account_id)},sort_keys=True).encode()).hexdigest()
+        if body.request_id:
+            previous=conn.execute('SELECT r.*,m.gate_id,m.state FROM mail_reply_draft_requests r JOIN mail_messages m USING(msg_id) WHERE request_id=%s',(body.request_id,)).fetchone()
+            if previous:
+                if previous['input_hash']!=digest:raise HTTPException(409,'같은 답장 요청의 내용이 다릅니다')
+                return {'msgId':previous['msg_id'],'gateId':str(previous['gate_id']),'state':previous['state'],'replayed':True}
+        original=conn.execute("SELECT gmail_account_id FROM mail_messages WHERE thread_id=%s AND direction='out' AND state='sent' AND gmail_account_id IS NOT NULL ORDER BY created_at DESC,msg_id DESC LIMIT 1",(thread_id,)).fetchone()
+        origin = conn.execute("SELECT * FROM mail_messages WHERE thread_id=%s AND gmail_account_id IS NOT NULL AND (%s::uuid IS NULL OR gmail_account_id=%s::uuid) AND (direction='in' OR (direction='out' AND state='sent')) ORDER BY created_at DESC,msg_id DESC LIMIT 1", (thread_id,original['gmail_account_id'] if original else None,original['gmail_account_id'] if original else None)).fetchone()
+        if body.reply_to_msg_id is not None:
+            origin=conn.execute("SELECT * FROM mail_messages WHERE msg_id=%s AND thread_id=%s AND direction='in' AND state='sent' AND gmail_account_id IS NOT NULL",(body.reply_to_msg_id,thread_id)).fetchone()
+            if not origin:raise HTTPException(409,'이 대화에서 받은 실제 Gmail 메일을 선택하세요')
+            if not conn.execute("SELECT 1 FROM gmail_accounts WHERE account_id=%s AND brand_id=%s AND state='connected'",(origin['gmail_account_id'],t['brand_id'])).fetchone():raise HTTPException(409,'원래 발신 계정의 Google 연결 상태를 확인하세요')
+            if original and original['gmail_account_id']!=origin['gmail_account_id'] and not _same_sender_conversation(conn,thread_id,origin):raise HTTPException(409,'이 크리에이터의 원래 발신 계정과 다릅니다. 발신 이력을 확인하세요')
+        if body.expected_account_id is not None and (not origin or str(origin['gmail_account_id'])!=str(body.expected_account_id)):
+            raise HTTPException(409,'검토한 발신 계정과 달라졌습니다')
+        if not origin:
+            accounts = conn.execute("SELECT account_id FROM gmail_accounts WHERE brand_id=%s AND state='connected' ORDER BY account_id", (t['brand_id'],)).fetchall()
+            origin = {'gmail_account_id': accounts[0]['account_id'] if len(accounts)==1 else None, 'gmail_thread_id': None, 'rfc_message_id': None, 'subject': t['subject']}
         g = conn.execute(
             "INSERT INTO gate_requests (brand_id, kind, summary, payload,"
             " requested_by) VALUES (%s,'OUTBOUND',%s,%s,'user:console')"
@@ -506,11 +585,13 @@ def reply_thread(thread_id: str, body: ReplyIn,
                          "preview": body.body[:120]}, ensure_ascii=False))).fetchone()
         m = conn.execute(
             "INSERT INTO mail_messages (thread_id, direction, to_email, body,"
-            " state, gate_id) VALUES (%s,'out',%s,%s,'pending_gate',%s)"
+            " state, gate_id,gmail_account_id,gmail_thread_id,rfc_message_id,subject) VALUES (%s,'out',%s,%s,'pending_gate',%s,%s,%s,%s,%s)"
             " RETURNING msg_id",
             (thread_id, t["creator_email"], body.body.strip(),
-             g["gate_id"])).fetchone()
-        ledger_append(conn, "user:console", "GATE_REQUESTED", str(g["gate_id"]),
+             g["gate_id"],origin["gmail_account_id"],origin["gmail_thread_id"],origin["rfc_message_id"],origin["subject"])).fetchone()
+        if body.request_id:
+            conn.execute('INSERT INTO mail_reply_draft_requests(request_id,thread_id,input_hash,msg_id,created_by) VALUES(%s,%s,%s,%s,%s)',(body.request_id,thread_id,digest,m['msg_id'],reply_actor))
+        ledger_append(conn, reply_actor, "GATE_REQUESTED", str(g["gate_id"]),
                       {"kind": "OUTBOUND", "thread": str(thread_id)})
     return {"msgId": m["msg_id"], "gateId": str(g["gate_id"]),
             "state": "pending_gate"}
@@ -526,17 +607,27 @@ def send_reply(thread_id: str, msg_id: int, authorization: str = Header(default=
         t = conn.execute('SELECT * FROM mail_threads WHERE thread_id=%s', (thread_id,)).fetchone()
         if not t: raise HTTPException(404, '대화 없음')
         _guard(t['brand_id'], authorization, '')
+        if conn.execute('SELECT 1 FROM outreach_optouts WHERE brand_id=%s AND email=%s AND opted_out_at IS NOT NULL',(t['brand_id'],t['creator_email'].lower())).fetchone():
+            raise HTTPException(409,'수신거부한 연락처입니다. 발송할 수 없습니다.')
+        from .mail_safety import blocked
+        if blocked(conn,t['creator_email']):raise HTTPException(409,'차단된 연락처입니다. 발송할 수 없습니다.')
         m = conn.execute("UPDATE mail_messages SET state='sending' WHERE msg_id=%s AND thread_id=%s AND direction='out' AND state='pending_gate' RETURNING *", (msg_id,thread_id)).fetchone()
         if not m: raise HTTPException(409, '이미 발송했거나 확인이 필요한 메일입니다')
+        if not m['gmail_account_id']:
+            raise HTTPException(409, '발신 계정이 없는 이전 답장입니다. 초안을 다시 작성하세요.')
+        original=conn.execute("SELECT gmail_account_id FROM mail_messages WHERE thread_id=%s AND direction='out' AND state='sent' AND gmail_account_id IS NOT NULL ORDER BY created_at DESC,msg_id DESC LIMIT 1",(thread_id,)).fetchone()
+        if original and original['gmail_account_id']!=m['gmail_account_id'] and not _same_sender_conversation(conn,thread_id,m):
+            raise HTTPException(409,'기존 대화 발신 계정과 다릅니다. 원래 계정으로 초안을 다시 작성하세요.')
     try:
         with connect() as conn:
-            inbound=conn.execute("SELECT * FROM mail_messages WHERE thread_id=%s AND direction='in' AND gmail_account_id IS NOT NULL ORDER BY created_at DESC LIMIT 1",(thread_id,)).fetchone()
-            extra={'account_id':inbound['gmail_account_id'],'reply_headers':inbound} if inbound else {}
-            sent = send_via_brand_gmail(conn,t['brand_id'],t['creator_email'],'Re: '+(inbound['subject'] if inbound else t['subject']),m['body'],**extra)
+            extra={'account_id':m['gmail_account_id'],'reply_headers':m} if m['gmail_account_id'] else {}
+            subject=m['subject'] or t['subject']
+            subject=subject if re.match(r'(?i)^re:',subject) else 'Re: '+subject
+            sent = send_via_brand_gmail(conn,t['brand_id'],t['creator_email'],subject,m['body'],**extra)
             if not sent:
                 conn.execute("UPDATE mail_messages SET state='pending_gate' WHERE msg_id=%s",(msg_id,))
                 return {'state':'pending_gate'}
-            conn.execute("UPDATE mail_messages SET state='sent',sent_via=%s,from_email=%s WHERE msg_id=%s",(sent['via'],sent['fromEmail'],msg_id))
+            conn.execute("UPDATE mail_messages SET state='sent',sent_at=now(),sent_via=%s,from_email=%s,gmail_message_id=%s,gmail_thread_id=%s WHERE msg_id=%s",(sent['via'],sent['fromEmail'],sent.get('messageId'),sent.get('threadId') or m['gmail_thread_id'],msg_id))
             conn.execute("UPDATE mail_threads SET last_direction='out',last_message_at=now() WHERE thread_id=%s",(thread_id,))
             conn.execute("UPDATE gate_requests SET state='APPROVED',decided_by=%s,decided_at=now(),executed=true WHERE gate_id=%s",(str(u.get('sub') or u.get('kind')),m['gate_id']))
         return {'state':'sent'}
@@ -601,7 +692,8 @@ def admin_gmail_status(authorization: str = Header(default=''),
     queue = {r['brand_id']: r['pending'] for r in pending_batches}
     brands: dict = {}
     for r in rows:
-        acct = _acct_out(r)
+        with connect() as usage_conn:
+            acct = _acct_out(_with_delivery_usage(usage_conn,r))
         acct['syncCursorSet'] = bool(r.get('sync_page_token'))
         b = brands.setdefault(r['brand_id'], {
             'brandId': r['brand_id'], 'brandName': r['brand_name'],

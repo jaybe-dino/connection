@@ -1,0 +1,90 @@
+/* 어드민 전사 운영 셸 — Slack-v3 journey 최종 플럼 팔레트
+   (docs/ui-reference/slack-v3/journey.css: top #302037 · rail #3A2843 ·
+   side #F3EFF6 · active #6B5478 · CTA #695177). 어드민 앱 범위에서만
+   공용 토큰을 재지정해 구조·기능은 그대로 둔다. */
+:root {
+  /* 다크(레일·탑) → 플럼 */
+  --d900: #241a2b;
+  --d800: #3a2843;
+  --d700: #302037;
+  --d600: #6b5478;
+  --d500: #4c3a56;
+  --d400: #ad97ba;
+
+  /* 주 액션 → CTA #695177 */
+  --t100: #eee6f3;
+  --t200: #ddd0e6;
+  --t300: #a58cb7;
+  --t400: #755d84;
+  --t500: #695177;
+
+  /* 뉴트럴 표면 — journey 본문 톤 */
+  --n50: #fcfbfd;
+  --n100: #f3eff6;
+  --n150: #eae3ee;
+  --n200: #e7e3e9;
+  --n300: #c9c0ce;
+  --n400: #9e8aab;
+  --n500: #706a75;
+  --n800: #28242d;
+}
+.wk-admin-top {
+  height: 36px;
+  flex-shrink: 0;
+  background: #302037;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.wk-admin-top small {
+  font-size: 10px;
+  font-weight: 500;
+  color: #cdbfd6;
+  letter-spacing: .08em;
+}
+.wk-admin-top .live {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* 브랜드 관리 — 초보 운영자용 큰 버튼/라벨 폼. 터치 최소 44px. */
+.wkb-btn {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 13px;
+}
+.wkb-primary {
+  background: var(--t500);
+  border-color: var(--t500);
+  color: #fff;
+}
+.wkb-primary:hover { background: var(--t400); }
+.wkb-danger-btn {
+  background: var(--c500, #b4232a);
+  border-color: var(--c500, #b4232a);
+  color: #fff;
+}
+.wkb-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.wkb-field > label { font-size: 12px; font-weight: 800; }
+.wkb-field input, .wkb-field select { min-height: 40px; box-sizing: border-box; }
+.wkb-hint { font-size: 11px; color: var(--n500); line-height: 1.6; }
+.wkb-err { font-size: 12px; color: var(--c500, #b4232a); }
+.wkb-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.wkb-danger {
+  border: 1px solid #e4c7c7;
+  background: #fdf7f7;
+  border-radius: 10px;
+  padding: 10px;
+}
+/* 375/390 — 버튼은 세로 흐름으로 전체 폭, 입력은 줄바꿈 없이 한 줄씩 */
+@media (max-width: 480px) {
+  .wkb-row { flex-direction: column; align-items: stretch; }
+  .wkb-row > button, .wkb-row > .wkb-btn { width: 100%; }
+}

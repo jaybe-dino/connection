@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-29T20:55:41.078Z",
+  "results": [
+    "PASS B1 비공개 저장: 초안은 서버 draft·크리에이터 목록에 없음·화면 안내",
+    "PASS B1 발행 후 크리에이터 목록에 보임",
+    "PASS B2 동시 회신 처리: 늦은 저장은 거부·안내, A 의 저장 유지, B 입력은 남음",
+    "PASS B2 인계: 최신 상태를 불러온 뒤 다시 저장 → 반영(revision 2) — {\"label\":\"interested\",\"owner\":\"\",\"nextAction\":\"B 담당 처리 0vjat\",\"dueAt\":null,\"revision\":2}",
+    "PASS C2 주소 오타 수정(발송 전): 화면에서 수정 → 서버 반영 — 2 Right Ave, Brooklyn NY 11201",
+    "PASS C2 발송 후 주소 변경 차단(서버 409·화면에 주소 수정 없음) — 409",
+    "PASS C2 수정 2회: 크리에이터 화면은 최신 요청·이전 제출 링크",
+    "PASS B2/D03 수정 2회 기록 보존: 제출 v1·v2(보완 요청·요청문) + v3 검수 대기 — 1:needs_fix,2:needs_fix,3:in_review",
+    "PASS 페이지 오류 없음"
+  ]
+}

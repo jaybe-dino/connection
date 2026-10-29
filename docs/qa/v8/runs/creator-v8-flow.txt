@@ -1,0 +1,25 @@
+PASS 시안 셸(v2-creator)과 시안 CSS 사용
+PASS 캠페인 상세·신청 폼 표시
+PASS 조건 확인 없이 신청하면 오류
+PASS 신청이 서버에 기록됨 — applied
+PASS 신청 후 내 캠페인으로 이동
+PASS 브랜드 선정(실 API) — 200
+PASS 내 할 일에 조건 확인 표시
+PASS 조건 합의 → terms_agreed — terms_agreed
+PASS 진행 단계 3(조건·주소)
+PASS 주소가 서버에 저장(수령인·국가·주소·연락처) — {"phone":"+1 555 0100","address":"123 Main St, Brooklyn NY 11201","country":"US"
+PASS 주소 저장 후 발송 대기 표시
+PASS 브랜드 발송 처리(실 API) — 200
+PASS 송장·영상 제출 단계 표시
+PASS 영상 제출 → content_submitted — content_submitted
+PASS # 질문 채널 게시·표시
+PASS 스레드 답글 표시
+PASS Esc로 스레드 닫힘
+PASS 미션 행에 주 버튼 없음
+PASS 보상: 금액 미연동 상태 표시(가짜 금액 없음)
+PASS [390] 채널·메뉴 열기 → nav-open
+PASS [390] 메뉴에서 이동 후 메뉴 닫힘
+PASS [390] 가로 넘침 없음
+PASS 로그아웃 후 공개 화면(기존 CSS)
+PASS 페이지 오류 없음
+PASS 24 FAIL 0

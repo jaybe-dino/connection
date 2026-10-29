@@ -1,0 +1,19 @@
+PASS 준비: 선정(실 API)
+PASS 크리에이터가 본 조건: 고정비 100 USD
+PASS 옛 확인값 합의 → 거절, 재확인 안내
+PASS 새 조건(200원 · 릴스 2개) 표시, 옛 100 USD 사라짐
+PASS 확인 체크는 해제, 계정 입력은 유지
+PASS 경고로 포커스 이동
+PASS 최신 조건 재확인 합의 → 스냅샷 200 KRW·확인값 일치 — {"handle":"@fp.minji","product":"수분 선크림","platform":"instagram","productId":null,"conditions":["릴스 2개"],"rewardType":"paid","productImage":n
+PASS 크리에이터 상세: 합의 조건 유지(200원·Instagram·릴스 2개), 수정값 미노출
+PASS Instagram 합의라 Spark 칸 없음(캠페인이 TikTok 으로 바뀌어도)
+PASS 크리에이터 보상: 200원 (합의)
+PASS 크리에이터 할 일: 합의 조건 기준
+PASS 크리에이터 페이지 오류 없음
+PASS 경합: 변화 없는 새로고침은 체크 유지
+PASS 경합: 새로고침으로 조건 변경 감지 → 체크 해제·재확인 안내·새 금액 표시
+PASS 경합: 재확인 없이 합의 클릭 → 합의되지 않음
+PASS 경합: 재확인 후 합의 → 70 USD 스냅샷
+PASS 브랜드 지원자: 합의한 조건 200원·Instagram·@fp.minji·릴스 2개 — @minji 조건 합의 플랫폼 TikTok · @fp.minji 신청일 2026-10-29 배송 주소 주소 미입력 이 캠페인 담당에게만 보여요 합의한 조건: 제품 수분 선크림 · 고정비 200원 · Instagram 계정 @fp.minji · 릴스 2개 샘플·영상에서 처리
+PASS 브랜드 페이지 오류 없음
+PASS 18 FAIL 0

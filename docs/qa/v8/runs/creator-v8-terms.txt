@@ -1,0 +1,13 @@
+PASS 준비: 고정비 캠페인 수수료 없이 선정(실 API) — 200
+PASS 없는 캠페인 ID → 오류·목록, 다른 협업 폼 없음
+PASS 고정비 100 USD · Instagram 조건으로 합의 화면
+PASS 합의 500 → 계정·체크 유지, 상태 그대로
+PASS 합의 성공 → 서버 스냅샷(고정비·USD·Instagram·계정) — {"handle":"@insta.minji","product":"수분 선크림","platform":"instagram","productId":null,"conditions":["Instagram 릴스 1개 · 15~
+PASS Instagram 캠페인엔 Spark 코드 칸 없음
+PASS 주소 500 → 주소 입력·동의 유지, 서버 미저장
+PASS 주소 성공 → 저장 후 입력 정리
+PASS 영상 500 → 링크·메모 유지, 서버 미제출
+PASS 영상 성공 → content_submitted
+PASS 받을 보상: 합의한 고정비 USD 표시(원 하드코딩 없음)
+PASS 페이지 오류 없음
+PASS 12 FAIL 0

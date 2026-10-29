@@ -1,0 +1,12 @@
+PASS fixture: A·B 같은 브랜드·같은 캠페인 합의(주소 단계) — ["terms_agreed","terms_agreed"]
+PASS A: 상세(c-work)·주소 입력 상태
+PASS 로그아웃 즉시: v8 폼·선택·busy·상세 해시 비움 — {"f":0,"id":"","busy":0,"hash":"#login"}
+PASS B 바인딩(같은 문서·새로고침 없음): A 입력·상세·busy 없음 — {"me":"sess.b.0nih0@creator.example","f":"{}","id":"","busy":"{}","screen":"c-tasks"}
+PASS B 같은 캠페인 상세: A 주소·연락처·동의 체크 미노출 — {"rec":"","line":"","consent":false}
+PASS B: A 의 늦은 저장 응답이 성공 토스트·주소로 표시되지 않음
+PASS 서버: B 참여 건에 A 주소 없음
+PASS B DM: A 의 DM 초안 미노출
+PASS A 재바인딩: B 입력 없음 — {}
+PASS A 재바인딩: 계정별 채팅 초안 정책 유지(A 초안 복원) — A의 DM 초안 0nih0
+PASS 페이지 오류 없음
+PASS 11 FAIL 0

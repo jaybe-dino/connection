@@ -1,0 +1,13 @@
+PASS 준비: 브랜드 캠페인 카드 게시(실 API) — {"msgId":191,"cellId":"cell-goryeo1392-main","channel":"notice","campaignId":"cm
+PASS 캠페인 공지: 게시된 카드 표시(고정 빈 상태 아님)
+PASS 카드 → 그 캠페인 상세
+PASS 공지 열기 → 공지 채널 + 고른 공지(첫 공지) 스레드 — {"root":192,"ch":"notice"}
+PASS 다른 공지 → 그 공지 스레드
+PASS [goryeo1392] 누적 XP = 서버 total — 3140/3140
+PASS [fau] 누적 XP = 서버 total — 6280/6280
+PASS 제품 이미지: 깨진 이미지 없음(실패는 이니셜 그림) — []
+PASS 제품 이미지 대체는 data: 이니셜 그림(외부 사진 아님)
+PASS 레일 로고 오류 → 브랜드 이니셜 — {"img":0,"text":"F"}
+PASS 크리에이터 페이지 오류 없음
+PASS 공개 상세 이미지 오류 → 이니셜 그림 — data:image/svg+xml;charset=utf-8,%3Csvg%
+PASS 12 FAIL 0

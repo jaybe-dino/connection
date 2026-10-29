@@ -1,0 +1,26 @@
+PASS 준비: 고려 캠페인 선정(실 API) — 200
+PASS [1280] 고려(레일 클릭) 내 캠페인에 선정 건
+PASS [1280] 고려 협업 상세 열림
+PASS [1280] FAU 전환 직후: 이전 브랜드 상세·캠페인명 없음
+PASS [1280] FAU 전환 직후: 레일 현재 표시
+PASS [1280] FAU 할 일: FAU 협업만(고려 선정 건 없음) — ["fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau"]
+PASS [1280] FAU 할 일 배지 = FAU 할 일 수 — 25/25
+PASS [1280] FAU 캠페인 목록에 고려 캠페인 없음
+PASS [1280] FAU 알림 패널: 고려 선정 알림 없음 — YOUR UPDATES 새로운 소식 FAU 알림 · 선정·공지·담당자 메시지 · 안 읽음 13건 이 브랜드 알림 모두 읽음 → 새 새 캠페인
+PASS [1280] 알림 항목 _idx = 원래 서버 목록 인덱스(같은 알림)
+PASS [1280] 최근 알림 배너 인덱스도 같은 FAU 알림 — {"ok":true}
+PASS [1280] 고려 복귀 후 선정 건 표시
+PASS [1280] 페이지 오류 없음
+PASS [390] 고려(레일 클릭) 내 캠페인에 선정 건
+PASS [390] 고려 협업 상세 열림
+PASS [390] FAU 전환 직후: 이전 브랜드 상세·캠페인명 없음
+PASS [390] FAU 전환 직후: 레일 현재 표시
+PASS [390] FAU 할 일: FAU 협업만(고려 선정 건 없음) — ["fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau","fau"]
+PASS [390] FAU 할 일 배지 = FAU 할 일 수 — 25/25
+PASS [390] FAU 캠페인 목록에 고려 캠페인 없음
+PASS [390] FAU 알림 패널: 고려 선정 알림 없음 — YOUR UPDATES 새로운 소식 FAU 알림 · 선정·공지·담당자 메시지 · 안 읽음 13건 이 브랜드 알림 모두 읽음 → 새 새 캠페인
+PASS [390] 알림 항목 _idx = 원래 서버 목록 인덱스(같은 알림)
+PASS [390] 최근 알림 배너 인덱스도 같은 FAU 알림 — {"ok":true}
+PASS [390] 고려 복귀 후 선정 건 표시
+PASS [390] 페이지 오류 없음
+PASS 25 FAIL 0

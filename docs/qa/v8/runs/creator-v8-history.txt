@@ -1,0 +1,18 @@
+PASS [1280] 내 캠페인: 마감·미선정 신청 건 이력 표시
+PASS [1280] 미선정 상세: 결과·사유 표시
+PASS [1280] 마감된 신청: 마감 안내
+PASS [1280] 둘러보기 목록에는 마감 건 없음
+PASS [1280] 마감 건 상세는 신청 불가 안내
+PASS [1280] 데스크톱 양쪽 패널 유지
+PASS [1280] 제출 영상 보기: 안전한 https 새 창 링크 — {"href":"https://www.tiktok.com/@minji.test/video/1","target":"_blank","rel":"noopener noreferrer","text":"제출 영상 보기"}
+PASS [1280] 페이지 오류 없음
+PASS [390] 내 캠페인: 마감·미선정 신청 건 이력 표시
+PASS [390] 미선정 상세: 결과·사유 표시
+PASS [390] 마감된 신청: 마감 안내
+PASS [390] 둘러보기 목록에는 마감 건 없음
+PASS [390] 마감 건 상세는 신청 불가 안내
+PASS [390] 보기 → 선택 상세가 첫 화면(목록 숨김) — {"x":29,"y":314.171875,"width":332,"height":23.1875}
+PASS [390] 캠페인 목록으로 되돌아가기
+PASS [390] 제출 영상 보기: 안전한 https 새 창 링크 — {"href":"https://www.tiktok.com/@minji.test/video/1","target":"_blank","rel":"noopener noreferrer","text":"제출 영상 보기"}
+PASS [390] 페이지 오류 없음
+PASS 17 FAIL 0

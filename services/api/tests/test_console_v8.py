@@ -196,3 +196,42 @@ def test_uploaded_images_reach_public_catalog_only_while_listed(client):
     assert client.get(unsigned).status_code == 403
     signed = client.get("/brands/pubimg/products", headers=B).json()[0]["images"][0]["url"]
     assert client.get(signed).status_code == 200
+
+
+def test_brand_members_scoped(client, monkeypatch):
+    t = _approved_brand(client, "membrand", "멤버브랜드", "own@membrand.kr")
+    t2 = _approved_brand(client, "memother", "멤버다른", "own@memother.kr")
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    ch = _bearer(_creator_token(client, "mem.creator@ex.com"))
+    client.post("/me/join", json={"brand_id": "membrand"}, headers=ch)
+    m = client.get("/brands/membrand/members", headers=_bearer(t)).json()
+    assert len(m) == 1 and m[0]["dmCellId"].startswith("dm-membrand--") and "email" not in m[0]
+    assert client.get("/brands/memother/members", headers=_bearer(t2)).json() == []
+    assert client.get("/brands/membrand/members", headers=_bearer(t2)).status_code == 403
+
+
+def test_review_fixes_stream_limit_thread_channel_blank_names(client, monkeypatch):
+    t = _approved_brand(client, "fixbrand", "수정브랜드", "own@fixbrand.kr")
+    B = _bearer(t)
+    # 공백 이름 거부(제품·채널, 생성·수정)
+    assert client.post("/brands/fixbrand/products", json={"name": "   "}, headers=B).status_code == 400
+    pid = client.post("/brands/fixbrand/products", json={"name": "  앰플  "}, headers=B).json()
+    assert pid["name"] == "앰플"
+    assert client.patch(f"/brands/fixbrand/products/{pid['productId']}", json={"name": " "}, headers=B).status_code == 400
+    cell = _cell(client, B, "fixbrand")
+    assert client.post(f"/community/cells/{cell}/channels", json={"name": "  "}, headers=B).status_code == 400
+    assert client.patch(f"/community/cells/{cell}/channels/chat", json={"name": " "}, headers=B).status_code == 400
+    # Content-Length 없는 chunked 업로드도 누적 2MB 초과 시 413
+    def chunks():
+        yield b"\x89PNG\r\n\x1a\n"
+        for _ in range(40):
+            yield b"0" * 65536
+    r = client.post(f"/brands/fixbrand/products/{pid['productId']}/images?slot=main", content=chunks(), headers={**B, "Content-Type": "image/png"})
+    assert r.status_code == 413
+    # 답글은 원문과 같은 채널만(공지 답글은 기존 'chat' 전송도 공지로 유지)
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    tip = client.post(f"/community/cells/{cell}/messages", json={"text": "팁 원문", "channel": "tips"}, headers=B).json()["msgId"]
+    note = client.post(f"/community/cells/{cell}/messages", json={"text": "공지 원문", "channel": "notice"}, headers=B).json()["msgId"]
+    assert client.post(f"/community/cells/{cell}/messages", json={"text": "다른 채널 답글", "channel": "chat", "thread_parent": tip}, headers=B).status_code == 400
+    assert client.post(f"/community/cells/{cell}/messages", json={"text": "같은 채널 답글", "channel": "tips", "thread_parent": tip}, headers=B).status_code == 200
+    assert client.post(f"/community/cells/{cell}/messages", json={"text": "공지 답글(구 클라이언트)", "channel": "chat", "thread_parent": note}, headers=B).status_code == 200

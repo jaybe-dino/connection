@@ -16,7 +16,7 @@ import unicodedata
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from . import auth
 from .db import connect, ledger_append
@@ -147,8 +147,15 @@ def _out(conn, p):
             "images": product_images_out(conn, p["product_id"])}
 
 
+def _clean_name(v):
+    if v is None:
+        return v
+    return str(v).strip()
+
+
 class ProductIn(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
+    name: str = Field(max_length=120)
+    _n = field_validator("name", mode="before")(_clean_name)
     tiktok_product_ref: str = Field(default="", max_length=300)
     commission_pct: float = Field(default=10, ge=0, le=80)
 
@@ -157,6 +164,8 @@ class ProductIn(BaseModel):
 def create_product(brand: str, body: ProductIn,
                    authorization: str = Header(default="")) -> dict:
     _guard(brand, authorization)
+    if not body.name:
+        raise HTTPException(400, "제품명을 적어 주세요 (공백만은 안 돼요)")
     with connect() as conn:
         dup = conn.execute(
             "SELECT 1 FROM brand_products WHERE brand_id=%s AND name=%s",
@@ -174,7 +183,8 @@ def create_product(brand: str, body: ProductIn,
 
 
 class ProductPatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=120)
+    name: str | None = Field(default=None, max_length=120)
+    _n = field_validator("name", mode="before")(_clean_name)
     tiktok_product_ref: str | None = Field(default=None, max_length=300)
     commission_pct: float | None = Field(default=None, ge=0, le=80)
 
@@ -184,6 +194,8 @@ def edit_product(brand: str, product_id: UUID, body: ProductPatch,
                  authorization: str = Header(default="")) -> dict:
     """제품명·Shop 상품 ID·기본 수수료 수정. 이미 진행 중인 합의는 합의 스냅샷 기준이라 바뀌지 않는다."""
     _guard(brand, authorization)
+    if body.name is not None and not body.name:
+        raise HTTPException(400, "제품명을 적어 주세요 (공백만은 안 돼요)")
     with connect() as conn:
         p = _product(conn, brand, product_id)
         name = body.name.strip() if body.name is not None else p["name"]
@@ -757,7 +769,13 @@ async def upload_product_image(brand: str, product_id: UUID, request: Request, s
             raise HTTPException(413, "이미지는 2MB 이하만 올릴 수 있어요")
     except ValueError:
         raise HTTPException(400, "Content-Length 를 확인하세요")
-    data = await request.body()
+    # Content-Length 가 없는(chunked) 요청도 누적 크기가 한도를 넘는 즉시 중단한다 — 전체를 메모리에 올리지 않는다
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf.extend(chunk)
+        if len(buf) > IMAGE_MAX:
+            raise HTTPException(413, "이미지는 2MB 이하만 올릴 수 있어요")
+    data = bytes(buf)
     if not data:
         raise HTTPException(400, "빈 파일입니다")
     if len(data) > IMAGE_MAX:

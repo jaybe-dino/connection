@@ -13,7 +13,7 @@ import re
 import uuid
 
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from . import ai, auth
 from .db import connect, ledger_append
@@ -264,6 +264,22 @@ def post_message(cell_id: str, body: PostIn,
     with connect() as conn:
         cell = _cell(conn, cell_id)
         who = _member_or_owner(conn, claims, cell)
+        parent = None
+        if body.thread_parent:
+            parent = conn.execute(
+                "SELECT msg_id, thread_parent, channel FROM cell_messages WHERE"
+                " msg_id=%s AND cell_id=%s",
+                (body.thread_parent, cell_id)).fetchone()
+            if not parent:
+                raise HTTPException(404, "스레드 원문을 찾을 수 없습니다")
+            if parent["thread_parent"]:
+                raise HTTPException(400, "답글에는 스레드를 달 수 없습니다 —"
+                                         " 원문 스레드에 남겨 주세요")
+            # 답글은 원문과 같은 채널에만. 이전 클라이언트는 공지 답글을 'chat' 으로 보냈으므로 공지로 맞춘다
+            if parent["channel"] == "notice" and body.channel == "chat":
+                body.channel = "notice"
+            if parent["channel"] != body.channel:
+                raise HTTPException(400, "답글은 원문과 같은 채널에만 달 수 있습니다")
         if claims.get("kind") == "creator":
             _channel_for_post(conn, cell, body.channel, True, bool(body.thread_parent))
             from .routes_service import require_onboarded
@@ -277,17 +293,6 @@ def post_message(cell_id: str, body: PostIn,
             author_kind = "brand" if claims.get("kind") == "brand" else "ari"
         # 원문 선저장(pending) — 번역 API 장애에도 메시지는 잃지 않는다.
         # 이 블록이 커밋된 뒤에야 번역을 시도하고, 실패하면 러너가 재시도한다.
-        parent = None
-        if body.thread_parent:
-            parent = conn.execute(
-                "SELECT msg_id, thread_parent FROM cell_messages WHERE"
-                " msg_id=%s AND cell_id=%s",
-                (body.thread_parent, cell_id)).fetchone()
-            if not parent:
-                raise HTTPException(404, "스레드 원문을 찾을 수 없습니다")
-            if parent["thread_parent"]:
-                raise HTTPException(400, "답글에는 스레드를 달 수 없습니다 —"
-                                         " 원문 스레드에 남겨 주세요")
         m = conn.execute(
             "INSERT INTO cell_messages (cell_id, channel, author, author_kind,"
             " original, original_locale, translations, translation_state,"
@@ -543,15 +548,23 @@ def list_dms(authorization: str = Header(default="")) -> list[dict]:
 # ── 채널 관리 (v8.1 B11/C11) — 브랜드가 추가·이름 변경·공개 범위·캠페인 연결·보관,
 #    크리에이터 메뉴는 GET channels 로 같은 목록을 그린다 ──────────────
 
+def _clean_name(v):
+    if v is None:
+        return v
+    return str(v).strip()
+
+
 class ChannelIn(BaseModel):
-    name: str = Field(min_length=1, max_length=40)
+    name: str = Field(max_length=40)
+    _n = field_validator("name", mode="before")(_clean_name)
     description: str = Field(default="", max_length=120)
     visibility: str = Field(default="public", pattern="^(public|readonly)$")
     campaign_id: str | None = Field(default=None, max_length=100)
 
 
 class ChannelPatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=40)
+    name: str | None = Field(default=None, max_length=40)
+    _n = field_validator("name", mode="before")(_clean_name)
     description: str | None = Field(default=None, max_length=120)
     visibility: str | None = Field(default=None, pattern="^(public|readonly)$")
     campaign_id: str | None = Field(default=None, max_length=100)
@@ -599,6 +612,8 @@ def add_channel(cell_id: str, body: ChannelIn, authorization: str = Header(defau
     with connect() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("channels:" + cell_id,))
         cell = _lounge_owner(conn, claims, cell_id)
+        if not body.name:
+            raise HTTPException(400, "채널 이름을 적어 주세요 (공백만은 안 돼요)")
         if _name_taken(conn, cell_id, body.name):
             raise HTTPException(409, "같은 이름의 채널이 이미 있습니다")
         if conn.execute("SELECT count(*) n FROM brand_channels WHERE cell_id=%s AND archived_at IS NULL"
@@ -620,6 +635,8 @@ def edit_channel(cell_id: str, key: str, body: ChannelPatch, authorization: str 
     with connect() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("channels:" + cell_id,))
         cell = _lounge_owner(conn, claims, cell_id)
+        if body.name is not None and not body.name:
+            raise HTTPException(400, "채널 이름을 적어 주세요 (공백만은 안 돼요)")
         cur = next((c for c in channels_of(conn, cell_id, include_archived=True) if c["key"] == key), None)
         if not cur:
             raise HTTPException(404, "채널을 찾을 수 없습니다")

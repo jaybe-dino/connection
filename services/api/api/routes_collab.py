@@ -184,6 +184,27 @@ def post_campaign_card(brand: str, campaign_id: str, body: CampaignPostIn,
             "campaignId": campaign_id, "at": m["at"].isoformat()}
 
 
+@router.get("/brands/{brand}/members")
+def brand_members(brand: str, authorization: str = Header(default="")) -> list[dict]:
+    """이 브랜드 커뮤니티 멤버(콘솔 '멤버' 탭) — 다른 브랜드 멤버는 보이지 않는다. 연락처·주소는 싣지 않는다."""
+    _brand_guard(brand, authorization)
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT m.creator_id, m.joined_at, c.handle, c.platform, c.verified, p.country,"
+            " (SELECT count(*) FROM campaign_applications a JOIN campaigns k USING (campaign_id)"
+            "   WHERE a.creator_id=m.creator_id AND k.brand_id=m.brand_id) AS applications,"
+            " (SELECT count(*) FROM campaign_terms t JOIN campaigns k USING (campaign_id)"
+            "   WHERE t.creator_id=m.creator_id AND k.brand_id=m.brand_id AND t.state<>'declined') AS collaborations"
+            " FROM memberships m JOIN creators c USING (creator_id)"
+            " LEFT JOIN creator_profiles p ON p.creator_id=m.creator_id"
+            " WHERE m.brand_id=%s ORDER BY m.joined_at DESC LIMIT 500", (brand,)).fetchall()
+    return [{"creatorId": r["creator_id"], "handle": r["handle"], "platform": r["platform"],
+             "verified": r["verified"], "country": r["country"],
+             "joinedAt": r["joined_at"].isoformat(), "applications": r["applications"],
+             "collaborations": r["collaborations"],
+             "dmCellId": f"dm-{brand}--{r['creator_id']}"} for r in rows]
+
+
 @router.get("/brands/{brand}/campaigns/{campaign_id}/applicants")
 def applicants(brand: str, campaign_id: str,
                authorization: str = Header(default="")) -> list[dict]:

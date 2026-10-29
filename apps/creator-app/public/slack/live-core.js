@@ -248,7 +248,7 @@ var commVersion=0;
 window.openCell=function(id,name,channel){
   var cell=(LIVE.cells||[]).find(function(c){return c.cellId===id;});
   if(cell)ui.brand=cell.brandId;
-  var ch=cell&&cell.kind==='dm'?'chat':(['chat','tips','products','qna','notice'].indexOf(channel)>=0?channel:(ui.channel&&cell&&cell.kind!=='dm'?ui.channel:'chat'));
+  var ch=cell&&cell.kind==='dm'?'chat':(/^[a-z0-9-]{2,24}$/.test(String(channel||''))?channel:(ui.channel&&cell&&cell.kind!=='dm'?ui.channel:'chat'));
   ui.channel=ch;
   var version=++commVersion,token=jwtGet();
   LIVE.open={cellId:id,name:name,channel:ch,msgs:[],loading:true,error:'',dm:!!(cell&&cell.kind==='dm')};
@@ -293,7 +293,7 @@ window.threadReplySend=function(){
   if(!v||!LIVE.open||!LIVE.thread||LIVE.threadBusy||v.length>2000)return;
   var id=LIVE.open.cellId,mid=LIVE.thread.rootId,token=jwtGet();
   LIVE.threadBusy=true;render();
-  return req('POST','/community/cells/'+encodeURIComponent(id)+'/messages',{text:v,channel:LIVE.open.channel==='notice'?'chat':LIVE.open.channel,locale:(window.__USER_LANG||'ko'),thread_parent:mid}).then(function(){
+  return req('POST','/community/cells/'+encodeURIComponent(id)+'/messages',{text:v,channel:LIVE.open.channel,locale:(window.__USER_LANG||'ko'),thread_parent:mid}).then(function(){
     if(token!==jwtGet())return;
     return threadOpen(mid);
   }).catch(function(e){if(isStale(e))return;toast((e&&e.message)||'답글을 보내지 못했습니다.');})

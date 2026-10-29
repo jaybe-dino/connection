@@ -2126,7 +2126,7 @@
       var id=commOpen.cellId,mid=commThread.rootId,token=jwtGet();
       commThreadBusy=true;render();
       // 공지 스레드의 답글은 chat으로 저장 — 공지 게시 권한과 별개의 Q&A
-      return req('POST','/community/cells/'+encodeURIComponent(id)+'/messages',{text:v,channel:commChannel==='notice'?'chat':commChannel,locale:(window.__USER_LANG||'ko'),thread_parent:mid}).then(function(){
+      return req('POST','/community/cells/'+encodeURIComponent(id)+'/messages',{text:v,channel:commChannel,locale:(window.__USER_LANG||'ko'),thread_parent:mid}).then(function(){
         if(token!==jwtGet())return;
         return window.commThreadOpen(mid);
       }).catch(function(e){toast('답글 실패',mailEscape((e&&e.message)||'다시 시도해 주세요.'));})

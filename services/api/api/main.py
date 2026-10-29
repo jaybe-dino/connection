@@ -7,6 +7,7 @@
 import json
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
@@ -88,6 +89,26 @@ async def legacy_access_boundary(request: Request, call_next):
         except HTTPException as e:
             return JSONResponse({'detail':'이 운영 기능은 아직 공개되지 않았습니다. 관리자 로그인이 필요합니다.'},status_code=e.status_code)
     return await call_next(request)
+
+# 브랜드 팀 '조회자(viewer)' — 보기만. 쓰기 요청(GET/HEAD/OPTIONS 외)은 경로와 무관하게 서버에서 거부한다.
+# 읽음 표시·로그아웃처럼 데이터를 바꾸지 않는 개인 기록만 예외.
+_VIEWER_OK = re.compile(r"^/(auth/.*|me/notifications/read|community/cells/[^/]+/read)$")
+
+
+@app.middleware("http")
+async def brand_viewer_readonly(request: Request, call_next):
+    if request.method not in ("GET", "HEAD", "OPTIONS") and not _VIEWER_OK.match(request.url.path):
+        from . import auth
+        from fastapi.responses import JSONResponse
+        u = auth.current_user(request.headers.get("authorization", ""))
+        if u and u.get("kind") == "brand" and u.get("brand_id"):
+            with connect() as conn:
+                r = conn.execute("SELECT role FROM brand_team_roles WHERE brand_id=%s AND user_id=%s::uuid",
+                                 (u["brand_id"], str(u.get("sub")))).fetchone()
+            if r and r["role"] == "viewer":
+                return JSONResponse({"detail": "조회자(보기 전용) 계정은 변경할 수 없어요. 소유자에게 역할 변경을 요청하세요."}, status_code=403)
+    return await call_next(request)
+
 
 # CORS — ALLOWED_ORIGINS(콤마 구분)가 있으면 화이트리스트, 없으면 개발 편의로 전체 허용.
 # 예: ALLOWED_ORIGINS=https://theprlist.net,https://console.theprlist.net

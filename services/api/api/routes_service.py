@@ -996,7 +996,7 @@ def team_list(brand_id: str, authorization: str = Header(default=""),
 
 class RoleIn(BaseModel):
     user_id: str
-    role: str = Field(pattern="^(owner|manager)$")
+    role: str = Field(pattern="^(owner|manager|viewer)$")
 
 
 @router.post("/brands/{brand_id}/team/role")
@@ -1020,7 +1020,7 @@ def set_team_role(brand_id: str, body: RoleIn,
             raise HTTPException(404, "이 브랜드의 팀원이 아닙니다")
         if target["role"] == body.role:
             return {"ok": True, "changed": False}
-        if body.role == "manager":
+        if body.role != "owner":
             _assert_not_last_active_owner(conn, brand_id, body.user_id, "강등")
         conn.execute(
             "INSERT INTO brand_team_roles (brand_id, user_id, role)"

@@ -214,7 +214,7 @@ def list_accounts(brand_id: str) -> list[dict]:
 
 class AccountIn(BaseModel):
     email: str = Field(min_length=5, max_length=200)
-    role: str = Field(default="manager", pattern="^(owner|manager)$")
+    role: str = Field(default="manager", pattern="^(owner|manager|viewer)$")
 
 
 @router.post("/admin/brands/{brand_id}/accounts")
@@ -327,7 +327,7 @@ def set_account_state(brand_id: str, user_id: str, body: StateIn,
 
 
 class RoleChangeIn(BaseModel):
-    role: str = Field(pattern="^(owner|manager)$")
+    role: str = Field(pattern="^(owner|manager|viewer)$")
 
 
 @router.post("/admin/brands/{brand_id}/accounts/{user_id}/role")
@@ -338,7 +338,7 @@ def set_account_role(brand_id: str, user_id: str, body: RoleChangeIn,
         a = _target_account(conn, brand_id, user_id)
         if a["role"] == body.role:
             return {"ok": True, "role": body.role, "changed": False}
-        if body.role == "manager":
+        if body.role != "owner":
             _assert_not_last_active_owner(conn, brand_id, user_id, "강등")
         conn.execute(
             "INSERT INTO brand_team_roles (brand_id, user_id, role)"

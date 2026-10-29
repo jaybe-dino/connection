@@ -8,6 +8,8 @@
    - 브랜드 경계는 v8-scope.js가 접근자(campaignsLive/offersLive/notifScoped)에서 보장한다. */
 (function () {
   'use strict';
+  // /products 는 커뮤니티 밖 독립 페이지(/products/)로 보낸다
+  if (location.pathname === '/products') { location.replace('/products/' + location.search); return; }
   var h = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); };
   var a = function (s) { return h(s).replace(/`/g, '&#96;'); };
 
@@ -117,7 +119,7 @@
     return '<div class="v6-cond">' + pimg(c, 64) + '<dl class="v6-kv"><dt>제품</dt><dd>' + h(c.product || '브랜드 안내 대기') + '</dd><dt>보상</dt><dd>' + h(rewardKind(c)) + (o && o.agreedCommissionPct != null ? ' · 합의 ' + h(o.agreedCommissionPct) + '%' : o && o.commissionPct != null ? ' · 제안 ' + h(o.commissionPct) + '%' : '') + '</dd><dt>콘텐츠</dt><dd>' + h(contentText(c)) + '</dd>' + (c.usp ? '<dt>소개</dt><dd>' + h(c.usp) + '</dd>' : '') + '<dt>국가 · 인원</dt><dd>' + h(ctry(c.countries)) + (c.capacity ? ' · ' + h(c.capacity) + '명' : '') + '</dd><dt>모집 마감</dt><dd>' + h(c.deadline ? String(c.deadline).slice(0, 10) : '별도 안내') + '</dd></dl></div>';
   }
   function scCampaigns() {
-    var action = '<a class="btn ghost" href="/products">전체 제품 모아보기 (별도 페이지)</a>';
+    var action = '<a class="btn ghost" href="/products/">전체 제품 모아보기 (별도 페이지)</a>';
     var top = head('캠페인 둘러보기', '신청 전 / 신청함 / 선정됨 / 진행 중 / 완료 상태를 함께 보여 줘요. 참여 중인 건은 ‘내 캠페인’에서 관리해요.', action);
     if (LIVE.loadErr.campaigns) return '<div class="v6">' + top + loadFail('캠페인') + '</div>';
     if (!LIVE.campaigns) return '<div class="v6">' + top + loading() + '</div>';
@@ -536,6 +538,11 @@
     if (!workspace()) { setMode(false); return baseRender.apply(this, arguments); }
     if (ui.page !== 'v8') { if (!fromHash()) { V.screen = LEGACY[ui.page] || 'c-tasks'; V.id = ui.page === 'community' ? 'chat' : (ui.campaign || ''); ui.page = 'v8'; pushHash(true); } }
     setMode(true);
+    // 다른 브랜드 캠페인으로 바로 들어온 경우(제품 모아보기·알림 링크) 그 브랜드 공간으로 전환한다
+    if ((V.screen === 'c-campaigns' || V.screen === 'c-work') && V.id) {
+      var hit = (LIVE.campaigns || []).find(function (c) { return c.campaignId === V.id; }) || (LIVE.offers || []).find(function (o) { return o.campaignId === V.id; });
+      if (hit && hit.brandId && hit.brandId !== bid() && brandsLive().some(function (x) { return x.brandId === hit.brandId; })) ui.brand = hit.brandId;
+    }
     var root = document.getElementById('root');
     var feed = document.getElementById('messageFeed'), keepBottom = feed ? feed.scrollHeight - feed.scrollTop - feed.clientHeight < 48 : true, feedTop = feed ? feed.scrollTop : 0;
     var main = document.querySelector('.v2-main'), mainTop = main ? main.scrollTop : 0, sameScreen = root.dataset.v8screen === V.screen + '|' + V.id;

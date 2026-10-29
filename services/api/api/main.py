@@ -117,8 +117,9 @@ from .routes_learning import router as _learning_router
 app.include_router(_learning_router)
 from .routes_identity import router as _identity_router
 app.include_router(_identity_router)
-from .routes_products import router as _products_router
+from .routes_products import router as _products_router, public_router as _products_public_router
 app.include_router(_products_router)
+app.include_router(_products_public_router)
 from .routes_community import router as _community_router
 app.include_router(_community_router)
 from .routes_collab import router as _collab_router

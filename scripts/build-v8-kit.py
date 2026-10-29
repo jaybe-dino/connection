@@ -18,7 +18,7 @@ OUT = ROOT / 'packages/demo-core/src/v8/v8-kit.css'
 ORDER = ['styles.css', 'live-reference.css', 'slack-preserve.css', 'product-market.css',
          'design-v5.css', 'campaign-v6.css', 'quality-v7.css', 'visual-v8.css']
 # 검토 전용 선택자 — 하나라도 포함한 선택자 조각은 버린다
-REVIEW = re.compile(r'\.(rv-|hs\b|hs\.|hide-badges|cur\b|cur-|cap\b|cap-|demo-note|v7-tools|v7-tbtn|v7-count|sp-rv|skip\b)|#rv|\[data-hs')
+REVIEW = re.compile(r'\.(rv-|hs\b|hs\.|hide-badges|cur\b|cur-|cap\b|cap-|demo-note|v7-tools|v7-tbtn|v7-count|sp-rv)|#rv|\[data-hs')
 
 
 def strip_comments(css: str) -> str:

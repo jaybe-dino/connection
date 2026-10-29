@@ -5,3 +5,4 @@ body.v8-live { margin: 0; }
 .v2-creator .v2-navbtn[aria-current="page"] .badge-n { background: #fff; color: var(--c-accent, #4a2c5a); }
 .v2-creator .v2-search input { cursor: pointer; }
 .v2-creator .sp-reply[aria-pressed="true"] { color: var(--c-accent, #4a2c5a); font-weight: 700; }
+a.btn,a.btn:hover{text-decoration:none}

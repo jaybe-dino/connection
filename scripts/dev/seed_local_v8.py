@@ -37,6 +37,16 @@ for slug, prods in P.items():
     if not db.execute('SELECT 1 FROM campaigns WHERE brand_id=%s', (slug,)).fetchone():
         r = ok(c.post(f'/brands/{slug}/campaigns', headers=BH, json={'name': f'{prods[0][0]} 미국 판매 영상', 'product': prods[0][0], 'usp': '진정·보습', 'reward_type': 'affiliate', 'affiliate_pct': prods[0][1], 'capacity': 20, 'deadline': '2026-12-15', 'countries': ['US']}))
         ok(c.post(f"/brands/{slug}/campaigns/{r['campaignId']}/publish", headers=BH))
+# 제품 공개 목록 + 제품 연결 캠페인(조건 포함) — 운영팀 소개 등록(관리자 API) 후 브랜드가 공개 표시
+GH = {'Authorization': 'Bearer ' + tok['goryeo1392']}
+amp = next(p for p in ok(c.get('/brands/goryeo1392/products', headers=GH)) if p['name'] == '한방 진정 앰플')
+ok(c.put(f"/admin/recruitment/setup/brands/goryeo1392/products/{amp['productId']}/invitation", headers=H,
+         json={'summary': '예민한 피부를 위한 한방 진정 앰플이에요. 가볍게 흡수돼요.', 'image_url': 'https://cdn.example.com/goryeo-ampoule.png'}))
+ok(c.post(f"/brands/goryeo1392/products/{amp['productId']}/public", headers=GH, json={'listed': True}))
+if not db.execute('SELECT 1 FROM campaigns WHERE product_id=%s', (amp['productId'],)).fetchone():
+    ok(c.post(f"/brands/goryeo1392/products/{amp['productId']}/campaigns", headers=GH,
+              json={'name': '한방 앰플 판매 영상', 'capacity': 20, 'deadline': '2026-12-31',
+                    'conditions': ['TikTok 영상 1개 · 30~60초', '필수: 제품명·사용 장면·USP 1개']}))
 print('ok brands', list(tok))
 # ── 크리에이터 1명(두 브랜드 멤버) — 매직링크(로컬 demoLink) + 온보딩 + TikTok 게이트 DB 대리
 from urllib.parse import urlparse, parse_qs

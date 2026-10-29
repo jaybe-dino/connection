@@ -80,12 +80,29 @@ def _latest_fields(conn, product_id):
     return (r["version"], r["fields"]) if r else (0, {})
 
 
+def _listing_missing(conn, p) -> list[str]:
+    """공개 목록에 올리기 전에 채워야 할 항목 — 비어 있으면 공개할 수 없다."""
+    pres = conn.execute(
+        "SELECT summary, image_url FROM product_invitation_profiles"
+        " WHERE product_id=%s", (p["product_id"],)).fetchone()
+    missing = []
+    if not pres or len((pres["summary"] or "").strip()) < 10:
+        missing.append("공개용 제품 소개(10자 이상)")
+    if not pres or not (pres["image_url"] or "").startswith("https://"):
+        missing.append("공개 HTTPS 제품 이미지")
+    if p["state"] != "active":
+        missing.append("활성 제품")
+    return missing
+
+
 def _out(conn, p):
     version, fields = _latest_fields(conn, p["product_id"])
     return {"productId": str(p["product_id"]), "brandId": p["brand_id"],
             "name": p["name"], "tiktokProductRef": p["tiktok_product_ref"],
             "commissionPct": float(p["commission_pct"]), "state": p["state"],
-            "profileVersion": version, "fields": fields}
+            "profileVersion": version, "fields": fields,
+            "publicListed": bool(p.get("public_listed")),
+            "publicMissing": _listing_missing(conn, p)}
 
 
 class ProductIn(BaseModel):
@@ -457,3 +474,84 @@ def _ai_annotate(conn, p, profile_version, fields, pool, rows_by_uid) -> dict:
     if not meta["evaluated"] and not cached:
         return {"mode": "fallback_keyword", "reason": "유효한 AI 평가 없음 — 키워드 순위 사용"}
     return meta
+
+
+# ── 독립 제품 모아보기: 브랜드가 고른 제품만 공개 목록에 올린다 ───────────
+
+class PublicListingIn(BaseModel):
+    listed: bool
+
+
+@router.post("/brands/{brand}/products/{product_id}/public")
+def set_public_listing(brand: str, product_id: UUID, body: PublicListingIn,
+                       authorization: str = Header(default="")) -> dict:
+    """공개 목록 표시 켜기/끄기. 켤 때는 공개용 소개·이미지가 있어야 한다.
+    제품 소개·이미지는 운영팀이 검수해 등록한 값(product_invitation_profiles)만 쓴다."""
+    u = _guard(brand, authorization)
+    with connect() as conn:
+        b = conn.execute("SELECT suspended_at, is_internal, is_demo FROM brands"
+                         " WHERE brand_id=%s", (brand,)).fetchone()
+        if not b or b["is_internal"] or b["is_demo"]:
+            raise HTTPException(404, "고객 브랜드가 아닙니다")
+        if b["suspended_at"]:
+            raise HTTPException(409, "정지된 브랜드는 제품을 공개할 수 없습니다")
+        p = _product(conn, brand, product_id)
+        if body.listed:
+            missing = _listing_missing(conn, p)
+            if missing:
+                raise HTTPException(409, "공개 전에 필요한 정보: " + ", ".join(missing))
+        conn.execute(
+            "UPDATE brand_products SET public_listed=%s,"
+            " public_listed_at=CASE WHEN %s THEN now() ELSE public_listed_at END"
+            " WHERE product_id=%s AND brand_id=%s",
+            (body.listed, body.listed, product_id, brand))
+        actor = f"brand:{brand}" if u.get("kind") == "brand" else str(u.get("sub"))
+        ledger_append(conn, actor, "PRODUCT_PUBLIC_LISTING", str(product_id),
+                      {"brandId": brand, "listed": body.listed})
+        return _out(conn, _product(conn, brand, product_id))
+
+
+public_router = APIRouter()
+
+
+@public_router.get("/public/products")
+def public_products() -> list[dict]:
+    """공개 표시한 제품만. 비공개·초안·정지·내부/데모 브랜드는 제외한다.
+    연락처·주소·계약 금액 같은 비공개 정보는 담지 않는다."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT p.product_id, p.brand_id, p.name, p.commission_pct,"
+            " v.summary, v.image_url, b.name AS brand_name, b.logo_url,"
+            " b.category"
+            " FROM brand_products p JOIN brands b USING (brand_id)"
+            " JOIN product_invitation_profiles v USING (product_id)"
+            " WHERE p.public_listed AND p.state='active'"
+            " AND b.suspended_at IS NULL AND NOT b.is_internal AND NOT b.is_demo"
+            " ORDER BY p.public_listed_at DESC NULLS LAST, p.created_at DESC"
+            " LIMIT 500").fetchall()
+        ids = [r["product_id"] for r in rows]
+        camps = conn.execute(
+            "SELECT campaign_id, product_id, name, reward_type, affiliate_pct,"
+            " reward_amount, deadline, countries, conditions"
+            " FROM campaigns WHERE product_id = ANY(%s) AND status='open'"
+            " AND lifecycle='published'"
+            " AND (deadline IS NULL OR deadline >= (now() AT TIME ZONE 'Asia/Seoul')::date)"
+            " ORDER BY deadline NULLS LAST", (ids,)).fetchall() if ids else []
+    by = {}
+    for c in camps:
+        by.setdefault(c["product_id"], []).append(
+            {"campaignId": c["campaign_id"], "name": c["name"],
+             "rewardType": c["reward_type"],
+             "affiliatePct": float(c["affiliate_pct"]) if c["affiliate_pct"] is not None else None,
+             "rewardAmount": c["reward_amount"],
+             "deadline": c["deadline"].isoformat() if c["deadline"] else None,
+             "countries": list(c["countries"] or []),
+             "conditions": [str(x) for x in (c["conditions"] or []) if isinstance(x, (str, int, float))]})
+    return [{"productId": str(r["product_id"]), "brandId": r["brand_id"],
+             "brandName": r["brand_name"],
+             "logoUrl": r["logo_url"] if (r["logo_url"] or "").startswith("https://") else "",
+             "category": r["category"] or "", "name": r["name"],
+             "summary": r["summary"] or "",
+             "imageUrl": r["image_url"] if (r["image_url"] or "").startswith("https://") else "",
+             "commissionPct": float(r["commission_pct"]),
+             "campaigns": by.get(r["product_id"], [])} for r in rows]

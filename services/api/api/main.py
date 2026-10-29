@@ -95,19 +95,28 @@ async def legacy_access_boundary(request: Request, call_next):
 _VIEWER_OK = re.compile(r"^/(auth/.*|me/notifications/read|community/cells/[^/]+/read)$")
 
 
+def _is_viewer_session(authorization: str) -> bool:
+    """동기 헬퍼(JWT 해석 + 역할 조회) — 미들웨어는 스레드풀에서 호출해 이벤트 루프를 막지 않는다."""
+    from . import auth
+    u = auth.current_user(authorization)
+    sub = str((u or {}).get("sub") or "")
+    if not (u and u.get("kind") == "brand" and u.get("brand_id") and re.fullmatch(r"[0-9a-fA-F-]{36}", sub)):
+        return False
+    with connect() as conn:
+        r = conn.execute("SELECT role FROM brand_team_roles WHERE brand_id=%s AND user_id=%s::uuid",
+                         (u["brand_id"], sub)).fetchone()
+    return bool(r and r["role"] == "viewer")
+
+
 @app.middleware("http")
 async def brand_viewer_readonly(request: Request, call_next):
-    if request.method not in ("GET", "HEAD", "OPTIONS") and not _VIEWER_OK.match(request.url.path):
-        from . import auth
-        from fastapi.responses import JSONResponse
-        u = auth.current_user(request.headers.get("authorization", ""))
-        sub = str((u or {}).get("sub") or "")
-        if u and u.get("kind") == "brand" and u.get("brand_id") and re.fullmatch(r"[0-9a-fA-F-]{36}", sub):
-            with connect() as conn:
-                r = conn.execute("SELECT role FROM brand_team_roles WHERE brand_id=%s AND user_id=%s::uuid",
-                                 (u["brand_id"], sub)).fetchone()
-            if r and r["role"] == "viewer":
-                return JSONResponse({"detail": "조회자(보기 전용) 계정은 변경할 수 없어요. 소유자에게 역할 변경을 요청하세요."}, status_code=403)
+    authz = request.headers.get("authorization", "")
+    if (request.method not in ("GET", "HEAD", "OPTIONS") and authz
+            and not _VIEWER_OK.match(request.url.path)):
+        from starlette.concurrency import run_in_threadpool
+        if await run_in_threadpool(_is_viewer_session, authz):
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"detail": "조회자(보기 전용) 계정은 변경할 수 없어요. 소유자에게 역할 변경을 요청하세요."}, status_code=403)
     return await call_next(request)
 
 

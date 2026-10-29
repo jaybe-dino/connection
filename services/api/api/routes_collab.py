@@ -62,7 +62,23 @@ def _offer_terms(camp: dict | None, commission_pct) -> dict:
             "rewardCurrency": camp.get("reward_currency"),
             "platform": camp.get("platform") or "tiktok",
             "conditions": [str(x) for x in (camp.get("conditions") or [])
-                           if isinstance(x, (str, int, float))]}
+                           if isinstance(x, (str, int, float))],
+            "sampleRequired": camp.get("sample_required") is not False}
+
+
+def _sample_required(t: dict, camp: dict | None = None) -> bool:
+    """합의 스냅샷 우선(합의 후 캠페인 수정과 무관), 없으면 캠페인 값, 기본 true."""
+    snap = t.get("agreed_terms") or {}
+    if "sampleRequired" in snap:
+        return snap["sampleRequired"] is not False
+    return (camp or {}).get("sample_required") is not False
+
+
+def _agreed_platform(t: dict, camp: dict | None = None) -> str:
+    """합의 스냅샷의 플랫폼 우선 — 합의 후 캠페인 플랫폼을 바꿔도 합의한 조건대로 진행.
+    스냅샷이 없는 기존 기록만 캠페인 값으로 대체한다."""
+    snap = t.get("agreed_terms") or {}
+    return snap.get("platform") or (camp or {}).get("platform") or "tiktok"
 
 
 def _terms_fingerprint(terms: dict) -> str:
@@ -70,7 +86,11 @@ def _terms_fingerprint(terms: dict) -> str:
     import hashlib
     import json as _json
     keys = ("product", "productId", "rewardType", "commissionPct", "rewardAmount", "rewardCurrency", "platform", "conditions")
-    raw = _json.dumps({k: terms.get(k) for k in keys}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    data = {k: terms.get(k) for k in keys}
+    # 샘플 없음일 때만 확인값에 넣는다 — 기존(샘플 필요) 제안의 확인값은 그대로 유지
+    if terms.get("sampleRequired") is False:
+        data["sampleRequired"] = False
+    raw = _json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
@@ -109,7 +129,7 @@ def brand_campaigns(brand: str,
             "SELECT c.campaign_id, c.name, c.product, c.status,"
             " c.affiliate_pct, c.lifecycle, c.countries, c.deadline,"
             " c.usp, c.reward_type, c.reward_amount, c.reward_currency,"
-            " c.platform, c.conditions, c.capacity, c.product_id,"
+            " c.platform, c.conditions, c.capacity, c.product_id, c.sample_required,"
             " (SELECT count(*) FROM campaign_applications a"
             "   WHERE a.campaign_id=c.campaign_id) AS applicants,"
             " (SELECT count(*) FROM campaign_terms t"
@@ -130,12 +150,13 @@ def brand_campaigns(brand: str,
              "conditions": [str(x) for x in (r["conditions"] or [])
                             if isinstance(x, (str, int, float))],
              "capacity": r["capacity"] or 0,
+             "sampleRequired": r["sample_required"] is not False,
              "productId": str(r["product_id"]) if r["product_id"] else None}
             for r in rows]
 
 
 class CampaignPostIn(BaseModel):
-    channel: str = Field(default="chat", pattern="^(chat|tips|products|qna|notice)$")
+    channel: str = Field(default="chat", min_length=1, max_length=40)
 
 
 @router.post("/brands/{brand}/campaigns/{campaign_id}/post")
@@ -155,6 +176,10 @@ def post_campaign_card(brand: str, campaign_id: str, body: CampaignPostIn,
                             " ORDER BY cell_id LIMIT 1", (brand,)).fetchone()
         if not cell:
             raise HTTPException(409, "이 브랜드의 커뮤니티 공간이 아직 없습니다")
+        # 기본 5채널 + 콘솔에서 추가한 활성 채널(보관 제외) — 커뮤니티 글쓰기와 같은 검증
+        from .routes_community import _channel_for_post
+        _channel_for_post(conn, {"cell_id": cell["cell_id"], "visibility": "public"},
+                          body.channel, creator=False, thread=False)
         if conn.execute("SELECT 1 FROM cell_messages WHERE cell_id=%s AND channel=%s AND campaign_id=%s"
                         " AND thread_parent IS NULL", (cell["cell_id"], body.channel, campaign_id)).fetchone():
             raise HTTPException(409, "이 채널에는 이미 같은 캠페인을 게시했어요 (중복 게시 방지)")
@@ -210,7 +235,7 @@ def applicants(brand: str, campaign_id: str,
                authorization: str = Header(default="")) -> list[dict]:
     _brand_guard(brand, authorization)
     with connect() as conn:
-        _campaign(conn, brand, campaign_id)
+        camp = _campaign(conn, brand, campaign_id)
         rows = conn.execute(
             "SELECT a.creator_id, a.status, a.applied_at, c.handle,"
             " c.platform, c.verified, t.state AS terms_state,"
@@ -241,7 +266,9 @@ def applicants(brand: str, campaign_id: str,
              "shipping": r["shipping"],
              "revisionNote": r["revision_note"] or "",
              "platformHandle": r["platform_handle"] or "",
-             "agreedTerms": r["agreed_terms"]} for r in rows]
+             "agreedTerms": r["agreed_terms"],
+             # 합의 스냅샷 기준(이전 기록·합의 전은 현재 캠페인 값)
+             "sampleRequired": _sample_required(r, camp)} for r in rows]
 
 
 class SelectIn(BaseModel):
@@ -317,6 +344,8 @@ def sample_shipped(brand: str, campaign_id: str, creator_id: str,
         t = _terms(conn, campaign_id, creator_id)
         if t["state"] != "terms_agreed":
             raise HTTPException(409, f"합의 후에만 발송 처리 가능 (현재 {t['state']})")
+        if not _sample_required(t):
+            raise HTTPException(409, "샘플 없이 진행하기로 합의한 캠페인입니다 — 발송 처리 없이 크리에이터가 바로 영상을 제출해요")
         if not t.get("shipping"):
             raise HTTPException(409, "크리에이터가 아직 샘플 받을 주소를 입력하지 않았습니다 — 주소 입력 후 발송 처리하세요")
         t = conn.execute(
@@ -432,6 +461,10 @@ def submit_shipping(campaign_id: str, body: ShippingIn,
     with connect() as conn:
         cid = _creator(conn, authorization)
         t = _terms(conn, campaign_id, cid)
+        camp = conn.execute("SELECT sample_required FROM campaigns WHERE campaign_id=%s",
+                            (campaign_id,)).fetchone()
+        if not _sample_required(t, camp):
+            raise HTTPException(409, "샘플 없이 진행하는 캠페인이라 주소를 받지 않아요")
         if t["state"] not in ("selected", "terms_agreed"):
             raise HTTPException(409, "샘플 발송 전(선정~합의)에만 수령 정보를"
                                      f" 등록할 수 있어요 (현재 {t['state']})")
@@ -534,7 +567,7 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
             " c.reward_type, c.affiliate_pct, c.deadline, c.status,"
             " c.countries, b.name AS brand_name, b.logo_url,"
             " c.reward_amount, c.capacity, c.conditions,"
-            " c.reward_currency, c.platform, c.product_id,"
+            " c.reward_currency, c.platform, c.product_id, c.sample_required,"
             " a.status AS my_status, t.state AS terms_state,"
             " a.applied_at, a.rejected_at, a.reject_reason, c.lifecycle,"
             # 캠페인 제품 이미지 — 반드시 같은 브랜드의 제품만 연결(타 브랜드
@@ -586,6 +619,7 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
              "rewardCurrency": r["reward_currency"], "platform": r["platform"],
              "productId": str(r["product_id"]) if r["product_id"] else None,
              "capacity": r["capacity"] or 0,
+             "sampleRequired": r["sample_required"] is not False,
              "conditions": [str(x) for x in (r["conditions"] or [])
                             if isinstance(x, (str, int, float))],
              "myStatus": r["my_status"] or "none",
@@ -609,7 +643,7 @@ def my_offers(authorization: str = Header(default="")) -> list[dict]:
         rows = conn.execute(
             "SELECT t.*, c.name AS campaign_name, c.brand_id, c.product,"
             " c.reward_type, c.reward_amount, c.reward_currency, c.platform,"
-            " c.affiliate_pct, c.conditions, c.product_id,"
+            " c.affiliate_pct, c.conditions, c.product_id, c.sample_required,"
             " b.name AS brand_name, b.logo_url,"
             " pip.image_url AS product_image"
             " FROM campaign_terms t"
@@ -676,7 +710,7 @@ def agree_offer(campaign_id: str, body: AgreeIn,
         # 캠페인 행을 잠가 확인값 비교와 합의 저장 사이에 브랜드 수정이 끼어들지 못하게 한다
         camp = conn.execute(
             "SELECT product, product_id, reward_type, reward_amount, reward_currency, platform,"
-            " conditions, affiliate_pct FROM campaigns WHERE campaign_id=%s FOR UPDATE",
+            " conditions, affiliate_pct, sample_required FROM campaigns WHERE campaign_id=%s FOR UPDATE",
             (campaign_id,)).fetchone()
         offered = _offer_terms(camp, t["commission_pct"])
         current_fp = _terms_fingerprint(offered)
@@ -742,9 +776,9 @@ def submit_spark_code(campaign_id: str, body: SparkIn,
         if t["state"] not in ("terms_agreed", "sample_shipped",
                               "content_submitted", "revision_requested"):
             raise HTTPException(409, f"합의 후 제출 가능 (현재 {t['state']})")
-        plat = conn.execute("SELECT platform FROM campaigns WHERE campaign_id=%s",
+        camp = conn.execute("SELECT platform FROM campaigns WHERE campaign_id=%s",
                             (campaign_id,)).fetchone()
-        if plat and plat["platform"] != "tiktok":
+        if _agreed_platform(t, camp) != "tiktok":
             raise HTTPException(409, "Spark 코드는 TikTok 캠페인에만 제출해요")
         t = conn.execute(
             "UPDATE campaign_terms SET spark_code=%s"

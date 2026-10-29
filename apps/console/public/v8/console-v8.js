@@ -58,7 +58,7 @@
   var D = null;           // 브랜드·세션별 데이터 — 키가 바뀌면 통째로 버린다
   var U = null;           // 화면·입력 상태 — 같은 규칙
   function fresh() {
-    D = { key: (bid() || '') + '|' + jwt(), bid: bid(), err: {}, busy: {}, apps: {}, dm: {}, unread: {}, threads: {}, cand: {}, ver: 0 };
+    D = { key: (bid() || '') + '|' + jwt(), bid: bid(), err: {}, busy: {}, apps: {}, dm: {}, unread: {}, threads: {}, cand: {}, seq: {}, ver: 0 };
     U = { screen: U && U.screen || 'b-today', id: U && U.screen ? U.id : '', nav: false, rail: false, pop: false, f: {}, err: {}, busy: {}, tab: {}, wiz: 1, mail: 1, sel: [], lists: [], init: {}, flash: '' };
   }
   function ensure() { if (!D || D.key !== (bid() || '') + '|' + jwt()) { fresh(); route(true); } }
@@ -83,23 +83,34 @@
     cells: function () { return '/community/my-cells'; }, members: function (b) { return '/brands/' + b + '/members'; },
     notifs: function () { return '/me/notifications?limit=20'; }
   };
+  /* 자원별 요청 번호 — 늦게 도착한 이전 응답이 더 최신 데이터(또는 쓰기 결과)를 덮지 못한다 */
+  function nextSeq(name) { D.seq[name] = (D.seq[name] || 0) + 1; return D.seq[name]; }
   function load(name, force) {
     ensure();
     if (!force && (D[name] !== undefined || D.busy[name])) return;
-    var key = D.key, b = D.bid; D.busy[name] = true;
-    return req('GET', PATHS[name](b)).then(function (r) { if (!D || D.key !== key) return; D[name] = r; delete D.err[name]; })
-      .catch(function (e) { if (!D || D.key !== key) return; D.err[name] = e.message || '불러오지 못했어요'; if (D[name] === undefined) D[name] = null; })
-      .then(function () { if (D && D.key === key) { D.busy[name] = false; paint(); } });
+    var key = D.key, b = D.bid, n = nextSeq(name), latest = function () { return D && D.key === key && D.seq[name] === n; };
+    D.busy[name] = true;
+    return req('GET', PATHS[name](b)).then(function (r) { if (!latest()) return; D[name] = r; delete D.err[name]; })
+      .catch(function (e) { if (!latest()) return; D.err[name] = e.message || '불러오지 못했어요'; if (D[name] === undefined) D[name] = null; })
+      .then(function () { if (latest()) { D.busy[name] = false; paint(); } });
+  }
+  /* 쓰기 응답으로 목록 한 항목을 바로 바꾼다 — 진행 중인 이전 조회 응답은 버린다 */
+  function putItem(name, idKey, item) {
+    if (!item || !Array.isArray(D[name])) return;
+    nextSeq(name); D.busy[name] = false;
+    var i = D[name].findIndex(function (x) { return x[idKey] === item[idKey]; });
+    if (i >= 0) D[name][i] = item; else D[name].push(item);
   }
   function need() { for (var i = 0; i < arguments.length; i++) load(arguments[i]); }
   function loaded() { for (var i = 0; i < arguments.length; i++) if (D[arguments[i]] === undefined || (D[arguments[i]] === null && D.busy[arguments[i]])) return false; return true; }
   /* 캠페인별 지원자 — 홈·지원자·샘플·결과가 같은 데이터를 쓴다 */
   function loadApps(cid, force) {
     if (!force && (D.apps[cid] !== undefined || D.busy['a:' + cid])) return;
-    var key = D.key; D.busy['a:' + cid] = true;
-    return req('GET', '/brands/' + D.bid + '/campaigns/' + encodeURIComponent(cid) + '/applicants').then(function (r) { if (D.key === key) D.apps[cid] = r; })
-      .catch(function (e) { if (D.key === key) { D.apps[cid] = null; D.err['a:' + cid] = e.message; } })
-      .then(function () { if (D.key === key) { D.busy['a:' + cid] = false; paint(); } });
+    var key = D.key, n = nextSeq('a:' + cid), latest = function () { return D.key === key && D.seq['a:' + cid] === n; };
+    D.busy['a:' + cid] = true;
+    return req('GET', '/brands/' + D.bid + '/campaigns/' + encodeURIComponent(cid) + '/applicants').then(function (r) { if (latest()) D.apps[cid] = r; })
+      .catch(function (e) { if (latest()) { D.apps[cid] = null; D.err['a:' + cid] = e.message; } })
+      .then(function () { if (latest()) { D.busy['a:' + cid] = false; paint(); } });
   }
   function camps() { return Array.isArray(D.camps) ? D.camps : []; }
   function prods() { return Array.isArray(D.prods) ? D.prods : []; }
@@ -263,8 +274,8 @@
     var rows = allApps(), mem = {}; (D.members || []).forEach(function (x) { mem[x.dmCellId] = x; });
     var dms = Object.keys(D.unread || {}).filter(function (k) { return /^dm-/.test(k) && D.unread[k].unread; });
     var reps = (Array.isArray(D.inbox) ? D.inbox : []).filter(function (t) { return t.lastDirection === 'in' && ['unreviewed', 'question', 'interested'].indexOf((t.task || {}).label || 'unreviewed') >= 0; });
-    var wait = rows.filter(function (r) { return st(r.x) === 'applied'; }), addr = rows.filter(function (r) { return st(r.x) === 'terms_agreed' && !r.x.shipping; }),
-      ship = rows.filter(function (r) { return st(r.x) === 'terms_agreed' && r.x.shipping; }), vid = rows.filter(function (r) { return st(r.x) === 'content_submitted'; });
+    var wait = rows.filter(function (r) { return st(r.x) === 'applied'; }), addr = rows.filter(function (r) { return st(r.x) === 'terms_agreed' && r.x.sampleRequired !== false && !r.x.shipping; }),
+      ship = rows.filter(function (r) { return st(r.x) === 'terms_agreed' && r.x.sampleRequired !== false && r.x.shipping; }), vid = rows.filter(function (r) { return st(r.x) === 'content_submitted'; });
     var nm = function (r) { return '@' + h(r.x.handle || r.x.creatorId); };
     var items = [].concat(
       dms.map(function (k) { var x = mem[k]; return ['@' + h(x ? x.handle : k.split('--')[1]) + '의 DM에 답장', '안 읽은 메시지 ' + D.unread[k].unread + '개', btn('답장하기', "C8.openDm('" + js(k) + "')", 'pri')]; }),
@@ -363,15 +374,15 @@
       '<ul class="v6-list">' + (prods().map(function (p) { var m = missingOf(p), n = camps().filter(function (c) { return c.productId === p.productId; }).length; return '<li class="v6-row">' + pimg(p, 48) + '<div class="v6-grow"><b>' + h(p.name || '이름 없는 제품') + '</b><span class="v6-meta">' + h(pfield(p, 'category') || '카테고리 없음') + ' · 배송 ' + ctryText(pfield(p, 'ship').split(',').filter(Boolean)) + ' · 연결 캠페인 ' + n + '개' + (p.publicListed ? ' · 제품 모아보기 공개' : '') + '</span></div>' + (m.length ? chip('미완성: ' + h(m.join(', ')), 'warn') : chip('완료', 'ok')) + btn('편집', "C8.editProd('" + js(p.productId) + "')") + '</li>'; }).join('') || '<li class="v6-empty">등록한 제품이 없어요.</li>') + '</ul></div>';
   }
   function productEditor() {
-    var p = curProd(); if (U.editProd !== 'new' && !p) { U.editProd = null; return scProducts(); }
+    var p = curProd(); if (U.editProd !== 'new' && !p && !busy('psave')) { U.editProd = null; return scProducts(); }
     var m = draftMissing(p), imgs = p ? p.images || [] : [], main = imgs.find(function (i) { return i.slot === 'main'; }), extra = imgs.filter(function (i) { return i.slot === 'extra'; });
     var pubMissing = p ? (p.publicMissing || []) : ['먼저 제품을 저장하세요'];
     return '<div class="v6">' + ctxHead('제품 편집 · ' + h(fv('P.name') || '새 제품'), m.length ? '아직 부족: ' + h(m.join(', ')) : '필수 정보가 모두 채워졌어요.') +
       '<div class="v6-actions">' + btn('← 목록으로', 'C8.closeProd()', 'ghost') + '</div>' +
       '<div class="v6-split"><div class="v6-col">' +
       '<section class="v6-sec"><h2>이미지</h2>' +
-      '<div class="v6-imgrow"><div class="v6-imgbox">' + pimg(p, 120, fv('P.name')) + '<span class="v6-meta">대표 이미지' + (main ? '' : p && p.publicImageUrl ? ' · 운영팀 등록 이미지 사용 중' : ' · 아직 없음 (공개·모집에 필수)') + '</span></div>' +
-      '<div class="v6-actions">' + (p ? '<label class="btn v6-file">' + (busy('img') ? '올리는 중…' : '대표 이미지 ' + (main ? '교체' : '선택')) + '<input type="file" accept="image/jpeg,image/png,image/webp" onchange="C8.upload(this,\'main\')"' + (busy('img') ? ' disabled' : '') + '></label>' + (main ? btn('대표 이미지 삭제', "C8.delImg('" + js(main.imageId) + "')", 'ghost') : '') : '<span class="v6-meta">제품을 먼저 저장하면 사진을 올릴 수 있어요.</span>') + '</div></div>' +
+      '<div class="v6-imgrow"><div class="v6-imgbox c8-newimg">' + (U.pendImg ? '<img src="' + a(U.pendImg.url) + '" width="120" height="120" alt="선택한 대표 이미지 미리보기">' : pimg(p, 120, fv('P.name'))) + '<span class="v6-meta">대표 이미지' + (U.pendImg ? ' · 선택함 (저장할 때 함께 올려요)' : main ? '' : p && p.publicImageUrl ? ' · 운영팀 등록 이미지 사용 중' : ' · 아직 없음 (공개·모집에 필수)') + '</span></div>' +
+      '<div class="v6-actions"><label class="btn v6-file">' + (busy('img') || busy('psave') && U.pendImg ? '올리는 중…' : '대표 이미지 ' + (main || U.pendImg ? (p && !U.pendImg ? '교체' : '다시 선택') : '선택')) + '<input type="file" accept="image/jpeg,image/png,image/webp" onchange="C8.upload(this,\'main\')"' + (busy('img') || busy('psave') ? ' disabled' : '') + '></label>' + (U.pendImg ? btn('선택 취소', 'C8.clearPendImg()', 'ghost') : main ? btn('대표 이미지 삭제', "C8.delImg('" + js(main.imageId) + "')", 'ghost') : '') + '</div></div>' +
       '<div class="v6-thumbs">' + extra.map(function (i, n) { return '<div class="v6-thumb"><img src="' + a(imgSrc(i.url)) + '" data-fb="' + a(mono(fv('P.name'))) + '" width="72" height="72" alt="추가 이미지 ' + (n + 1) + '" referrerpolicy="no-referrer">' + btn('삭제', "C8.delImg('" + js(i.imageId) + "')", 'ghost') + '</div>'; }).join('') +
       (p && extra.length < 4 ? '<label class="btn v6-file">추가 이미지 (' + extra.length + '/4)<input type="file" accept="image/jpeg,image/png,image/webp" onchange="C8.upload(this,\'extra\')"' + (busy('img') ? ' disabled' : '') + '></label>' : '') + '</div>' +
       '<p class="v6-meta">JPG·PNG·WEBP, 2MB 이하. 서버에 저장되고 이 브랜드 콘솔과 멤버 크리에이터에게 보여요. 제품 모아보기에는 ‘공개’로 표시한 동안에만 보여요. 올리기에 실패하면 기존 사진이 그대로 남아요.</p>' + errOf('P.img') + '</section>' +
@@ -383,7 +394,7 @@
       inp('판매 링크', 'P.link', { opt: true, type: 'url', ph: 'https://', max: 480 }) + inp('Shop 상품 ID', 'P.shopId', { opt: true, max: 300 }) + inp('정가', 'P.price', { opt: true, type: 'number' }) +
       sel('통화', 'P.currency', [['USD', 'USD'], ['KRW', 'KRW'], ['THB', 'THB'], ['VND', 'VND'], ['JPY', 'JPY']]) +
       checks('배송 가능 국가', 'P.ship', Object.keys(CTRY).map(function (k) { return [k, CTRY[k]]; }), { req: true, wide: true }) +
-      '<div class="v6-field v6-wide"><label class="v6-inline"><input type="checkbox" id="P-public"' + (p && p.publicListed ? ' checked' : '') + (p ? '' : ' disabled') + ' onchange="C8.setPublic(this)"> 크리에이터 ‘제품 모아보기’에 공개 (필수 정보가 모두 채워지고 저장된 제품만 노출)</label>' +
+      '<div class="v6-field v6-wide"><label class="v6-inline"><input type="checkbox" id="P-public"' + (p && p.publicListed ? ' checked' : '') + (p && !busy('pub') ? '' : ' disabled') + (busy('pub') ? ' aria-busy="true"' : '') + ' onchange="C8.setPublic(this)"> 크리에이터 ‘제품 모아보기’에 공개 (필수 정보가 모두 채워지고 저장된 제품만 노출)</label>' +
       (p && !p.publicListed && pubMissing.length ? '<span class="hint">공개하려면: ' + h(pubMissing.join(', ')) + '</span>' : '') + errOf('P.public') + '</div>' +
       '</div></section>' + errOf('prod-save') +
       '<div class="v6-actions v6-bar">' + btn(busy('psave') ? '저장 중…' : (U.returnTo === 'wizard' ? '저장하고 캠페인으로 돌아가기' : '검증하고 저장'), 'C8.saveProd(true)', 'pri', busy('psave') ? ' disabled' : '') + btn('임시 저장', 'C8.saveProd(false)', '', busy('psave') ? ' disabled' : '') + '</div>' +
@@ -460,19 +471,22 @@
       else if ((m = s.match(/^광고 사용: 브랜드 광고 사용 (\d+)일$/))) { w['W.adUse'] = 'ads'; w['W.adDays'] = m[1]; }
       else if (/^광고 사용: 브랜드 계정 재게시만/.test(s)) w['W.adUse'] = 'organic';
       else if ((m = s.match(/^샘플 (\d+)개 · 배송비 (.*)$/))) { w['W.sampleQty'] = m[1]; w['W.shipping'] = m[2]; }
+      else if (/^샘플 없음/.test(s)) w['W.sampleQty'] = '0';
       else if ((m = s.match(/^정산: (.*)$/))) w['W.settle'] = m[1];
       else if ((m = s.match(/^지급 시점: (.*)$/))) w['W.payAt'] = m[1];
       else if ((m = s.match(/^모집 기간 (\d{4}-\d{2}-\d{2}) ~ (\d{4}-\d{2}-\d{2})$/))) { w['W.start'] = m[1]; w['W.end'] = m[2]; }
       else if ((m = s.match(/^참고 영상: (.*)$/))) w['W.videoUrl'] = m[1];
     });
+    if (c.sampleRequired === false) w['W.sampleQty'] = '0';
     return w;
   }
+  function sampleQty() { return Number(fv('W.sampleQty')) || 0; }
   function wizConditions() {
     var g = fv('W.goal'), out = [(PLATFORM[fv('W.platform')] || 'TikTok') + ' 영상 ' + fv('W.count') + '개 · ' + fv('W.length').trim(), '제출 기한: ' + fv('W.due').trim()];
     if (fv('W.must').trim()) out.push('필수: ' + fv('W.must').trim());
     if (fv('W.banned').trim()) out.push('금지: ' + fv('W.banned').trim());
     out.push('광고 사용: ' + (fv('W.adUse') === 'ads' ? '브랜드 광고 사용 ' + fv('W.adDays') + '일' : AD[fv('W.adUse')] || AD.none));
-    if (g !== 'ugc') out.push('샘플 ' + fv('W.sampleQty') + '개 · 배송비 ' + fv('W.shipping'));
+    out.push(sampleQty() > 0 ? '샘플 ' + fv('W.sampleQty') + '개 · 배송비 ' + fv('W.shipping') : '샘플 없음 · 보유 제품으로 촬영');
     if (g === 'affiliate' && fv('W.settle').trim()) out.push('정산: ' + fv('W.settle').trim());
     if (g === 'ugc') out.push('지급 시점: ' + fv('W.payAt').trim());
     out.push('모집 기간 ' + fv('W.start') + ' ~ ' + fv('W.end'));
@@ -482,7 +496,7 @@
   function wizCamp() {   // 미리보기·검증용 — 저장할 값과 같은 모양
     var g = fv('W.goal'), p = prodById(fv('W.productId'));
     return { campaignId: U.wizId || '', name: fv('W.name'), rewardType: RT_OF[g], affiliatePct: g === 'affiliate' ? Number(fv('W.commission')) || null : null, rewardAmount: g === 'ugc' ? Number(fv('W.fee')) || null : null, rewardCurrency: fv('W.currency'),
-      platform: fv('W.platform'), conditions: wizConditions(), capacity: Number(fv('W.cap')) || 0, deadline: fv('W.end'), countries: fv('W.countries', []), productId: p ? p.productId : null, product: p ? p.name : '', lifecycle: 'draft' };
+      platform: fv('W.platform'), conditions: wizConditions(), capacity: Number(fv('W.cap')) || 0, deadline: fv('W.end'), countries: fv('W.countries', []), productId: p ? p.productId : null, product: p ? p.name : '', sampleRequired: sampleQty() > 0, lifecycle: 'draft' };
   }
   function stepErrors(step) {
     var e = {}, g = fv('W.goal'), d = /^\d{4}-\d{2}-\d{2}$/;
@@ -503,7 +517,7 @@
     }
     if (step === 3) {
       if (g === 'affiliate') { var cm = Number(fv('W.commission')); if (!(cm > 0 && cm <= 80)) e['W.commission'] = '판매 커미션을 1~80 사이 숫자로 적어 주세요.'; }
-      if (g !== 'ugc' && (fv('W.sampleQty') === '' || !(Number(fv('W.sampleQty')) >= 0))) e['W.sampleQty'] = '샘플 수량을 적어 주세요. 없으면 0.';
+      if ((fv('W.sampleQty') === '' || !(Number(fv('W.sampleQty')) >= 0))) e['W.sampleQty'] = '샘플 수량을 적어 주세요. 없으면 0.';
       if (g === 'ugc') { if (!/^\d+$/.test(fv('W.fee')) || !(Number(fv('W.fee')) > 0)) e['W.fee'] = '고정비 금액을 정수로 적어 주세요.'; if (!fv('W.payAt').trim()) e['W.payAt'] = '지급 시점을 적어 주세요.'; }
       if (!(Number(fv('W.count')) >= 1)) e['W.count'] = '영상 개수를 1개 이상 적어 주세요.';
       if (!fv('W.length').trim()) e['W.length'] = '영상 길이를 적어 주세요. 예: 30~60초';
@@ -527,9 +541,9 @@
       (p ? '<div class="v6-split"><div class="v6-col">' + productPreview(p) + '</div><div class="v6-col">' + (missingOf(p).length ? '<p class="ferr">부족: ' + h(missingOf(p).join(', ')) + '</p>' + btn('이 제품 보완하기', "C8.wizProd('" + js(p.productId) + "')") : chip('캠페인에 쓸 수 있어요', 'ok')) + '</div></div>' : '') +
       '<div class="v6-actions">' + btn('새 제품 바로 등록', 'C8.wizNewProd()') + '</div>';
     if (step === 3) body = '<div class="v6-form">' +
-      (g === 'affiliate' ? '<p class="v6-wide v6-kicker">판매 연결 조건</p>' + inp('판매 커미션 (%)', 'W.commission', { req: true, type: 'number', hint: '판매 보상(판매금액의 n%) — 확인된 판매금액 기준, TikTok Shop에서 정산' }) + inp('샘플 수량', 'W.sampleQty', { req: true, type: 'number' }) + sel('배송비', 'W.shipping', [['브랜드 부담', '브랜드 부담'], ['크리에이터 부담', '크리에이터 부담']]) + inp('정산 기준', 'W.settle', { opt: true, max: 150 }) + '<p class="v6-meta v6-wide">Shop 상품 링크는 제품 정보의 판매 링크를 써요: ' + h(p ? pfield(p, 'link') || '없음' : '제품 미선택') + '</p>' : '') +
-      (g === 'ugc' ? '<p class="v6-wide v6-kicker">유료 UGC 조건</p>' + inp('고정비', 'W.fee', { req: true, type: 'number' }) + sel('통화', 'W.currency', [['USD', 'USD'], ['KRW', 'KRW'], ['THB', 'THB'], ['VND', 'VND'], ['JPY', 'JPY']]) + inp('지급 시점', 'W.payAt', { req: true, wide: true, ph: '예: 브랜드 확인 통과 후 14일 이내', max: 150 }) : '') +
-      (g === 'sample' ? '<p class="v6-wide v6-kicker">샘플 협업 조건</p>' + inp('샘플 수량', 'W.sampleQty', { req: true, type: 'number' }) + sel('배송비', 'W.shipping', [['브랜드 부담', '브랜드 부담'], ['크리에이터 부담', '크리에이터 부담']]) : '') +
+      (g === 'affiliate' ? '<p class="v6-wide v6-kicker">판매 연결 조건</p>' + inp('판매 커미션 (%)', 'W.commission', { req: true, type: 'number', hint: '판매 보상(판매금액의 n%) — 확인된 판매금액 기준, TikTok Shop에서 정산' }) + inp('샘플 수량', 'W.sampleQty', { req: true, type: 'number', hint: '0이면 샘플 없이 진행해요 — 합의 후 주소·발송 없이 바로 영상을 제출해요.' }) + sel('배송비', 'W.shipping', [['브랜드 부담', '브랜드 부담'], ['크리에이터 부담', '크리에이터 부담']]) + inp('정산 기준', 'W.settle', { opt: true, max: 150 }) + '<p class="v6-meta v6-wide">Shop 상품 링크는 제품 정보의 판매 링크를 써요: ' + h(p ? pfield(p, 'link') || '없음' : '제품 미선택') + '</p>' : '') +
+      (g === 'ugc' ? '<p class="v6-wide v6-kicker">유료 UGC 조건</p>' + inp('고정비', 'W.fee', { req: true, type: 'number' }) + sel('통화', 'W.currency', [['USD', 'USD'], ['KRW', 'KRW'], ['THB', 'THB'], ['VND', 'VND'], ['JPY', 'JPY']]) + inp('지급 시점', 'W.payAt', { req: true, wide: true, ph: '예: 브랜드 확인 통과 후 14일 이내', max: 150 }) + inp('샘플 수량', 'W.sampleQty', { req: true, type: 'number', hint: '0이면 샘플 없이 진행해요 — 합의 후 주소·발송 없이 바로 영상을 제출해요.' }) + sel('배송비', 'W.shipping', [['브랜드 부담', '브랜드 부담'], ['크리에이터 부담', '크리에이터 부담']]) : '') +
+      (g === 'sample' ? '<p class="v6-wide v6-kicker">샘플 협업 조건</p>' + inp('샘플 수량', 'W.sampleQty', { req: true, type: 'number', hint: '0이면 샘플 없이 진행해요 — 합의 후 주소·발송 없이 바로 영상을 제출해요.' }) + sel('배송비', 'W.shipping', [['브랜드 부담', '브랜드 부담'], ['크리에이터 부담', '크리에이터 부담']]) : '') +
       '<p class="v6-wide v6-kicker">요청 콘텐츠</p>' + sel('플랫폼', 'W.platform', [['tiktok', 'TikTok'], ['instagram', 'Instagram']], { hint: 'YouTube Shorts 는 아직 합의·제출 흐름을 지원하지 않아요.' }) + inp('영상 개수', 'W.count', { req: true, type: 'number' }) +
       inp('영상 길이', 'W.length', { req: true, ph: '30~60초', max: 60 }) + inp('제출 기한', 'W.due', { req: true, ph: '샘플 받은 날부터 14일', max: 120 }) +
       inp('필수 내용', 'W.must', { opt: true, wide: true, max: 180 }) + inp('금지 표현', 'W.banned', { opt: true, wide: true, max: 180 }) +
@@ -556,7 +570,7 @@
     var rw = t.rewardType === 'paid' ? '고정비 ' + (t.rewardAmount != null ? money(t.rewardAmount, t.rewardCurrency) : '금액 미정') : t.rewardType === 'gifted' ? '제품 제공' : '판매 수수료 ' + (t.commissionPct != null ? t.commissionPct + '%' : '-');
     return (t.product ? '제품 ' + t.product + ' · ' : '') + rw + ' · ' + (PLATFORM[t.platform] || t.platform || '') + (t.handle ? ' 계정 ' + t.handle : '') + ((t.conditions || []).length ? ' · ' + t.conditions.join(' · ') : '');
   }
-  function shipText(x) { var s = x.shipping; return s ? [s.recipient, CTRY[s.country] || s.country, s.address].filter(Boolean).join(' · ') : '주소 미입력'; }
+  function shipText(x) { var s = x.shipping; if (x.sampleRequired === false) return '샘플 없음'; return s ? [s.recipient, CTRY[s.country] || s.country, s.address].filter(Boolean).join(' · ') : '주소 미입력'; }
   function applicantsBody(c) {
     var all = D.apps[c.campaignId]; loadApps(c.campaignId);
     if (all === undefined) return loading('지원자');
@@ -574,8 +588,8 @@
       else actions = '<p class="v6-meta">합의한 조건: ' + h(agreedText(selP)) + '</p>' + btn('샘플·영상에서 처리', "C8.goSc('" + cid + "','" + (s === 'content_submitted' ? 'video' : 'ship') + "')");
     }
     return campBanner(c) + '<div class="v6-filters" role="group" aria-label="진행 단계 필터">' + [['', '전체 ' + all.length]].concat(counts.map(function (x) { return [x[0], PST[x[0]] + ' ' + x[1]]; })).map(function (x) { return '<button type="button" class="v6-pill" aria-pressed="' + (f === x[0]) + '" onclick="C8.appFilter(\'' + x[0] + '\')">' + x[1] + '</button>'; }).join('') + '</div>' +
-      '<div class="v6-split v6-split-list"><ul class="v6-list">' + (list.map(function (x) { return '<li class="v6-row' + (selP && selP.creatorId === x.creatorId ? ' on' : '') + '"><div class="v6-grow"><b>@' + h(x.handle) + '</b><span class="v6-meta">' + h(PLATFORM[x.platform] || x.platform || '') + ' · ' + (x.verified ? '계정 확인됨' : '계정 미확인') + ' · ' + h(String(x.appliedAt || '').slice(0, 10)) + ' 신청</span></div>' + chip(PST[st(x)], PST_TONE[st(x)]) + btn('보기', "C8.appSel('" + js(x.creatorId) + "')") + '</li>'; }).join('') || '<li class="v6-empty">이 단계의 지원자가 없어요.</li>') + '</ul>' +
-      (selP ? '<div class="v6-col v6-panel"><h3>@' + h(selP.handle) + ' ' + chip(PST[st(selP)], PST_TONE[st(selP)]) + '</h3><dl class="v6-kv"><dt>플랫폼</dt><dd>' + h(PLATFORM[selP.platform] || selP.platform || '—') + (selP.platformHandle ? ' · ' + h(selP.platformHandle) : '') + '</dd><dt>신청일</dt><dd>' + h(String(selP.appliedAt || '').slice(0, 10)) + '</dd><dt>배송 주소</dt><dd>' + h(shipText(selP)) + ' <span class="v6-meta">이 캠페인 담당에게만 보여요</span></dd></dl>' + actions + '</div>' : '') + '</div>';
+      '<div class="v6-split v6-split-list c8-md' + (U.appPicked && selP ? ' c8-has-sel' : '') + '"><ul class="v6-list">' + (list.map(function (x) { return '<li class="v6-row' + (selP && selP.creatorId === x.creatorId ? ' on' : '') + '"><div class="v6-grow"><b>@' + h(x.handle) + '</b><span class="v6-meta">' + h(PLATFORM[x.platform] || x.platform || '') + ' · ' + (x.verified ? '운영팀 확인 크리에이터' : '운영팀 확인 전') + ' · ' + h(String(x.appliedAt || '').slice(0, 10)) + ' 신청</span></div>' + chip(PST[st(x)], PST_TONE[st(x)]) + btn('보기', "C8.appSel('" + js(x.creatorId) + "')") + '</li>'; }).join('') || '<li class="v6-empty">이 단계의 지원자가 없어요.</li>') + '</ul>' +
+      (selP ? '<div class="v6-col v6-panel"><div class="c8-back">' + btn('← 지원자 목록', 'C8.appBack()', 'ghost') + '</div><h3 id="c8-app-h" tabindex="-1">@' + h(selP.handle) + ' ' + chip(PST[st(selP)], PST_TONE[st(selP)]) + '</h3><dl class="v6-kv"><dt>플랫폼</dt><dd>' + h(PLATFORM[selP.platform] || selP.platform || '—') + (selP.platformHandle ? ' · ' + h(selP.platformHandle) : '') + '</dd><dt>신청일</dt><dd>' + h(String(selP.appliedAt || '').slice(0, 10)) + '</dd><dt>배송 주소</dt><dd>' + h(shipText(selP)) + ' <span class="v6-meta">이 캠페인 담당에게만 보여요</span></dd></dl>' + actions + '</div>' : '') + '</div>';
   }
   function scApplicants() {
     need('camps', 'prods');
@@ -603,7 +617,8 @@
     var linkRow = function (x) { return c.rewardType === 'affiliate' ? '<div class="v6-field v6-trk"><label for="' + fid('L.' + x.creatorId) + '">어필리에이트 링크</label><input id="' + fid('L.' + x.creatorId) + '" type="url" data-f="L.' + a(x.creatorId) + '" value="' + a(fv('L.' + x.creatorId, x.affiliateLink || '')) + '" placeholder="https:// (브랜드 발급)"></div>' + btn(x.affiliateLink ? '링크 수정' : '링크 발급', "C8.link('" + cid + "','" + js(x.creatorId) + "')") : ''; };
     if (t.cur === 'ship') body = '<ul class="v6-list">' + (ps.map(function (x) {
       var s = st(x), id = js(x.creatorId);
-      if (s === 'selected') return '<li class="v6-row">' + name(x) + chip('조건 합의 대기', 'info') + '<span class="v6-meta">합의 후 주소를 받아요</span></li>';
+      if (s === 'selected') return '<li class="v6-row">' + name(x) + chip('조건 합의 대기', 'info') + '<span class="v6-meta">' + (x.sampleRequired === false ? '샘플 없는 캠페인 — 합의 후 바로 영상 제출' : '합의 후 주소를 받아요') + '</span></li>';
+      if (s === 'terms_agreed' && x.sampleRequired === false) return '<li class="v6-row">' + name(x) + chip('샘플 없음', 'info') + '<span class="v6-meta">샘플 없이 진행하기로 합의했어요 · 크리에이터가 바로 영상을 제출해요</span>' + linkRow(x) + '</li>';
       if (s === 'terms_agreed' && !x.shipping) return '<li class="v6-row">' + name(x) + chip('주소 대기', 'warn') + btn('DM으로 주소 요청', "C8.openDm('dm-" + js(D.bid) + "--" + id + "')") + '</li>';
       if (s === 'terms_agreed') return '<li class="v6-row">' + name(x) + chip('발송 대기', 'info') + '<div class="v6-field v6-trk"><label for="' + fid('T.' + x.creatorId) + '">송장 번호</label><input id="' + fid('T.' + x.creatorId) + '" type="text" data-f="T.' + a(x.creatorId) + '" value="' + a(fv('T.' + x.creatorId)) + '" placeholder="예: USPS 9400 1234"' + inv('T.' + x.creatorId) + ' maxlength="120">' + errOf('T.' + x.creatorId) + '</div>' + btn(busy('ship' + x.creatorId) ? '처리 중…' : '발송 처리', "C8.ship('" + cid + "','" + id + "')", 'pri', busy('ship' + x.creatorId) ? ' disabled' : '') + linkRow(x) + '</li>';
       if (s === 'sample_shipped') return '<li class="v6-row">' + name(x) + chip('배송 중', 'warn') + '<span class="v6-meta">송장 ' + h(x.sampleTracking || '—') + ' · 크리에이터가 영상을 제출해요</span>' + linkRow(x) + '</li>';
@@ -639,18 +654,26 @@
   }
   function memberOf(cell) { return (Array.isArray(D.members) ? D.members : []).find(function (m) { return m.dmCellId === cell; }) || null; }
   function needsReply(cell) { var u = D.unread[cell]; if (u && u.unread) return true; var ms = D.dm[cell]; return !!(ms && ms.length && ms[ms.length - 1].authorKind === 'creator'); }
+  /* 1:1 DM — 관련 캠페인은 명시적으로 고른 것만(기본: 일반 문의). 정보 패널·답장 태그·AI 초안이 같은 선택을 쓴다.
+     모바일은 목록 → 대화 한 화면씩(뒤로 가기로 목록). */
+  function dmRelated(mem) { return mem ? allApps().filter(function (r) { return r.x.creatorId === mem.creatorId; }) : []; }
+  function dmCampOf(cell, rel) { var v = (U.dmCamp || {})[cell] || ''; return rel.find(function (r) { return r.c.campaignId === v; }) || null; }
   function dmInbox() {
     var list = dmCells().slice().sort(function (x, y) { return (needsReply(y.cellId) ? 1 : 0) - (needsReply(x.cellId) ? 1 : 0); });
-    if (!U.dmSel || !list.some(function (c) { return c.cellId === U.dmSel; })) U.dmSel = list.length ? list[0].cellId : null;
+    if (!U.dmSel || !list.some(function (c) { return c.cellId === U.dmSel; })) { U.dmSel = list.length ? list[0].cellId : null; U.dmPicked = false; }
     var cell = U.dmSel, msgs = cell ? D.dm[cell] : null, mem = cell ? memberOf(cell) : null; if (cell) loadDm(cell);
     var who = function (c) { var m = memberOf(c.cellId); return m ? '@' + m.handle : c.name; };
-    var active = mem ? allApps().filter(function (r) { return r.x.creatorId === mem.creatorId && r.x.termsState && r.x.termsState !== 'declined'; }) : [];
-    return '<div class="v6-inbox"><ul class="v6-ilist" aria-label="대화 목록">' + (list.map(function (c) { var u = D.unread[c.cellId]; return '<li><button type="button" class="v6-ithread' + (c.cellId === cell ? ' on' : '') + '" onclick="C8.openDm(\'' + js(c.cellId) + '\')"><b>' + h(who(c)) + '</b><span class="v6-last">' + h(((D.dm[c.cellId] || []).slice(-1)[0] || {}).original || '') + '</span>' + (needsReply(c.cellId) ? chip('답장 필요' + (u && u.unread ? ' · ' + u.unread : ''), 'warn') : chip('완료', 'ok')) + '</button></li>'; }).join('') || '<li class="v6-empty">대화가 없어요. 크리에이터가 브랜드에 참여하면 1:1 대화가 생겨요.</li>') + '</ul>' +
-      (cell ? '<div class="v6-iconvo"><div class="v6-ihead"><b>' + h(mem ? '@' + mem.handle : cell) + '</b><span class="v6-meta">' + h(active.map(function (r) { return r.c.name; }).join(', ') || '진행 중 캠페인 없음') + '</span></div>' +
-        '<div class="v6-feed">' + (msgs === undefined ? '<p class="v6-meta">불러오는 중…</p>' : msgs === null ? '<p class="alert warn">대화를 불러오지 못했어요.</p>' : (msgs.map(function (m) { var mine = m.authorKind !== 'creator'; return '<div class="v6-msg' + (mine ? ' me' : '') + '"><span class="v6-av" aria-hidden="true">' + h(initials(mine ? brandName() : m.author)) + '</span><div><p class="v6-mh">' + h(mine ? brandName() + ' 담당' : m.author) + ' · ' + h(String(m.at || '').slice(5, 16).replace('T', ' ')) + '</p><p>' + h(m.original) + '</p></div></div>'; }).join('') || '<p class="v6-meta">아직 메시지가 없어요.</p>')) + '</div>' +
-        '<div class="v6-compose"><label for="' + fid('DM.' + cell) + '">답장 입력 <span class="v6-meta">초안은 이 대화에만 보관돼요</span></label><textarea id="' + fid('DM.' + cell) + '" data-f="DM.' + a(cell) + '" maxlength="2000" placeholder="답장을 입력하세요"' + inv('DM.' + cell) + '>' + h(fv('DM.' + cell)) + '</textarea>' + errOf('DM.' + cell) +
-        '<div class="v6-actions"><button type="button" class="btn" disabled title="브랜드 DM AI 초안은 아직 연결되지 않았어요">AI 초안 (준비 중)</button>' + btn(busy('dm') ? '보내는 중…' : '보내기', "C8.sendDm('" + js(cell) + "')", 'pri', busy('dm') ? ' disabled' : '') + '</div></div></div>' +
-        '<aside class="v6-iinfo" aria-label="캠페인 정보">' + (active[0] ? pimg(prodById(active[0].c.productId), 56, active[0].c.product) + '<dl class="v6-kv"><dt>캠페인</dt><dd>' + h(active[0].c.name) + '</dd><dt>보상</dt><dd>' + h(agreedText(active[0].x) || rewardText(active[0].c)) + '</dd><dt>제출 기한</dt><dd>' + h(condOf(active[0].c, '제출 기한:') || '—') + '</dd><dt>상태</dt><dd>' + h(PST[st(active[0].x)]) + '</dd></dl>' : '<p class="v6-meta">진행 중인 캠페인이 없어요.</p>') + '</aside>' : '') + '</div>';
+    var rel = dmRelated(mem), cur = cell ? dmCampOf(cell, rel) : null, ai = (U.dmAi || {})[cell];
+    var campName = function (id) { return (campById(id) || {}).name || ''; };
+    var picker = '<div class="v6-field c8-dmcamp"><label for="dm-camp">관련 캠페인</label><select id="dm-camp" onchange="C8.dmCamp(\'' + js(cell || '') + '\',this.value)"><option value="">일반 문의 (캠페인 없음)</option>' +
+      rel.map(function (r) { return '<option value="' + a(r.c.campaignId) + '"' + (cur && cur.c.campaignId === r.c.campaignId ? ' selected' : '') + '>' + h(r.c.name) + ' · ' + h(PST[st(r.x)] || '') + '</option>'; }).join('') + '</select><span class="hint">' + (rel.length ? '고른 캠페인의 조건·기한만 보여주고, 답장과 AI 초안도 이 캠페인 기준으로 작성해요.' : '이 크리에이터가 신청한 캠페인이 없어요.') + '</span></div>';
+    return '<div class="v6-inbox c8-md' + (U.dmPicked ? ' c8-has-sel' : '') + '"><ul class="v6-ilist" aria-label="대화 목록">' + (list.map(function (c) { var u = D.unread[c.cellId]; return '<li><button type="button" class="v6-ithread' + (c.cellId === cell ? ' on' : '') + '" onclick="C8.openDm(\'' + js(c.cellId) + '\')"><b>' + h(who(c)) + '</b><span class="v6-last">' + h(((D.dm[c.cellId] || []).slice(-1)[0] || {}).original || '') + '</span>' + (needsReply(c.cellId) ? chip('답장 필요' + (u && u.unread ? ' · ' + u.unread : ''), 'warn') : chip('완료', 'ok')) + '</button></li>'; }).join('') || '<li class="v6-empty">대화가 없어요. 크리에이터가 브랜드에 참여하면 1:1 대화가 생겨요.</li>') + '</ul>' +
+      (cell ? '<div class="v6-iconvo"><div class="c8-back">' + btn('← 대화 목록', 'C8.dmBack()', 'ghost') + '</div><div class="v6-ihead"><b id="c8-dm-h" tabindex="-1">' + h(mem ? '@' + mem.handle : cell) + '</b>' + picker + '</div>' +
+        '<div class="v6-feed">' + (msgs === undefined ? '<p class="v6-meta">불러오는 중…</p>' : msgs === null ? '<p class="alert warn">대화를 불러오지 못했어요.</p>' : (msgs.map(function (m) { var mine = m.authorKind !== 'creator'; return '<div class="v6-msg' + (mine ? ' me' : '') + '"><span class="v6-av" aria-hidden="true">' + h(initials(mine ? brandName() : m.author)) + '</span><div><p class="v6-mh">' + h(mine ? brandName() + ' 담당' : m.author) + ' · ' + h(String(m.at || '').slice(5, 16).replace('T', ' ')) + (m.campaignId && campName(m.campaignId) ? ' · ' + h(campName(m.campaignId)) : '') + '</p><p>' + h(m.original) + '</p></div></div>'; }).join('') || '<p class="v6-meta">아직 메시지가 없어요.</p>')) + '</div>' +
+        '<div class="v6-compose c8-write"><label for="' + fid('DM.' + cell) + '">답장 입력 <span class="v6-meta">' + (cur ? h(cur.c.name) + ' 관련 답장으로 보내요' : '일반 문의 답장으로 보내요') + '</span></label><textarea id="' + fid('DM.' + cell) + '" data-f="DM.' + a(cell) + '" maxlength="2000" placeholder="답장을 입력하세요"' + inv('DM.' + cell) + '>' + h(fv('DM.' + cell)) + '</textarea>' + errOf('DM.' + cell) +
+        (ai ? '<div class="alert info c8-ai" role="status"><b>AI 초안이에요 — 보내기 전에 내용을 확인하고 고쳐 주세요.</b> 자동으로 보내지 않아요.<ul>' + ai.evidence.map(function (e) { return '<li>' + h(e) + '</li>'; }).join('') + '</ul></div>' : '') +
+        '<div class="v6-actions">' + btn(busy('aiDm') ? 'AI 초안 작성 중…' : 'AI 초안', "C8.aiDm('" + js(cell) + "')", '', busy('aiDm') ? ' disabled' : '') + btn(busy('dm') ? '보내는 중…' : '보내기', "C8.sendDm('" + js(cell) + "')", 'pri', busy('dm') ? ' disabled' : '') + '</div></div></div>' +
+        '<aside class="v6-iinfo" aria-label="캠페인 정보">' + (cur ? pimg(prodById(cur.c.productId), 56, cur.c.product) + '<dl class="v6-kv"><dt>캠페인</dt><dd>' + h(cur.c.name) + '</dd><dt>보상</dt><dd>' + h(agreedText(cur.x) || rewardText(cur.c)) + '</dd><dt>샘플</dt><dd>' + (cur.x.sampleRequired === false ? '없음' : h(shipText(cur.x))) + '</dd><dt>제출 기한</dt><dd>' + h(condOf(cur.c, '제출 기한:') || '—') + '</dd><dt>상태</dt><dd>' + h(PST[st(cur.x)] || '') + '</dd></dl>' : '<p class="v6-meta"><b>일반 문의</b><br>관련 캠페인을 고르면 그 캠페인의 조건·기한만 여기에 보여요.</p>') + '</aside>' : '') + '</div>';
   }
   function channelAdmin() {
     loadChannels(); var l = lounge();
@@ -670,11 +693,11 @@
     loadChannels();
     var list = camps().filter(function (c) { return c.lifecycle === 'published' && c.status === 'open'; });
     if (!U.postCamp || !list.some(function (c) { return c.campaignId === U.postCamp; })) U.postCamp = (list[0] || {}).campaignId;
-    var chs = (Array.isArray(D.channels) ? D.channels : []).filter(function (c) { return !c.archived && ['chat', 'tips', 'products', 'qna', 'notice'].indexOf(c.key) >= 0; });
+    var chs = (Array.isArray(D.channels) ? D.channels : []).filter(function (c) { return !c.archived; });   // 기본 5채널 + 직접 추가한 사용 중 채널
     if (!U.postCh || !chs.some(function (c) { return c.key === U.postCh; })) U.postCh = 'notice';
     var c = campById(U.postCamp);
     return '<div class="v6-form"><div class="v6-field"><label for="post-camp">1. 캠페인</label><select id="post-camp" onchange="C8.pick(\'postCamp\',this.value)">' + list.map(function (x) { return '<option value="' + a(x.campaignId) + '"' + (x.campaignId === U.postCamp ? ' selected' : '') + '>' + h(x.name) + '</option>'; }).join('') + '</select></div>' +
-      '<div class="v6-field"><label for="post-ch">2. 게시 채널</label><select id="post-ch" onchange="C8.pick(\'postCh\',this.value)">' + chs.map(function (x) { return '<option value="' + a(x.key) + '"' + (x.key === U.postCh ? ' selected' : '') + '># ' + h(x.name) + '</option>'; }).join('') + '</select><span class="hint">카드 게시는 기본 채널(공지·자유대화·제품후기·질문·콘텐츠팁)에 할 수 있어요.</span></div></div>' +
+      '<div class="v6-field"><label for="post-ch">2. 게시 채널</label><select id="post-ch" onchange="C8.pick(\'postCh\',this.value)">' + chs.map(function (x) { return '<option value="' + a(x.key) + '"' + (x.key === U.postCh ? ' selected' : '') + '># ' + h(x.name) + '</option>'; }).join('') + '</select><span class="hint">사용 중인 채널(직접 추가한 채널 포함)에 게시할 수 있어요. 보관한 채널은 목록에 없어요.</span></div></div>' +
       (c ? '<p class="v6-kicker">3. 미리보기 (크리에이터 채널·캠페인 공지에 이렇게 보여요)</p>' + postCard(c) + errOf('post') + '<div class="v6-actions">' + btn(busy('post') ? '게시 중…' : '4. 게시', 'C8.post()', 'pri', busy('post') ? ' disabled' : '') + '</div>' : '<p class="v6-empty">모집 중인 캠페인이 없어요.</p>');
   }
   function scCommunity() {
@@ -684,7 +707,7 @@
     else if (t.cur === 'dm') body = dmInbox();
     else if (t.cur === 'ch') body = channelAdmin();
     else if (t.cur === 'post') body = campaignPost();
-    else body = !loaded('members') ? loading('멤버') : D.members === null ? failBox('members', '멤버') : '<ul class="v6-list">' + (D.members.map(function (x) { return '<li class="v6-row"><div class="v6-grow"><b>@' + h(x.handle) + '</b><span class="v6-meta">' + h(CTRY[x.country] || x.country || '국가 미입력') + ' · ' + h(PLATFORM[x.platform] || x.platform || '') + (x.verified ? ' · 계정 확인됨' : '') + ' · ' + h(String(x.joinedAt).slice(0, 10)) + ' 참여</span></div>' + chip(x.collaborations ? '캠페인 참여' : x.applications ? '신청함' : '멤버', x.collaborations ? 'ok' : '') + btn('대화', "C8.openDm('" + js(x.dmCellId) + "')") + '</li>'; }).join('') || '<li class="v6-empty">아직 멤버가 없어요.</li>') + '</ul>';
+    else body = !loaded('members') ? loading('멤버') : D.members === null ? failBox('members', '멤버') : '<ul class="v6-list">' + (D.members.map(function (x) { return '<li class="v6-row"><div class="v6-grow"><b>@' + h(x.handle) + '</b><span class="v6-meta">' + h(CTRY[x.country] || x.country || '국가 미입력') + ' · ' + h(PLATFORM[x.platform] || x.platform || '') + (x.verified ? ' · 운영팀 확인 크리에이터' : '') + ' · ' + h(String(x.joinedAt).slice(0, 10)) + ' 참여</span></div>' + chip(x.collaborations ? '캠페인 참여' : x.applications ? '신청함' : '멤버', x.collaborations ? 'ok' : '') + btn('대화', "C8.openDm('" + js(x.dmCellId) + "')") + '</li>'; }).join('') || '<li class="v6-empty">아직 멤버가 없어요.</li>') + '</ul>';
     return '<div class="v6">' + ctxHead('커뮤니티·DM', '‘답장 필요’ 대화를 먼저 보여 줘요. 채널과 캠페인 게시도 여기서 관리해요.') + t.html + '<div class="v6-tabbody">' + body + '</div></div>';
   }
 
@@ -743,8 +766,10 @@
     if (step === 4) { var pv = U.preview; body = !pv ? '<p class="v6-meta">서버가 수신 거부·최근 90일 연락·승인 대기 중복을 확인해요.</p>' + btn(busy('pv') ? '확인 중…' : '제외 확인', 'C8.preview()', 'pri', busy('pv') ? ' disabled' : '') :
       '<p>보낼 수 있음 <b>' + pv.eligibleCount + '명</b> · 자동 제외 <b>' + pv.excluded.length + '명</b> · 이 계정 오늘 남은 발송 ' + pv.remainingSystemCapacity + '통' + (pv.sendingPaused ? ' · <b>발송 중지 상태</b>' : '') + '</p><ul class="v6-list">' +
       pv.eligibleEmails.map(function (e) { return '<li class="v6-row"><div class="v6-grow"><b class="v6-wrap">' + h(e) + '</b></div>' + chip('보냄 가능', 'ok') + '</li>'; }).join('') + pv.excluded.map(function (x) { return '<li class="v6-row"><div class="v6-grow"><b class="v6-wrap">' + h(x.email) + '</b></div>' + chip({ opted_out: '수신 거부', recent_contact: '최근 90일 내 연락', approved_queue: '이미 승인 대기열' }[x.reason] || x.reason, 'err') + '</li>'; }).join('') + '</ul><p class="v6-meta">이메일 수는 고유 인원 수가 아니에요.</p>'; }
-    if (step === 5) body = '<div class="v6-form">' + inp('승인자', 'M.approver', { req: true, ph: '예: 하린', max: 60, hint: '검수 목록을 만든 사람 이름이에요. 실제 발송 승인은 발송 로그에서 다시 해요.' }) + '</div><div class="v6-actions"><button type="button" class="btn" disabled title="테스트 발송 기능은 아직 연결되지 않았어요">나에게 테스트 발송 (준비 중)</button>' +
-      btn(busy('mkq') ? '저장 중…' : '검수 목록 만들기 · ' + (U.preview ? U.preview.eligibleCount : U.sel.length) + '명', 'C8.makeQueue()', 'pri', busy('mkq') ? ' disabled' : '') + '</div><p class="v6-meta">이 단계에서는 메일을 보내지 않아요. 초안으로 저장되고, 발송 로그에서 내용을 확인해 승인해야 순차 발송돼요.</p>';
+    if (step === 5) body = '<div class="v6-form">' + inp('승인자', 'M.approver', { req: true, ph: '예: 하린', max: 60, hint: '검수 목록을 만든 사람 이름이에요. 실제 발송 승인은 발송 로그에서 다시 해요.' }) + '</div><div class="v6-actions">' + (sender ? btn(busy('testSend') ? '테스트 보내는 중…' : '내 메일함으로 테스트 발송', 'C8.testSend()', '', busy('testSend') ? ' disabled' : '') : '') +
+      btn(busy('mkq') ? '저장 중…' : '검수 목록 만들기 · ' + (U.preview ? U.preview.eligibleCount : U.sel.length) + '명', 'C8.makeQueue()', 'pri', busy('mkq') ? ' disabled' : '') + '</div><p class="v6-meta">이 단계에서는 메일을 보내지 않아요. 초안으로 저장되고, 발송 로그에서 내용을 확인해 승인해야 순차 발송돼요.</p>' +
+      (sender ? '<p class="v6-meta">테스트 발송은 보내는 계정 자신(' + h(sender.email) + ')에게만 1통 보내요. 받는 사람 목록에는 보내지 않고, 계정의 하루 한도·일시중지 규칙을 그대로 따라요.</p>' : '') +
+      (U.testResult ? '<div class="alert ' + (U.testResult.state === 'sent' ? 'ok' : 'warn') + '" role="status">' + h(U.testResult.state === 'sent' ? U.testResult.to + ' 로 테스트 메일을 보냈어요. 받은편지함에서 확인하세요.' : U.testResult.state === 'blocked' ? (U.testResult.message || '안전 규칙에 걸려 보내지 않았어요.') : '발송 결과를 확인해야 해요 — Gmail 보낸편지함을 확인하세요.') + '</div>' : '');
     return '<div class="v6">' + ctxHead('메일 작성·검수', '연결 → 받는 사람 → 매칭 → 내용 → 미리보기 → 제외 → 승인 순서예요. 저장 후 발송 로그에서 승인해야 보내져요.') +
       '<ol class="v6-steps">' + steps.map(function (l, i) { return '<li><button type="button" onclick="C8.mailGo(' + (i + 1) + ')" aria-current="' + (step === i + 1 ? 'step' : 'false') + '"' + (step === i + 1 ? ' class="on"' : '') + '>' + (i + 1) + '. ' + l + '</button></li>'; }).join('') + '</ol>' +
       '<section class="v6-sec">' + body + errOf('mail') + '</section><div class="v6-actions v6-bar">' + (step > 1 ? btn('이전', 'C8.mailGo(' + (step - 1) + ')') : '') + (step < 5 ? btn('다음', 'C8.mailNext()', 'pri') : '') + '</div></div>';
@@ -763,7 +788,7 @@
     if (D.inbox === null) return '<div class="v6">' + head + failBox('inbox', '회신') + '</div>';
     var all = D.inbox.filter(function (x) { return x.lastDirection === 'in' || (x.task && x.task.revision); });
     var list = all.filter(function (x) { return (!U.rfCamp || x.campaignId === U.rfCamp) && (!U.rfStatus || (x.task || {}).label === U.rfStatus) && (!U.rfSender || x.senderAccountId === U.rfSender); });
-    if (U.id && list.some(function (x) { return x.threadId === U.id; })) U.replySel = U.id;
+    if (U.id && list.some(function (x) { return x.threadId === U.id; })) { if (U.replySel !== U.id) U.replyPicked = true; U.replySel = U.id; }
     var r = list.find(function (x) { return x.threadId === U.replySel; }) || list[0], th = r ? D.threads[r.threadId] : null; if (r) loadThread(r.threadId);
     var acc = function (id) { var x = accounts().find(function (y) { return y.accountId === id; }); return x ? x.email : (id ? '연결 해제된 계정' : '—'); };
     var senders = all.map(function (x) { return x.senderAccountId; }).filter(function (v, i, s) { return v && s.indexOf(v) === i; });
@@ -772,13 +797,14 @@
     return '<div class="v6">' + head + '<div class="v6-filters"><div class="v6-field"><label for="rf-c">캠페인</label><select id="rf-c" onchange="C8.pick(\'rfCamp\',this.value)"><option value="">전체</option>' + camps().map(function (c) { return '<option value="' + a(c.campaignId) + '"' + (U.rfCamp === c.campaignId ? ' selected' : '') + '>' + h(c.name) + '</option>'; }).join('') + '</select></div>' +
       '<div class="v6-field"><label for="rf-s">보내는 계정</label><select id="rf-s" onchange="C8.pick(\'rfSender\',this.value)"><option value="">전체</option>' + senders.map(function (s) { return '<option value="' + a(s) + '"' + (U.rfSender === s ? ' selected' : '') + '>' + h(acc(s)) + '</option>'; }).join('') + '</select></div>' +
       '<div class="v6-field"><label for="rf-st">상태</label><select id="rf-st" onchange="C8.pick(\'rfStatus\',this.value)"><option value="">전체</option>' + Object.keys(RS).map(function (k) { return '<option value="' + k + '"' + (U.rfStatus === k ? ' selected' : '') + '>' + RS[k] + '</option>'; }).join('') + '</select></div></div>' +
-      '<div class="v6-inbox v6-inbox2"><ul class="v6-ilist">' + (list.map(function (x) { var lb = (x.task || {}).label || 'unreviewed'; return '<li><button type="button" class="v6-ithread' + (r && r.threadId === x.threadId ? ' on' : '') + '" onclick="C8.replySel(\'' + js(x.threadId) + '\')"><b>' + h(x.handle || x.creatorEmail) + '</b><span class="v6-meta">' + h((campById(x.campaignId) || {}).name || '') + '</span><span class="v6-last">' + h(x.subject || '') + '</span>' + chip(RS[lb] || lb, lb === 'interested' ? 'ok' : lb === 'optout' || lb === 'declined' ? 'err' : 'warn') + '</button></li>'; }).join('') || '<li class="v6-empty">조건에 맞는 회신이 없어요.</li>') + '</ul>' +
-      (r ? '<div class="v6-iconvo"><div class="v6-ihead"><b>' + h(r.handle || r.creatorEmail) + '</b><span class="v6-meta v6-wrap">' + h(r.creatorEmail) + ' · ' + h(acc(r.senderAccountId)) + '</span></div>' +
+      '<div class="v6-inbox v6-inbox2 c8-md' + (U.replyPicked && r ? ' c8-has-sel' : '') + '"><ul class="v6-ilist">' + (list.map(function (x) { var lb = (x.task || {}).label || 'unreviewed'; return '<li><button type="button" class="v6-ithread' + (r && r.threadId === x.threadId ? ' on' : '') + '" onclick="C8.replySel(\'' + js(x.threadId) + '\')"><b>' + h(x.handle || x.creatorEmail) + '</b><span class="v6-meta">' + h((campById(x.campaignId) || {}).name || '') + '</span><span class="v6-last">' + h(x.subject || '') + '</span>' + chip(RS[lb] || lb, lb === 'interested' ? 'ok' : lb === 'optout' || lb === 'declined' ? 'err' : 'warn') + '</button></li>'; }).join('') || '<li class="v6-empty">조건에 맞는 회신이 없어요.</li>') + '</ul>' +
+      (r ? '<div class="v6-iconvo"><div class="c8-back">' + btn('← 회신 목록', 'C8.replyBack()', 'ghost') + '</div><div class="v6-ihead"><b id="c8-reply-h" tabindex="-1">' + h(r.handle || r.creatorEmail) + '</b><span class="v6-meta v6-wrap">' + h(r.creatorEmail) + ' · ' + h(acc(r.senderAccountId)) + '</span></div>' +
         '<div class="v6-feed">' + (th === undefined || th === null && D.busy['t:' + r.threadId] ? '<p class="v6-meta">불러오는 중…</p>' : !th ? '<p class="alert warn">대화를 불러오지 못했어요.</p>' : th.messages.map(function (m) { var me_ = m.direction === 'out'; return '<div class="v6-msg' + (me_ ? ' me' : '') + '"><span class="v6-av" aria-hidden="true">' + h(initials(me_ ? brandName() : (r.handle || r.creatorEmail))) + '</span><div><p class="v6-mh">' + h(me_ ? (m.fromEmail || brandName()) : (m.fromEmail || r.creatorEmail)) + ' · ' + h(String(m.at).slice(5, 16).replace('T', ' ')) + (me_ ? ' · ' + h({ sent: '발송됨', pending_gate: '승인 대기', sending: '발송 중', review: '결과 확인 필요', failed: '실패' }[m.state] || m.state) : '') + '</p><p style="white-space:pre-wrap">' + h(m.body) + '</p>' + (me_ && m.state === 'pending_gate' ? btn('내용 승인하고 발송', "C8.replySend('" + js(r.threadId) + "'," + Number(m.msgId) + ')', 'pri') : '') + '</div></div>'; }).join('')) + '</div>' +
         '<div class="v6-form">' + sel('상태', base + 'label', Object.keys(RS).map(function (k) { return [k, RS[k]]; }), { value: task.label || 'unreviewed' }) + sel('담당자', base + 'owner', owners, { value: task.owner || '' }) + inp('후속 할 일', base + 'next', { opt: true, wide: true, value: task.nextAction || '', max: 500 }) +
         '<div class="v6-actions v6-wide">' + btn(busy('task') ? '저장 중…' : '후속 처리 저장', "C8.taskSave('" + js(r.threadId) + "')", '', busy('task') ? ' disabled' : '') + '<span class="v6-meta">수신 거부로 저장하면 이 브랜드 발송에서 실제로 제외돼요.</span></div></div>' +
-        '<div class="v6-compose"><label for="' + fid(base + 'draft') + '">답장 초안</label><textarea id="' + fid(base + 'draft') + '" data-f="' + a(base + 'draft') + '" maxlength="20000">' + h(fv(base + 'draft')) + '</textarea>' +
-        '<div class="v6-actions"><button type="button" class="btn" disabled title="회신 AI 초안은 아직 연결되지 않았어요">AI 초안 (준비 중)</button>' + btn(busy('reply') ? '저장 중…' : '답장 저장 (승인 대기)', "C8.reply('" + js(r.threadId) + "')", 'pri', busy('reply') ? ' disabled' : '') + '</div><p class="v6-meta">저장한 답장은 대화에서 ‘내용 승인하고 발송’을 눌러야 보내져요.</p></div></div>' : '') + '</div></div>';
+        '<div class="v6-compose c8-write"><label for="' + fid(base + 'draft') + '">답장 초안</label><textarea id="' + fid(base + 'draft') + '" data-f="' + a(base + 'draft') + '" maxlength="20000">' + h(fv(base + 'draft')) + '</textarea>' +
+        ((U.replyAi || {})[r.threadId] ? '<div class="alert info c8-ai" role="status"><b>AI 초안이에요 — 저장·발송 전에 내용을 확인하고 고쳐 주세요.</b><ul>' + U.replyAi[r.threadId].evidence.map(function (e) { return '<li>' + h(e) + '</li>'; }).join('') + '</ul></div>' : '') +
+        '<div class="v6-actions">' + btn(busy('aiReply') ? 'AI 초안 작성 중…' : 'AI 초안' + (r.campaignId && campById(r.campaignId) ? ' (' + h(campById(r.campaignId).name) + ' 기준)' : ' (일반 문의)'), "C8.aiReply('" + js(r.threadId) + "')", '', busy('aiReply') ? ' disabled' : '') + btn(busy('reply') ? '저장 중…' : '답장 저장 (승인 대기)', "C8.reply('" + js(r.threadId) + "')", 'pri', busy('reply') ? ' disabled' : '') + '</div><p class="v6-meta">저장한 답장은 대화에서 ‘내용 승인하고 발송’을 눌러야 보내져요.</p></div></div>' : '') + '</div></div>';
   }
   var RST = { pending: ['대기', 'info'], sending: ['발송 중', 'info'], sent: ['메일 서비스 접수', 'ok'], review: ['결과 모름', 'warn'], blocked: ['제외', ''], failed: ['실패', 'err'] };
   function scSendlog() {
@@ -804,7 +830,7 @@
   }
 
   /* =====================================================================
-     화면: 팀 (서버 역할 그대로: 소유자·운영자·조회자. 담당 캠페인 제한은 서버 미지원이라 표시하지 않는다)
+     화면: 팀 (서버 역할 그대로: 소유자·운영자·조회자. owner 가 운영자·조회자 계정을 등록하고 초대 링크를 발급)
      ===================================================================== */
   var ROLE = { owner: '소유자 · 모든 기능 + 팀 역할 변경', manager: '운영자 · 이 브랜드 전체 운영(캠페인·제품·메일·DM·청구 결제) · 팀 역할 변경 불가', viewer: '조회자 · 보기만 (모든 변경은 서버에서 거부)' };
   function myRole() { if (me().kind === 'admin') return 'admin'; var m = (Array.isArray(D.team) ? D.team : []).find(function (x) { return x.userId === me().userId || x.email === me().email; }); return m ? m.role : ''; }
@@ -816,11 +842,15 @@
     var mine = myRole(), canEdit = mine === 'owner' || mine === 'admin';
     var ST = { active: ['활성', 'ok'], suspended: ['접근 중지', 'err'], pending: ['초대 대기', 'info'] };
     return '<div class="v6">' + head + '<div class="v6-table" role="table"><div class="v6-tr v6-th" role="row"><span role="columnheader">계정</span><span role="columnheader">이메일</span><span role="columnheader">역할·권한</span><span role="columnheader">상태</span><span role="columnheader"></span></div>' +
-      D.team.map(function (m) { var s = ST[m.state] || [m.state, '']; return '<div class="v6-tr" role="row"><span role="cell"><b>' + h(m.email.split('@')[0]) + '</b><br><span class="v6-meta">' + h(String(m.joinedAt).slice(0, 10)) + ' 생성' + (m.userId === me().userId ? ' · 나' : '') + '</span></span><span role="cell" class="v6-wrap">' + h(m.email) + '</span><span role="cell">' + h(ROLE[m.role] || m.role) + '</span><span role="cell">' + chip(s[0], s[1]) + '</span><span role="cell" class="v6-actions">' +
-        (canEdit ? '<label class="sr" for="role-' + a(m.userId) + '">역할 변경</label><select id="role-' + a(m.userId) + '" onchange="C8.setRole(\'' + js(m.userId) + '\',this.value)"' + (busy('role') ? ' disabled' : '') + '>' + ['owner', 'manager', 'viewer'].map(function (r) { return '<option value="' + r + '"' + (m.role === r ? ' selected' : '') + '>' + { owner: '소유자', manager: '운영자', viewer: '조회자' }[r] + '</option>'; }).join('') + '</select>' : '') + '</span></div>'; }).join('') + '</div>' +
+      D.team.map(function (m) { var s = m.state === 'active' && m.passwordSet === false ? ST.pending : ST[m.state] || [m.state, '']; return '<div class="v6-tr" role="row"><span role="cell"><b>' + h(m.email.split('@')[0]) + '</b><br><span class="v6-meta">' + h(String(m.joinedAt).slice(0, 10)) + ' 생성' + (m.userId === me().userId ? ' · 나' : '') + '</span></span><span role="cell" class="v6-wrap">' + h(m.email) + '</span><span role="cell">' + h(ROLE[m.role] || m.role) + '</span><span role="cell">' + chip(s[0], s[1]) + '</span><span role="cell" class="v6-actions">' +
+        (canEdit ? '<label class="sr" for="role-' + a(m.userId) + '">역할 변경</label><select id="role-' + a(m.userId) + '" onchange="C8.setRole(\'' + js(m.userId) + '\',this.value)"' + (busy('role') ? ' disabled' : '') + '>' + ['owner', 'manager', 'viewer'].map(function (r) { return '<option value="' + r + '"' + (m.role === r ? ' selected' : '') + '>' + { owner: '소유자', manager: '운영자', viewer: '조회자' }[r] + '</option>'; }).join('') + '</select>' : '') + (canEdit && m.state === 'active' && m.passwordSet === false ? btn(busy('tlink') ? '만드는 중…' : '초대 링크 다시 만들기', "C8.teamLink('" + js(m.userId) + "')", 'ghost', busy('tlink') ? ' disabled' : '') : '') + '</span></div>'; }).join('') + '</div>' +
       '<p class="v6-meta">역할을 바꾸면 그 사람의 기존 로그인은 끊기고 다시 로그인해야 해요. 마지막 활성 소유자는 강등할 수 없어요.' + (canEdit ? '' : ' 역할 변경은 소유자만 할 수 있어요.') + ' 캠페인별 담당 제한은 아직 지원하지 않아요 — 운영자는 이 브랜드의 모든 캠페인을 다뤄요.</p>' +
-      '<section class="v6-sec"><h2>팀원 등록</h2><p class="v6-meta">새 팀원 계정과 초대 링크는 보안상 운영팀(관리자)이 발급해요. 등록할 분의 이름·이메일·역할을 알려 주시면 초대 링크를 보내 드려요(7일 후 만료, 본인이 비밀번호 설정).</p>' +
-      '<div class="v6-actions"><a class="btn" href="mailto:chief@dinostudio.kr?subject=' + encodeURIComponent('[theprlist] 팀원 초대 요청 · ' + brandName()) + '">운영팀에 초대 요청</a><button type="button" class="btn" disabled title="브랜드 직접 초대는 아직 지원하지 않아요">직접 등록 (준비 중)</button></div></section></div>';
+      '<section class="v6-sec"><h2>팀원 등록</h2>' + (canEdit ?
+        '<p class="v6-meta">운영자·조회자 계정을 만들고 초대 링크를 받아요. 링크는 자동으로 보내지지 않아요 — 등록한 분에게 직접 전달하면 본인이 비밀번호를 정해요(72시간 후 만료).</p><div class="v6-form">' +
+        inp('이메일', 'TM.email', { req: true, type: 'email', ph: 'name@company.com', max: 200 }) + sel('역할', 'TM.role', [['manager', '운영자'], ['viewer', '조회자 (보기만)']]) + '</div>' +
+        '<div class="v6-actions">' + btn(busy('tinv') ? '등록 중…' : '등록하고 초대 링크 만들기', 'C8.teamInvite()', 'pri', busy('tinv') ? ' disabled' : '') + '</div>' +
+        (U.invite ? '<div class="alert ok" role="status" id="c8-invite"><b>' + h(U.invite.email) + '</b> 초대 링크를 만들었어요. 72시간 안에 직접 전달하세요 — 다시 만들면 이전 링크는 쓸 수 없어요.<div class="v6-field v6-wide"><label for="c8-invite-link">초대 링크</label><input id="c8-invite-link" type="text" readonly value="' + a(U.invite.link) + '" onfocus="this.select()"></div>' + btn('링크 복사', 'C8.copyInvite()') + '</div>' : '')
+        : '<p class="v6-meta">팀원 등록과 초대 링크 발급은 소유자만 할 수 있어요.</p>') + '</section></div>';
   }
 
   /* =====================================================================
@@ -830,10 +860,10 @@
     var head = ctxHead('월별 청구', '현행 과금 기준과 월별 청구서를 확인해요. 결제는 청구서 단위로만 진행돼요.');
     if (!U.init.bill) { U.init.bill = true; if (typeof window.refreshBilling === 'function') window.refreshBilling(); }
     var b = window.__billing;
-    var stats = b ? [['검증 가입(누적)', b.quantity], ['가입당 단가', money(b.unitPrice, 'KRW')], ['누적 사용 금액', money(b.usageAmount, 'KRW')], ['청구 방식', b.collection === 'monthly_invoice' ? '월말 합산' : b.internal ? '과금 제외' : '—'], ['결제사 연결', b.collectionEnabled ? '연결됨' : '설정 중']] : [];
+    var stats = b ? [['집계된 크리에이터(누적)', b.quantity], ['1명당 단가', money(b.unitPrice, 'KRW')], ['누적 사용 금액', money(b.usageAmount, 'KRW')], ['청구 방식', b.collection === 'monthly_invoice' ? '월말 합산 청구' : b.internal ? '청구 없음' : '—'], ['카드 결제', b.collectionEnabled ? '사용 가능' : '준비 중']] : [];
     return '<div class="v6">' + head + (b ? '<div class="v6-stats">' + stats.map(function (x) { return '<div class="v6-stat"><span>' + x[0] + '</span><b>' + h(x[1]) + '</b></div>'; }).join('') + '</div>' : loading('청구 요약')) +
-      '<div class="v6-note"><p><b>현행 기준</b>: 브랜드 가입(멤버십) + 관리자의 계정·사람 검증 완료 시 사용량 기록. 같은 브랜드·크리에이터는 한 번만, 데모·내부 브랜드 제외.' + (b && b.message ? ' (' + h(b.message) + ')' : '') + '</p>' +
-      '<p><b>검토 중인 정책</b>: ‘주소 인증 완료 등록 크리에이터 수’ 기준은 확정되지 않아 계산에 쓰지 않아요.</p><p>크리에이터별 과금 내역 표는 아직 제공되지 않아요(서버 집계 미지원). 월별 청구서와 금액은 아래에서 확인해요.</p></div>' +
+      '<div class="v6-note"><p><b>청구 기준</b>: 크리에이터가 브랜드에 가입하고 운영팀이 계정 확인을 마치면 1명으로 집계돼요. 같은 크리에이터는 한 번만 집계돼요.' + (b && b.message ? ' (' + h(b.message) + ')' : '') + '</p>' +
+      '<p>한 달 사용 금액은 월말에 청구서로 합산되고, 청구서 상태와 결제 내역은 아래에서 확인해요.</p></div>' +
       '<section class="v6-sec"><div class="v6-actions">' + btn('새로고침', 'C8.billRefresh()') + '</div>' +
       '<div class="c8-legacy-billing">' + (typeof window.billingCardHtml === 'function' ? window.billingCardHtml() : '') + (typeof window.billingInvoicesHtml === 'function' ? window.billingInvoicesHtml() : '<p>청구서를 불러오지 못했어요.</p>') + '</div></section></div>';
   }
@@ -881,13 +911,26 @@
   C8.account = function () { U.acct = !U.acct; paint(); };
   C8.logout = function () { if (typeof window.authLogout === 'function') window.authLogout(); };
   C8.addBrand = function () { toast(me().kind === 'admin' ? '다른 브랜드는 브랜드 메뉴(▾)의 ‘다른 브랜드 고르기’에서 선택해요.' : '새 브랜드는 가입 신청 후 운영팀 승인으로 추가돼요 (theprlist.net/signup).'); };
-  C8.openDm = function (cell) { U.tab.bc = 'dm'; U.dmSel = cell; if (U.screen !== 'b-community') C8.go('b-community'); else paint(); loadDm(cell, true); var t = document.getElementById(fid('DM.' + cell)); if (t) t.focus(); };
+  function mobile() { return window.matchMedia && window.matchMedia('(max-width:719px)').matches; }
+  function focusDetail(id) { var el = document.getElementById(id); if (!el) return; el.focus({ preventScroll: true }); if (mobile()) { var t = el.closest('.v6-panel, .v6-iconvo') || el; t.scrollIntoView({ block: 'start' }); } }
+  C8.openDm = function (cell) { U.tab.bc = 'dm'; U.dmSel = cell; U.dmPicked = true; if (U.screen !== 'b-community') C8.go('b-community'); else paint(); loadDm(cell, true); if (mobile()) focusDetail('c8-dm-h'); else { var t = document.getElementById(fid('DM.' + cell)); if (t) t.focus(); } };
+  C8.dmBack = function () { U.dmPicked = false; paint(); var b = document.querySelector('.v6-ithread.on'); if (b) b.focus(); };
+  C8.dmCamp = function (cell, v) { U.dmCamp = U.dmCamp || {}; U.dmCamp[cell] = v; if (U.dmAi) delete U.dmAi[cell]; paint(); };
+  C8.aiDm = function (cell) {
+    var cur = (U.dmCamp || {})[cell] || null, key = D.key;
+    if (String(fv('DM.' + cell)).trim() && !confirm('입력 중인 답장을 AI 초안으로 바꿀까요?')) return;
+    act('aiDm', req('POST', B() + '/assist/dm-draft', { cell_id: cell, campaign_id: cur }), function (r) {
+      if (D.key !== key || ((U.dmCamp || {})[cell] || null) !== (r.campaignId || null)) return;   // 그 사이 캠페인 선택이 바뀌면 버린다
+      U.f['DM.' + cell] = r.text; U.dmAi = U.dmAi || {}; U.dmAi[cell] = { evidence: r.evidence || [] };
+    }, 'AI 초안을 받지 못했어요. 직접 작성해 주세요.');
+  };
   C8.goApp = function (cid, id) { U.appCamp = cid; U.appSel = id; U.appFilter = ''; C8.go('b-applicants'); };
   C8.goSc = function (cid, t) { U.scCamp = cid; U.tab.sc = t || 'ship'; C8.go('b-samples'); };
   C8.pick = function (k, v) { U[k] = v; if (k === 'appCamp') { U.appSel = null; U.appFilter = ''; } if (k === 'appCamp' || k === 'scCamp') loadApps(v, true); paint(); };
   C8.reloadApps = function (cid) { loadApps(cid, true); };
   C8.appFilter = function (k) { U.appFilter = k; U.appSel = null; paint(); };
-  C8.appSel = function (id) { U.appSel = id; paint(); };
+  C8.appSel = function (id) { U.appSel = id; U.appPicked = true; paint(); if (mobile()) focusDetail('c8-app-h'); };
+  C8.appBack = function () { U.appPicked = false; paint(); var b = document.querySelector('.v6-split-list .v6-row.on .btn'); if (b) b.focus(); };
 
   // 브랜드 학습
   C8.faqAdd = function () { (U.faq = U.faq || []).push({ q: '', a: '' }); paint(); var fs = document.querySelectorAll('.v6-faq input'); if (fs.length) fs[fs.length - 1].focus(); };
@@ -915,22 +958,38 @@
   };
 
   // 제품
-  C8.newProd = function () { U.editProd = 'new'; initProd(null); paint(); var f = document.getElementById(fid('P.name')); if (f) f.focus(); };
-  C8.editProd = function (pid) { var p = prodById(pid); if (!p) return; if (U.screen !== 'b-products') { U.screen = 'b-products'; U.id = ''; pushHash(); } U.editProd = pid; initProd(p); paint(); try { window.scrollTo(0, 0); } catch (e) {} };
-  C8.closeProd = function () { U.editProd = null; U.err = {}; U.returnTo = null; paint(); };
+  function clearPend() { if (U.pendImg && U.pendImg.url) { try { URL.revokeObjectURL(U.pendImg.url); } catch (e) {} } U.pendImg = null; }
+  C8.clearPendImg = function () { clearPend(); delete U.err['P.img']; paint(); };
+  C8.newProd = function () { clearPend(); U.editProd = 'new'; initProd(null); paint(); var f = document.getElementById(fid('P.name')); if (f) f.focus(); };
+  C8.editProd = function (pid) { var p = prodById(pid); if (!p) return; if (U.editProd !== pid) clearPend(); if (U.screen !== 'b-products') { U.screen = 'b-products'; U.id = ''; pushHash(); } U.editProd = pid; initProd(p); paint(); try { window.scrollTo(0, 0); } catch (e) {} };
+  C8.closeProd = function () { clearPend(); U.editProd = null; U.err = {}; U.returnTo = null; paint(); };
   C8.upload = function (input, slot) {
     var f = input.files && input.files[0], p = curProd(); input.value = '';
-    if (!f || !p) return;
+    if (!f) return;
     if (['image/jpeg', 'image/png', 'image/webp'].indexOf(f.type) < 0) { U.err['P.img'] = 'JPG·PNG·WEBP 이미지만 올릴 수 있어요.'; return paint(); }
     if (f.size > 2000000) { U.err['P.img'] = '이미지는 2MB 이하만 올릴 수 있어요. (선택한 파일 ' + (f.size / 1e6).toFixed(1) + 'MB)'; return paint(); }
     delete U.err['P.img'];
+    // 새 제품(또는 사진 업로드가 실패해 다시 저장할 제품)의 대표 사진: 폼 메모리에만 두고 저장 때 올린다
+    if (slot === 'main' && (!p || U.pendImg)) { clearPend(); U.pendImg = { file: f, url: URL.createObjectURL(f) }; return paint(); }
+    if (!p) return;
     act('img', req('POST', B() + '/products/' + p.productId + '/images?slot=' + slot, null, { type: f.type, body: f }), function () { toast(slot === 'main' ? '대표 이미지를 저장했어요.' : '추가 이미지를 저장했어요.'); return load('prods', true); }, '이미지를 저장하지 못했어요. 기존 사진은 그대로예요.');
   };
   C8.delImg = function (id) { var p = curProd(); if (!p || !confirm('이 이미지를 삭제할까요?')) return; act('img', req('DELETE', B() + '/products/' + p.productId + '/images/' + id), function () { return load('prods', true); }); };
+  /* 공개 전환 — 처리 중엔 다시 누를 수 없고, 화면 상태는 서버 응답(제품)으로만 바뀐다.
+     성공하면 오류를 지우고, 실패하면 오류만 남긴다(성공 토스트와 오류가 함께 뜨지 않는다). */
   C8.setPublic = function (el) {
-    var p = curProd(); if (!p) return; var want = el.checked; delete U.err['P.public'];
-    act('pub', req('POST', B() + '/products/' + p.productId + '/public', { listed: want }), function () { toast(want ? '제품 모아보기에 공개했어요.' : '제품 모아보기에서 내렸어요.'); return load('prods', true); })
-      .then(function () { var q = prodById(p.productId); if (q && q.publicListed !== want && !U.err['P.public']) { U.err['P.public'] = want ? '공개하지 못했어요: ' + (q.publicMissing || []).join(', ') : '공개를 내리지 못했어요.'; paint(); } });
+    var p = curProd();
+    if (!p || U.busy.pub) { if (el) el.checked = !!(p && p.publicListed); return; }
+    var want = el.checked, key = D.key, pid = p.productId;
+    delete U.err['P.public']; U.busy.pub = true; paint();
+    req('POST', B() + '/products/' + pid + '/public', { listed: want }).then(function (r) {
+      if (D.key !== key) return;
+      putItem('prods', 'productId', r); delete U.err['P.public'];
+      toast(r.publicListed ? '제품 모아보기에 공개했어요.' : '제품 모아보기에서 내렸어요.');
+    }, function (e) {
+      if (D.key !== key) return;
+      U.err['P.public'] = (want ? '공개하지 못했어요: ' : '공개를 내리지 못했어요: ') + ((e && e.message) || '잠시 후 다시 시도해 주세요.');
+    }).then(function () { if (D.key === key) { U.busy.pub = false; paint(); } });
   };
   C8.saveProd = function (full) {
     var p = curProd(); U.err = {};
@@ -941,23 +1000,34 @@
       if (usp.filter(Boolean).length < 3) U.err['P.usp.0'] = 'USP 3개를 모두 적어 주세요.';
       if (!fv('P.desc').trim()) U.err['P.desc'] = '상세 설명을 적어 주세요.';
       if (!fv('P.ship', []).length) U.err['P.ship'] = '배송 가능 국가를 하나 이상 골라 주세요.';
-      if (p && !(p.images || []).some(function (i) { return i.slot === 'main'; }) && !p.publicImageUrl) U.err['P.img'] = '대표 이미지를 등록해 주세요.';
+      if (!U.pendImg && !(p && ((p.images || []).some(function (i) { return i.slot === 'main'; }) || p.publicImageUrl))) U.err['P.img'] = '대표 이미지를 선택해 주세요.';
     }
     if (fv('P.link') && !/^https:\/\//.test(fv('P.link'))) U.err['P.link'] = 'https://로 시작하는 주소를 적어 주세요.';
     if (fv('P.price') && !/^\d{1,9}(\.\d{1,2})?$/.test(fv('P.price'))) U.err['P.price'] = '정가는 숫자로 적어 주세요.';
     if (Object.keys(U.err).length) { paint(); return focusErr(); }
     var answers = { category: fv('P.category'), usp: usp.join('\n').replace(/\n+$/, ''), description: fv('P.desc').trim(), howto: fv('P.howto').trim(), banned: fv('P.banned').trim(), link: fv('P.link').trim(), price: fv('P.price').trim(), currency: fv('P.currency'), ship: fv('P.ship', []).join(',') };
-    var key = D.key;
+    var key = D.key, pend = U.pendImg, imgFail = null;
+    /* 순서: 제품 생성(또는 수정) → 자료 저장 → 선택한 대표 사진 업로드. 생성 직후 이 편집기를 그 제품으로 고정해
+       사진 업로드가 실패해도 다시 저장하면 같은 제품으로 재시도한다(입력·선택 사진 유지). */
     var work = (p ? (name !== p.name || fv('P.shopId').trim() !== (p.tiktokProductRef || '') ? req('PATCH', B() + '/products/' + p.productId, { name: name, tiktok_product_ref: fv('P.shopId').trim() }) : Promise.resolve(p))
       : req('POST', B() + '/products', { name: name, tiktok_product_ref: fv('P.shopId').trim() })).then(function (saved) {
       if (D.key !== key) return; var pid = saved.productId;
-      return req('POST', B() + '/products/' + pid + '/profile', { answers: answers }).then(function () { return pid; });
+      if (!p) U.editProd = pid;
+      return req('POST', B() + '/products/' + pid + '/profile', { answers: answers }).then(function () {
+        if (!pend) return pid;
+        return req('POST', B() + '/products/' + pid + '/images?slot=main', null, { type: pend.file.type, body: pend.file }).then(function () { return pid; }, function (e) { imgFail = e; return pid; });
+      });
     });
     act('psave', work, function (pid) {
       return load('prods', true).then(function () {
+        if (imgFail) {
+          U.err['P.img'] = '제품 정보는 저장했지만 사진을 올리지 못했어요: ' + ((imgFail && imgFail.message) || '잠시 후 다시 시도해 주세요') + ' — 다시 저장하면 같은 제품에 사진을 올려요.';
+          paint(); return focusErr();
+        }
+        if (pend && U.pendImg === pend) clearPend();
         toast(full ? '제품을 저장했어요.' : '임시 저장했어요. 미완성 제품은 캠페인 모집을 시작할 수 없어요.');
         if (U.returnTo === 'wizard' && full) { U.f = U.wizBackup || U.f; U.f['W.productId'] = pid; U.returnTo = null; U.editProd = null; U.wiz = 2; C8.go('b-create'); return; }
-        if (!p) { U.editProd = pid; initProd(prodById(pid)); paint(); }
+        if (!p) { initProd(prodById(pid)); paint(); }
       });
     }, '제품을 저장하지 못했어요. 입력은 그대로 남아 있어요.');
   };
@@ -975,7 +1045,7 @@
     if (publish) { var errs = allErrors(); if (errs.length) { U.wiz = 4; paint(); var el = document.getElementById('err-publish'); if (el) el.focus(); toast('필수 정보가 채워져야 모집을 시작할 수 있어요.'); return; } }
     else if (fv('W.name').trim().length < 2) { U.wiz = 1; U.err = { 'W.name': '초안도 캠페인 이름(2자 이상)이 필요해요.' }; paint(); return focusErr(); }
     var p = prodById(c.productId), body = { name: c.name.trim(), product: p ? p.name : '', usp: p ? (pfield(p, 'usp').split('\n')[0] || '') : '', reward_type: c.rewardType, affiliate_pct: c.affiliatePct, capacity: c.capacity, deadline: c.deadline || '', countries: c.countries,
-      reward_amount: c.rewardAmount, reward_currency: /^(KRW|USD|THB|VND|JPY)$/.test(c.rewardCurrency) ? c.rewardCurrency : 'KRW', platform: c.platform, conditions: c.conditions, product_id: c.productId };
+      reward_amount: c.rewardAmount, reward_currency: /^(KRW|USD|THB|VND|JPY)$/.test(c.rewardCurrency) ? c.rewardCurrency : 'KRW', platform: c.platform, conditions: c.conditions, product_id: c.productId, sample_required: c.sampleRequired };
     var key = D.key;
     var work = (cur ? req('PATCH', B() + '/campaigns/' + encodeURIComponent(cur.campaignId), Object.assign({}, body, { deadline: body.deadline || null })).then(function () { return cur.campaignId; })
       : req('POST', B() + '/campaigns', body).then(function (r) { return r.campaignId; })).then(function (cid) {
@@ -1023,7 +1093,8 @@
   // 커뮤니티
   C8.sendDm = function (cell) {
     var v = String(fv('DM.' + cell)).trim(); if (!v) { U.err['DM.' + cell] = '보낼 내용을 입력해 주세요.'; paint(); return focusErr(); }
-    act('dm', req('POST', '/community/cells/' + encodeURIComponent(cell) + '/messages', { text: v, channel: 'chat', locale: 'ko' }), function () { delete U.f['DM.' + cell]; loadDm(cell, true); });
+    var camp = (U.dmCamp || {})[cell] || null;
+    act('dm', req('POST', '/community/cells/' + encodeURIComponent(cell) + '/messages', Object.assign({ text: v, channel: 'chat', locale: 'ko' }, camp ? { campaign_id: camp } : {})), function () { delete U.f['DM.' + cell]; if (U.dmAi) delete U.dmAi[cell]; loadDm(cell, true); });
   };
   function lc() { var l = lounge(); return l ? '/community/cells/' + encodeURIComponent(l.cellId) + '/channels' : null; }
   C8.chEdit = function (k) { U.chEdit = k; U.err = {}; paint(); };
@@ -1102,7 +1173,17 @@
       load('outreach', true); C8.go('b-sendlog'); toast(n + '명을 검수 목록(승인 전 초안)으로 저장했어요. 발송 로그에서 승인해야 보내져요.');
     });
   };
-  C8.replySel = function (id) { U.replySel = id; U.id = id; pushHash(); paint(); };
+  C8.replySel = function (id) { U.replySel = id; U.id = id; U.replyPicked = true; pushHash(); paint(); if (mobile()) focusDetail('c8-reply-h'); };
+  C8.replyBack = function () { U.replyPicked = false; paint(); var b = document.querySelector('.v6-ithread.on'); if (b) b.focus(); };
+  C8.aiReply = function (tid) {
+    var t = (D.inbox || []).find(function (x) { return x.threadId === tid; }), k = 'RT.' + tid + '.draft';
+    if (!t) return;
+    if (String(fv(k)).trim() && !confirm('입력 중인 답장을 AI 초안으로 바꿀까요?')) return;
+    // 회신의 캠페인(후속 처리에 저장된 값)만 근거로 쓴다 — 없으면 일반 문의
+    act('aiReply', req('POST', B() + '/assist/reply-draft', { thread_id: tid, campaign_id: t.campaignId && campById(t.campaignId) ? t.campaignId : null }), function (r) {
+      U.f[k] = r.text; U.replyAi = U.replyAi || {}; U.replyAi[tid] = { evidence: r.evidence || [] };
+    }, 'AI 초안을 받지 못했어요. 직접 작성해 주세요.');
+  };
   C8.reply = function (tid) {
     var k = 'RT.' + tid + '.draft', v = String(fv(k)).trim(); if (!v) return toast('답장 내용을 입력해 주세요.');
     act('reply', req('POST', '/inbox/threads/' + encodeURIComponent(tid) + '/reply', { body: v }), function () { delete U.f[k]; toast('답장을 저장했어요. 대화에서 ‘내용 승인하고 발송’을 눌러야 보내져요.'); loadThread(tid, true); load('inbox', true); });
@@ -1131,6 +1212,39 @@
     if (!m || m.role === role) return;
     if (!confirm(m.email + ' 의 역할을 ' + { owner: '소유자', manager: '운영자', viewer: '조회자' }[role] + '(으)로 바꿀까요? 그 사람의 기존 로그인은 끊겨요.')) { paint(); return; }
     act('role', req('POST', B() + '/team/role', { user_id: uid, role: role }), function () { toast('역할을 바꿨어요.'); return load('team', true); }).then(function () { load('team', true); });
+  };
+  C8.teamInvite = function () {
+    var email = fv('TM.email').trim(), role = fv('TM.role') || 'manager';
+    U.err = {};
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { U.err['TM.email'] = '이메일 형식을 확인해 주세요.'; paint(); return focusErr(); }
+    act('tinv', req('POST', B() + '/team/members', { email: email, role: role }), function (r) {
+      delete U.f['TM.email']; U.invite = { email: r.email, link: r.invite && r.invite.link };
+      toast('팀원을 등록했어요. 초대 링크를 직접 전달하세요.'); return load('team', true);
+    }, '팀원을 등록하지 못했어요. 입력은 그대로 남아 있어요.');
+  };
+  C8.teamLink = function (uid) {
+    var m = (D.team || []).find(function (x) { return x.userId === uid; });
+    if (!m || !confirm(m.email + ' 의 초대 링크를 새로 만들까요? 이전 링크는 쓸 수 없게 돼요.')) return;
+    act('tlink', req('POST', B() + '/team/' + encodeURIComponent(uid) + '/invite-link', {}), function (r) { U.invite = { email: m.email, link: r.link }; toast('새 초대 링크를 만들었어요.'); });
+  };
+  C8.copyInvite = function () {
+    var el = document.getElementById('c8-invite-link'); if (!el) return;
+    el.select();
+    (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.reject()).then(function () { toast('초대 링크를 복사했어요.'); }, function () { toast('링크를 선택했어요. 직접 복사해 주세요.'); });
+  };
+  C8.testSend = function () {
+    var sender = accounts().find(function (x) { return x.accountId === fv('M.sender'); });
+    var subject = String(fv('M.subject')).trim(), text = String(fv('M.body')).trim();
+    if (!sender) { toast('보내는 계정을 먼저 고르세요.'); return; }
+    if (!subject || !text) { toast('제목과 본문을 먼저 적어 주세요.'); return; }
+    if (!confirm(sender.email + ' (내 연결 메일함)으로 테스트 메일 1통을 보낼까요?')) return;
+    var sig = sender.accountId + '|' + subject + '|' + text;
+    // 결과를 모르고 끝난 같은 내용 재시도는 같은 요청 번호로 — 서버가 재발송하지 않고 기록을 돌려준다
+    if (!U.testReq || U.testReq.sig !== sig || U.testReq.done) U.testReq = { sig: sig, id: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2) };
+    var rq = U.testReq; U.testResult = null;
+    act('testSend', req('POST', B() + '/gmail/accounts/' + encodeURIComponent(sender.accountId) + '/test-send', { request_id: rq.id, subject: subject, body: text, confirmed: true }), function (r) {
+      rq.done = true; U.testResult = r; load('gmail', true);
+    }, '테스트 메일을 보내지 못했어요.');
   };
   C8.billRefresh = function () { if (typeof window.refreshBilling === 'function') window.refreshBilling(); };
   C8.active = active;
@@ -1163,7 +1277,7 @@
   function paint() {
     if (painting) return;
     if (!active()) return legacyRender();
-    ensure(); setMode(true); load('identity');
+    ensure(); setMode(true); load('identity'); if (me().kind !== 'admin') load('team');
     var stage = document.getElementById('stage'); if (!stage) return;
     var act_ = document.activeElement, fidx = act_ && act_.id, caret = null;
     try { if (fidx && /^(INPUT|TEXTAREA)$/.test(act_.tagName) && act_.type !== 'file') caret = [act_.selectionStart, act_.selectionEnd]; } catch (e) {}
@@ -1171,15 +1285,26 @@
     painting = true;
     try {
       var body = (PAGES[U.screen] || scToday)();
-      if (myRole() === 'viewer') body = '<div class="alert info" role="status">조회자(보기 전용) 계정이에요. 변경 버튼을 눌러도 서버가 거부해요 — 역할 변경은 소유자에게 요청하세요.</div>' + body;
+      if (myRole() === 'viewer') body = '<div class="alert info" role="status">조회자(보기 전용) 계정이에요. 변경 기능은 꺼져 있어요 — 권한이 필요하면 소유자에게 요청하세요.</div>' + body;
+      else if (me().kind !== 'admin' && D.team === null) body = '<div class="alert warn" role="status">권한을 확인하지 못해 변경 기능을 잠시 꺼 두었어요. ' + btn('다시 확인', "C8.reload('team')") + '</div>' + body;
       var html = shell(body);
       stage.innerHTML = '<main class="c8-app" aria-label="theprlist 콘솔">' + html + '</main>';
     } finally { painting = false; }
-    labelCells();
+    labelCells(); lockWrites(stage);
     if (fidx) { var el = document.getElementById(fidx); if (el && el !== document.activeElement) { el.focus({ preventScroll: true }); try { if (caret) el.setSelectionRange(caret[0], caret[1]); } catch (e) {} } }
     var nm = document.querySelector('.v2-main'); if (nm) nm.scrollTop = my; if (typeof y === 'number') window.scrollTo(0, y);
   }
   var legacyRender = function () {};
+  /* 조회자·권한 미확인: 처음 그릴 때부터 쓰기 컨트롤을 끈다(눌러서 403 받는 흐름 없음). 서버도 같은 규칙으로 거부한다. */
+  var WRITE_RE = /C8\.(newCamp|editCamp|wizSave|wizProd|wizNewProd|upload|select|saveProd|newProd|delImg|chEdit|chSave|chArchive|chAdd|batchSend|batchControl|batchCancel|teamLink|teamInvite|taskSave|ship|setRole|setPublic|sendDm|saveList|revise|replySend|reply\(|reject|publish|post\(|makeQueue|link\(|learnSite|learnSave|gmailSending|gmailDisconnect|gmailConnect|faqDel|faqAdd|csvAdd|compose|closeCamp|approve|aiDm|aiReply|testSend|preview)/;
+  function writeLocked() { var r = myRole(); return r === 'viewer' || r === ''; }
+  function lockWrites(root) {
+    if (!writeLocked()) return;
+    root.querySelectorAll('[onclick],[onchange]').forEach(function (el) {
+      if (WRITE_RE.test((el.getAttribute('onclick') || '') + (el.getAttribute('onchange') || ''))) { el.disabled = true; el.setAttribute('aria-disabled', 'true'); el.title = '조회자는 변경할 수 없어요'; }
+    });
+    root.querySelectorAll('.v6-form [data-f], .v6-form [data-farr], textarea[data-f], .c8-write [data-f], .v6-trk [data-f], .v6-editrow [data-f]').forEach(function (el) { el.disabled = true; });
+  }
 
   /* 입력 → 상태 (다시 그려도 입력이 남는다) */
   document.addEventListener('input', function (e) {

@@ -108,6 +108,8 @@
     e.platform = t.platform; e.conditions = t.conditions || []; e.affiliatePct = t.commissionPct;
     // 제품도 합의 대상 — 합의 후 캠페인의 제품이 바뀌어도 합의한 제품명·이미지로 보인다(이전 스냅샷엔 없으면 현재 값)
     if ('product' in t) { e.product = t.product; e.productId = t.productId; }
+    // 샘플 필요 여부도 합의 대상 — 스냅샷에 없을 때(이전 기록)만 현재 캠페인 값
+    if ('sampleRequired' in t) e.sampleRequired = t.sampleRequired !== false;
     // 합의한 제품의 이미지: 운영 소개 이미지(https) 또는 합의 당시 브랜드 대표 이미지(서버가 새 서명 URL 로 제공)
     if (o.state !== 'selected' && (t.productImage || o.agreedImageUrl)) e.imageUrl = t.productImage || o.agreedImageUrl;
     e._terms = o.state === 'selected' ? 'offer' : 'agreed';
@@ -119,7 +121,11 @@
   var PST = { applied: '신청', selected: '선정', terms_agreed: '조건 합의', sample_shipped: '샘플 발송', content_submitted: '제출 완료', revision_requested: '수정 요청', completed: '완료', declined: '거절함', rejected: '미선정' };
   var PST_TONE = { applied: 'info', selected: 'ok', terms_agreed: 'ok', sample_shipped: 'warn', content_submitted: 'warn', revision_requested: 'warn', completed: 'ok', declined: 'err', rejected: 'err' };
   var STEPS = ['신청', '선정', '조건·주소', '샘플', '영상', '검수'];
+  var STEPS_NS = ['신청', '선정', '조건 합의', '영상', '검수'];
   function stepIdx(s) { return ({ applied: 0, selected: 1, terms_agreed: 2, sample_shipped: 3, revision_requested: 4, content_submitted: 5, completed: 6 })[s]; }
+  /* 샘플 없는 캠페인(보유 제품·UGC): 합의 후 주소·발송 없이 바로 영상 제출 */
+  function noSample(c) { return !!c && c.sampleRequired === false; }
+  function stepIdxNS(s) { return ({ applied: 0, selected: 1, terms_agreed: 3, revision_requested: 3, content_submitted: 4, completed: 5 })[s]; }
   /* 내 참여 목록: 선정 이후(offers) + 신청만 한 캠페인 */
   function parts() {
     var offers = offersLive().map(function (o) { return { id: o.campaignId, status: o.state, o: o, c: effTerms(campaignById(o.campaignId) || { campaignId: o.campaignId, name: o.campaignName, product: o.product, imageUrl: o.imageUrl, brandId: o.brandId, rewardType: o.rewardType, rewardAmount: o.rewardAmount, rewardCurrency: o.rewardCurrency, platform: o.platform, conditions: o.conditions || [], affiliatePct: o.commissionPct }, o) }; });
@@ -127,14 +133,14 @@
       .map(function (c) { return { id: c.campaignId, status: c.myStatus === 'rejected' ? 'rejected' : 'applied', o: null, c: c }; });
     return offers.concat(applied);
   }
-  function needsMe(p) { return ['selected', 'terms_agreed', 'revision_requested', 'sample_shipped'].indexOf(p.status) >= 0 && !(p.status === 'terms_agreed' && p.o && p.o.shipping); }
+  function needsMe(p) { return ['selected', 'terms_agreed', 'revision_requested', 'sample_shipped'].indexOf(p.status) >= 0 && !(p.status === 'terms_agreed' && !noSample(p.c) && p.o && p.o.shipping); }
   function nextAction(p) {
     var go = "V8go('c-work','" + a(p.id) + "')";
     switch (p.status) {
       case 'applied': return [p.c && p.c.open === false ? '모집이 마감됐어요 · 브랜드 결과 안내를 기다리는 중' : '브랜드 검토를 기다리는 중', btn('신청 내용 보기', go)];
       case 'rejected': return ['이번에는 선정되지 않았어요' + (p.c && p.c.rejectedAt ? ' · ' + h(String(p.c.rejectedAt).slice(0, 10)) : '') + (p.c && p.c.rejectReason ? ' · 사유: ' + h(p.c.rejectReason) : ''), btn('다른 캠페인 보기', "V8go('c-campaigns')")];
       case 'selected': return ['제안 조건을 확인하고 합의해요', btn('조건 확인', go, 'pri')];
-      case 'terms_agreed': return p.o && p.o.shipping ? ['샘플 발송을 기다리는 중', btn('상세 보기', go)] : ['샘플 받을 주소를 입력해요', btn('샘플 주소 입력', go, 'pri')];
+      case 'terms_agreed': return noSample(p.c) ? ['샘플 없이 진행해요 · 영상을 제출해요', btn('영상 제출', go, 'pri')] : p.o && p.o.shipping ? ['샘플 발송을 기다리는 중', btn('상세 보기', go)] : ['샘플 받을 주소를 입력해요', btn('샘플 주소 입력', go, 'pri')];
       case 'sample_shipped': return ['샘플이 오고 있어요' + (p.o && p.o.sampleTracking ? ' · 송장 ' + h(p.o.sampleTracking) : '') + ' · 받은 뒤 영상을 제출해요', btn('영상 제출', go, 'pri')];
       case 'revision_requested': return ['브랜드 수정 요청을 반영해 다시 제출해요', btn('수정본 제출', go, 'pri')];
       case 'content_submitted': return ['브랜드 확인을 기다리는 중', btn('상세 보기', go)];
@@ -233,8 +239,8 @@
     var list = parts(), p = V.id ? list.find(function (x) { return x.id === V.id; }) : list[0];
     if (V.id && !p) return '<div class="v6 v8-creator">' + top + scopeBar('캠페인') + '<div class="v6-empty" role="alert"><b>이 캠페인의 참여 기록을 찾지 못했어요.</b><p>이 브랜드의 내 캠페인이 아니거나 아직 반영되지 않았어요. 목록에서 다시 골라 주세요.</p>' + btn('내 캠페인 목록', "V8go('c-work')") + '</div>' + (list.length ? '<ul class="v6-list">' + list.map(function (x) { return '<li class="v6-row">' + pimg(x.c, 36) + '<div class="v6-grow"><b>' + crumb(x.c.name) + '</b></div>' + chip(PST[x.status], PST_TONE[x.status]) + btn('보기', "V8go('c-work','" + a(x.id) + "')") + '</li>'; }).join('') + '</ul>' : '') + '</div>';
     if (!p) return '<div class="v6 v8-creator">' + top + scopeBar('캠페인') + '<div class="v6-empty">이 브랜드에서 참여한 캠페인이 없어요. ' + btn('이 브랜드 캠페인 보기', "V8go('c-campaigns')", 'ghost') + '</div></div>';
-    var c = p.c, o = p.o, si = stepIdx(p.status), rej = ['declined', 'rejected'].indexOf(p.status) >= 0, na = nextAction(p);
-    var stepper = '<ol class="v8-stepper" aria-label="진행 단계">' + STEPS.map(function (l, i) { var cls = rej ? '' : i < si ? 'is-done' : i === si ? 'is-now' : ''; return '<li class="' + cls + '"' + (i === si && !rej ? ' aria-current="step"' : '') + '><span class="v8-dot" aria-hidden="true">' + (i < si && !rej ? '✓' : i + 1) + '</span>' + l + '</li>'; }).join('') + '</ol>';
+    var c = p.c, o = p.o, ns = noSample(c), si = ns ? stepIdxNS(p.status) : stepIdx(p.status), rej = ['declined', 'rejected'].indexOf(p.status) >= 0, na = nextAction(p);
+    var stepper = '<ol class="v8-stepper" aria-label="진행 단계">' + (ns ? STEPS_NS : STEPS).map(function (l, i) { var cls = rej ? '' : i < si ? 'is-done' : i === si ? 'is-now' : ''; return '<li class="' + cls + '"' + (i === si && !rej ? ' aria-current="step"' : '') + '><span class="v8-dot" aria-hidden="true">' + (i < si && !rej ? '✓' : i + 1) + '</span>' + l + '</li>'; }).join('') + '</ol>';
     var now = '<div class="v8-now"><p class="v8-eyebrow">' + (rej ? '결과' : '지금 할 일') + '</p><p class="v8-feature-t">' + na[0] + '</p>' + (o && o.contentUrl ? '<p class="v6-meta">제출물: ' + videoLink(o.contentUrl) + '</p>' : '') + (o && o.sampleTracking ? '<p class="v6-meta">송장: ' + h(o.sampleTracking) + '</p>' : '') + '<div class="v6-actions">' + btn('담당자에게 묻기', "V8dm('" + a(c.brandId || bid()) + "','" + a(c.campaignId) + "')") + '</div></div>';
     var act = o ? workAction(o, c) : '';
     return '<div class="v6 v8-creator">' + top + scopeBar('캠페인') + '<div class="v6-split v6-split-list v8-work' + (V.id ? ' v8-has-sel' : '') + '"><ul class="v6-list">' + list.map(function (x) {
@@ -266,13 +272,13 @@
       else if (rt === 'gifted') rew = '<dt>보상</dt><dd>제품 제공 (금액 보상 없음)</dd>';
       else rew = '<dt>제안 수수료</dt><dd>' + h(c.affiliatePct != null ? c.affiliatePct + '%' : '브랜드 안내 대기') + '</dd>';
       var hk = 'agreeHandle', hv = fv(hk, plat === 'tiktok' ? ((LIVE.profile && LIVE.profile.tiktokHandle) || '') : '');
-      return '<section class="v6-sec"><h2>조건 확인</h2>' + (changed ? '<div class="alert warn" role="alert" id="termsChanged" tabindex="-1"><b>확인하신 뒤 브랜드가 조건을 바꿨어요.</b> 아래 새 조건을 다시 확인하고 합의해 주세요. 이전 조건으로는 합의되지 않았어요.</div>' : '') + '<p class="v6-meta">브랜드가 제안한 조건이에요. 합의하면 이 조건이 그대로 기록되고, 그다음 샘플 받을 주소를 입력해요.</p><dl class="v6-kv">' + rew + '<dt>콘텐츠</dt><dd>' + h(contentText(c)) + '</dd><dt>제품</dt><dd>' + h(c.product || '브랜드 안내 대기') + '</dd>' + (plat === 'tiktok' ? '<dt>광고 사용</dt><dd>합의 후 Spark 코드로 따로 제출</dd>' : '') + '</dl>' +
+      return '<section class="v6-sec"><h2>조건 확인</h2>' + (changed ? '<div class="alert warn" role="alert" id="termsChanged" tabindex="-1"><b>확인하신 뒤 브랜드가 조건을 바꿨어요.</b> 아래 새 조건을 다시 확인하고 합의해 주세요. 이전 조건으로는 합의되지 않았어요.</div>' : '') + '<p class="v6-meta">브랜드가 제안한 조건이에요. 합의하면 이 조건이 그대로 기록되고, ' + (noSample(c) ? '샘플 발송 없이 바로 영상을 제출해요' : '그다음 샘플 받을 주소를 입력해요') + '.</p><dl class="v6-kv">' + rew + (noSample(c) ? '<dt>샘플</dt><dd>없음 · 가지고 있는 제품으로 촬영</dd>' : '') + '<dt>콘텐츠</dt><dd>' + h(contentText(c)) + '</dd><dt>제품</dt><dd>' + h(c.product || '브랜드 안내 대기') + '</dd>' + (plat === 'tiktok' ? '<dt>광고 사용</dt><dd>합의 후 Spark 코드로 따로 제출</dd>' : '') + '</dl>' +
         '<div class="v6-form">' + field(hk, '본인 ' + platName + ' 계정', hv, { req: true, ph: '@myhandle' }) +
         '<div class="v6-field v6-wide"><label class="v6-inline"><input type="checkbox" id="agreeOk" data-v8f="agreeOk" data-fp="' + a(o.termsFingerprint || '') + '" onchange="V8agreeCheck(this)"' + (V.f.agreeOk ? ' checked' : '') + '> 보상·콘텐츠·제출 기준·일정을 확인했어요<span class="req">필수</span></label>' + errOf('agreeOk') + '</div></div>' +
         '<div class="v6-actions">' + btn(V.busy.agree ? '처리 중…' : '조건 합의', "V8agree('" + id + "',true)", 'pri', V.busy.agree ? ' disabled' : '') + btn('거절', "V8agree('" + id + "',false)", 'ghost danger', V.busy.agree ? ' disabled' : '') + '</div></section>';
     }
     var spark = plat !== 'tiktok' ? '<p class="v6-meta">이 캠페인은 ' + h(platName) + ' 콘텐츠라 Spark 코드가 필요 없어요.</p>' : '<div class="v6-field v6-wide"><label for="sparkCode">Spark Ads 코드<span class="opt">선택</span></label><input id="sparkCode" type="text" data-v8f="sparkCode" value="' + a(fv('sparkCode', o.sparkCode || '')) + '" placeholder="브랜드와 광고 사용에 합의한 경우"><span class="hint">브랜드에만 전달되고 커뮤니티에는 보이지 않아요.</span></div><div class="v6-actions">' + btn(o.sparkCode ? '코드 수정' : '코드 제출', "submitSpark('" + id + "')", '', LIVE.sparkBusy ? ' disabled' : '') + '</div>';
-    if (s === 'terms_agreed') {
+    if (s === 'terms_agreed' && !noSample(c)) {
       var sp = o.shipping || {};
       if (o.shipping && !V.f.editShip) return '<section class="v6-sec"><h2>샘플 발송 대기</h2><p>등록한 주소: ' + h([sp.recipient, sp.country, sp.address].filter(Boolean).join(' · ')) + '</p><p class="v6-meta">브랜드가 발송하면 송장과 배송 상태가 여기에 표시돼요. 이 정보는 이 캠페인의 브랜드 담당자에게만 전달돼요.</p><div class="v6-actions">' + btn('주소 수정', "V8set('editShip',true)") + '</div></section><section class="v6-sec"><h2>광고 사용 코드</h2><div class="v6-form">' + spark + '</div></section>';
       var cs = (c.countries && c.countries.length ? c.countries : [(LIVE.profile || {}).country || 'US']);
@@ -287,7 +293,7 @@
         '<div class="v6-field v6-wide"><label class="v6-inline"><input type="checkbox" id="shipConsent" data-v8f="shipConsent"' + (V.f.shipConsent || o.shipping ? ' checked' : '') + '> 샘플 배송에 필요한 정보 제공을 확인했어요<span class="req">필수</span></label></div>' +
         '</div><div class="v6-actions">' + btn(V.busy.ship ? '저장 중…' : '주소 저장', "V8ship('" + id + "')", 'pri', V.busy.ship ? ' disabled' : '') + '</div></section>';
     }
-    if (s === 'sample_shipped' || s === 'revision_requested' || s === 'content_submitted') {
+    if (s === 'sample_shipped' || s === 'revision_requested' || s === 'content_submitted' || s === 'terms_agreed') {
       var rev = s === 'revision_requested', done = s === 'content_submitted';
       return '<section class="v6-sec"><h2>' + (rev ? '수정본 제출' : done ? '제출한 영상' : '영상 제출') + '</h2>' +
         (rev ? '<div class="alert warn">브랜드 수정 요청: ' + h(o.revisionNote || '담당자 DM에서 확인해 주세요.') + (o.contentUrl ? '<br>이전 제출: ' + videoLink(o.contentUrl) : '') + '</div>' : '') +

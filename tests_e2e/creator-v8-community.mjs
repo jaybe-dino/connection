@@ -73,7 +73,7 @@ ok("크리에이터 페이지 오류 없음", !errs.length, errs.join(" | "));
 
 // 공개 제품 상세 이미지
 const q = await br.newPage({ viewport: { width: 390, height: 844 } });
-await q.route(/invalid\.example|cdn\.example\.com/, (r) => r.abort());
+await q.route(/invalid\.example|cdn\.example\.com|\/public\/product-images\//, (r) => r.abort());
 await q.goto(APP + "/products/"); await q.evaluate((a) => localStorage.setItem("CONNECTION_API_URL", a), API); await q.reload();
 await q.waitForSelector(".v6-pcard"); await q.locator(".v6-pcard").first().getByRole("button", { name: "상세" }).click(); await q.waitForTimeout(600);
 const sheet = await q.locator("#pd-sheet img").evaluate((i) => ({ src: i.currentSrc || i.src, w: i.naturalWidth }));

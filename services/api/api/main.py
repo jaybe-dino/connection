@@ -159,6 +159,8 @@ from .routes_outreach import router as _outreach_router
 app.include_router(_outreach_router)
 from .routes_outreach_bulk import router as _outreach_bulk_router
 app.include_router(_outreach_bulk_router)
+from .routes_brand_assist import router as _brand_assist_router
+app.include_router(_brand_assist_router)
 app.include_router(_auth_router)
 app.include_router(_billing_router)
 app.include_router(_payments_router)

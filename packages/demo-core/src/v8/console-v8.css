@@ -15,3 +15,13 @@ body.c8 .svcbar { display: none !important; }
 .c8 .c8-legacy-billing .btn { margin-left: 6px; }
 body.c8 #toastWrap { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); }
 body.c8 #toastWrap .toast { position: static; transform: none; opacity: 1; background: #2b1f33; color: #fff; padding: 10px 14px; border-radius: 10px; font-size: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+/* 지원자·DM·회신: 모바일은 목록 → (선택) 상세 한 화면씩, 뒤로 가기로 목록. 데스크톱은 양쪽 패널 유지 */
+.c8 .c8-back { display: none; }
+@media (max-width: 719px) {
+  .c8 .c8-md.c8-has-sel > .v6-list, .c8 .c8-md.c8-has-sel > .v6-ilist { display: none; }
+  .c8 .c8-md:not(.c8-has-sel) > .v6-panel, .c8 .c8-md:not(.c8-has-sel) > .v6-iconvo, .c8 .c8-md:not(.c8-has-sel) > .v6-iinfo { display: none; }
+  .c8 .c8-back { display: block; margin: 0 0 8px; }
+}
+.c8 .c8-dmcamp { margin: 6px 0 0; max-width: 420px; }
+.c8 .c8-ai ul { margin: 6px 0 0; padding-left: 18px; }
+.c8 .c8-newimg img { max-width: 160px; max-height: 160px; border-radius: 8px; display: block; margin: 6px 0; object-fit: cover; }

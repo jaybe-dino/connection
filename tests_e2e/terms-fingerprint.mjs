@@ -84,9 +84,11 @@ ok("경합: 재확인 후 합의 → 70 USD 스냅샷", o3.state === "terms_agre
 const q = await br.newPage({ viewport: { width: 1280, height: 900 } });
 const qerr = []; q.on("pageerror", (e) => qerr.push(e.message));
 await q.goto(CON + "/"); await q.evaluate(([t, a]) => { localStorage.setItem("CONNECTION_API_URL", a); localStorage.setItem("CONNECTION_JWT", t); }, [T.fau, API]);
-await q.reload(); await q.waitForFunction(() => window.__ME, null, { timeout: 15000 });
-await q.evaluate((id) => { wkNav("products"); collabShow(id); }, cid); await q.waitForTimeout(2000);
-const bt = await q.locator(".agreed-terms").first().innerText().catch(() => "");
+await q.reload(); await q.waitForFunction(() => window.__C8 && window.__C8.active() && document.querySelector(".v2-brand"), null, { timeout: 15000 });
+// v8 콘솔 지원자 화면(실클릭): 캠페인 선택 → 이 크리에이터 상세의 합의 조건
+await q.evaluate((id) => { C8.go("b-applicants"); C8.pick("appCamp", id); }, cid); await q.waitForTimeout(2000);
+await q.locator(".v6-split-list .v6-row", { hasText: "@" }).first().getByRole("button", { name: "보기" }).click(); await q.waitForTimeout(600);
+const bt = await q.locator(".v6-split-list .v6-panel").innerText().catch(() => "");
 ok("브랜드 지원자: 합의한 조건 200원·Instagram·@fp.minji·릴스 2개", bt.includes("고정비 200원") && bt.includes("Instagram") && bt.includes("@fp.minji") && bt.includes("릴스 2개") && !bt.includes("999"), bt.replace(/\s+/g, " "));
 ok("브랜드 페이지 오류 없음", !qerr.length, qerr.join(" | "));
 await br.close();

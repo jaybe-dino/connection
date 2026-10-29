@@ -250,6 +250,7 @@ class PostIn(BaseModel):
     locale: str = "ko"
     thread_parent: int | None = None       # 스레드 답글이면 부모 msg_id
     image_url: str = Field(default="", max_length=500)   # 공개 HTTPS 이미지만
+    campaign_id: str | None = Field(default=None, max_length=100)   # 브랜드 DM 답장의 관련 캠페인(선택)
 
 
 @router.post("/cells/{cell_id}/messages")
@@ -291,16 +292,29 @@ def post_message(cell_id: str, body: PostIn,
             _channel_for_post(conn, cell, body.channel, False, bool(body.thread_parent))
             author = cell["brand_id"] if claims.get("kind") == "brand" else "admin"
             author_kind = "brand" if claims.get("kind") == "brand" else "ari"
+        dm_campaign = None
+        if body.campaign_id:
+            # 1:1 DM 에서 브랜드가 명시적으로 고른 관련 캠페인만 — 이 크리에이터가 신청·선정된 이 브랜드 캠페인
+            if cell.get("visibility") != "dm" or author_kind == "creator" or body.thread_parent:
+                raise HTTPException(400, "관련 캠페인은 브랜드 DM 답장에만 지정할 수 있습니다")
+            creator_id = cell_id.split("--", 1)[1] if "--" in cell_id else ""
+            if not conn.execute(
+                    "SELECT 1 FROM campaigns c WHERE c.campaign_id=%s AND c.brand_id=%s AND ("
+                    " EXISTS(SELECT 1 FROM campaign_applications a WHERE a.campaign_id=c.campaign_id AND a.creator_id=%s)"
+                    " OR EXISTS(SELECT 1 FROM campaign_terms t WHERE t.campaign_id=c.campaign_id AND t.creator_id=%s))",
+                    (body.campaign_id, cell["brand_id"], creator_id, creator_id)).fetchone():
+                raise HTTPException(409, "이 크리에이터와 관련 없는 캠페인입니다")
+            dm_campaign = body.campaign_id
         # 원문 선저장(pending) — 번역 API 장애에도 메시지는 잃지 않는다.
         # 이 블록이 커밋된 뒤에야 번역을 시도하고, 실패하면 러너가 재시도한다.
         m = conn.execute(
             "INSERT INTO cell_messages (cell_id, channel, author, author_kind,"
             " original, original_locale, translations, translation_state,"
-            " thread_parent, image_url)"
-            " VALUES (%s,%s,%s,%s,%s,%s,'{}','pending',%s,%s)"
+            " thread_parent, image_url, campaign_id)"
+            " VALUES (%s,%s,%s,%s,%s,%s,'{}','pending',%s,%s,%s)"
             " RETURNING msg_id, at",
             (cell_id, body.channel, author, author_kind, body.text,
-             body.locale, body.thread_parent, image)).fetchone()
+             body.locale, body.thread_parent, image, dm_campaign)).fetchone()
         if author_kind == "creator":
             from .routes_service import award_xp
             award_xp(conn, who, cell["brand_id"], "first_message",

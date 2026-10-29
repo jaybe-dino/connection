@@ -217,6 +217,58 @@ class AccountIn(BaseModel):
     role: str = Field(default="manager", pattern="^(owner|manager|viewer)$")
 
 
+def create_brand_account(conn, brand_id: str, email: str, role: str,
+                         actor: str) -> dict:
+    """어드민·콘솔(owner) 공통 계정 생성 — 호출자가 brand_account_lock을
+    잡은 상태여야 한다. 중복/타브랜드/크리에이터/어드민 이메일은 409."""
+    conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                 ("account-email:" + email,))
+    existing = conn.execute(
+        "SELECT kind, brand_id FROM users WHERE email=%s",
+        (email,)).fetchone()
+    if existing:
+        who = ("이미 이 브랜드의 계정"
+               if existing["kind"] == "brand"
+               and existing["brand_id"] == brand_id else
+               {"creator": "크리에이터", "admin": "어드민"}.get(
+                   existing["kind"], f"다른 브랜드({existing['brand_id']})")
+               + " 계정으로 사용 중")
+        raise HTTPException(409, f"이 이메일은 {who}입니다 — 기존 계정"
+                                 " 전환은 지원하지 않습니다")
+    u = conn.execute(
+        "INSERT INTO users (kind, email, brand_id)"
+        " VALUES ('brand',%s,%s) ON CONFLICT (email) DO NOTHING"
+        " RETURNING user_id", (email, brand_id)).fetchone()
+    if not u:   # 경합 백스톱 — 500 대신 409로 정상 롤백
+        raise HTTPException(409, "이 이메일이 방금 다른 계정에 사용"
+                                 "되었습니다 — 다른 이메일을 사용하세요")
+    conn.execute(
+        "INSERT INTO brand_team_roles (brand_id, user_id, role)"
+        " VALUES (%s,%s,%s)", (brand_id, u["user_id"], role))
+    ledger_append(conn, actor, "BRAND_ACCOUNT_CREATED", str(u["user_id"]),
+                  {"brand": brand_id, "email": email, "role": role})
+    return {"userId": str(u["user_id"]), "email": email, "role": role,
+            "state": "active", "passwordSet": False}
+
+
+def issue_setup_link(conn, brand_id: str, user_id: str, actor: str) -> dict:
+    """초기 비밀번호 설정 링크(72h) — 발송 없음, 기존 비밀번호 보호.
+    호출자가 brand_account_lock을 잡은 상태여야 한다."""
+    a = _target_account(conn, brand_id, user_id)
+    if a["state"] != "active":
+        raise HTTPException(409, "중지된 계정입니다 — 먼저 재개하세요")
+    if a["passwordSet"]:
+        raise HTTPException(409, "이미 비밀번호가 설정된 계정입니다 —"
+                                 " 재설정 링크를 사용하세요")
+    _revoke_tokens(conn, user_id, ("invite",))   # 새 발급 = 이전 동종 폐기
+    raw = auth.one_time_token(conn, user_id, "invite", SETUP_TTL_MIN)
+    # 감사 payload에 토큰 원문을 넣지 않는다
+    ledger_append(conn, actor, "BRAND_ACCOUNT_SETUP_LINK", str(user_id),
+                  {"brand": brand_id, "ttlHours": 72})
+    return {"link": f"{_console_url()}/?invite={raw}", "ttlHours": 72,
+            "note": "자동 발송되지 않습니다 — 담당자에게 직접 전달하세요."}
+
+
 @router.post("/admin/brands/{brand_id}/accounts")
 def add_account(brand_id: str, body: AccountIn,
                 admin: dict = Depends(require_admin_jwt)) -> dict:
@@ -226,35 +278,8 @@ def add_account(brand_id: str, body: AccountIn,
     with connect() as conn:
         _brand_or_404(conn, brand_id)
         brand_account_lock(conn, brand_id)
-        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-                     ("account-email:" + email,))
-        existing = conn.execute(
-            "SELECT kind, brand_id FROM users WHERE email=%s",
-            (email,)).fetchone()
-        if existing:
-            who = ("이미 이 브랜드의 계정"
-                   if existing["kind"] == "brand"
-                   and existing["brand_id"] == brand_id else
-                   {"creator": "크리에이터", "admin": "어드민"}.get(
-                       existing["kind"], f"다른 브랜드({existing['brand_id']})")
-                   + " 계정으로 사용 중")
-            raise HTTPException(409, f"이 이메일은 {who}입니다 — 기존 계정"
-                                     " 전환은 지원하지 않습니다")
-        u = conn.execute(
-            "INSERT INTO users (kind, email, brand_id)"
-            " VALUES ('brand',%s,%s) ON CONFLICT (email) DO NOTHING"
-            " RETURNING user_id", (email, brand_id)).fetchone()
-        if not u:   # 경합 백스톱 — 500 대신 409로 정상 롤백
-            raise HTTPException(409, "이 이메일이 방금 다른 계정에 사용"
-                                     "되었습니다 — 다른 이메일을 사용하세요")
-        conn.execute(
-            "INSERT INTO brand_team_roles (brand_id, user_id, role)"
-            " VALUES (%s,%s,%s)", (brand_id, u["user_id"], body.role))
-        ledger_append(conn, f"admin:{admin.get('sub','')}",
-                      "BRAND_ACCOUNT_CREATED", str(u["user_id"]),
-                      {"brand": brand_id, "email": email, "role": body.role})
-    return {"userId": str(u["user_id"]), "email": email, "role": body.role,
-            "state": "active", "passwordSet": False}
+        return create_brand_account(conn, brand_id, email, body.role,
+                                    f"admin:{admin.get('sub','')}")
 
 
 @router.post("/admin/brands/{brand_id}/accounts/{user_id}/setup-link")
@@ -263,20 +288,8 @@ def prepare_setup_link(brand_id: str, user_id: str,
     """초기 비밀번호 설정 링크(72h) 준비 — 발송 없음, 기존 비밀번호 보호."""
     with connect() as conn:
         brand_account_lock(conn, brand_id)
-        a = _target_account(conn, brand_id, user_id)
-        if a["state"] != "active":
-            raise HTTPException(409, "중지된 계정입니다 — 먼저 재개하세요")
-        if a["passwordSet"]:
-            raise HTTPException(409, "이미 비밀번호가 설정된 계정입니다 —"
-                                     " 재설정 링크를 사용하세요")
-        _revoke_tokens(conn, user_id, ("invite",))   # 새 발급 = 이전 동종 폐기
-        raw = auth.one_time_token(conn, user_id, "invite", SETUP_TTL_MIN)
-        # 감사 payload에 토큰 원문을 넣지 않는다
-        ledger_append(conn, f"admin:{admin.get('sub','')}",
-                      "BRAND_ACCOUNT_SETUP_LINK", str(user_id),
-                      {"brand": brand_id, "ttlHours": 72})
-    return {"link": f"{_console_url()}/?invite={raw}", "ttlHours": 72,
-            "note": "자동 발송되지 않습니다 — 담당자에게 직접 전달하세요."}
+        return issue_setup_link(conn, brand_id, user_id,
+                                f"admin:{admin.get('sub','')}")
 
 
 @router.post("/admin/brands/{brand_id}/accounts/{user_id}/reset-link")

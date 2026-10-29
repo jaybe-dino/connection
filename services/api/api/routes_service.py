@@ -761,6 +761,7 @@ class CampaignIn(BaseModel):
     platform: str = Field(default="tiktok", pattern="^(tiktok|instagram)$")
     conditions: list[str] = Field(default_factory=list, max_length=10)
     product_id: str | None = Field(default=None, max_length=40)
+    sample_required: bool = True
 
 
 def _conditions(v: list[str] | None) -> list[str]:
@@ -813,9 +814,9 @@ def create_campaign(brand_id: str, body: CampaignIn,
             "INSERT INTO campaigns (campaign_id, brand_id, name, product,"
             " usp, reward_type, affiliate_pct, capacity, deadline, status,"
             " lifecycle, countries, updated_at, reward_amount,"
-            " reward_currency, platform, conditions, product_id)"
+            " reward_currency, platform, conditions, product_id, sample_required)"
             " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'open','draft',%s,now(),"
-            " %s,%s,%s,%s,%s)",
+            " %s,%s,%s,%s,%s,%s)",
             (cid, brand_id, body.name.strip(),
              (body.product.strip() or (prod["name"] if prod else "")),
              body.usp.strip(), body.reward_type, body.affiliate_pct,
@@ -823,7 +824,7 @@ def create_campaign(brand_id: str, body: CampaignIn,
              _countries(body.countries), body.reward_amount,
              body.reward_currency, body.platform,
              json.dumps(_conditions(body.conditions), ensure_ascii=False),
-             prod["product_id"] if prod else None))
+             prod["product_id"] if prod else None, body.sample_required))
         ledger_append(conn, f"brand:{brand_id}", "CAMPAIGN_DRAFTED", cid,
                       {"name": body.name.strip()})
     return {"campaignId": cid, "lifecycle": "draft"}
@@ -843,6 +844,7 @@ class CampaignPatch(BaseModel):
     platform: str | None = Field(default=None, pattern="^(tiktok|instagram)$")
     conditions: list[str] | None = None
     product_id: str | None = Field(default=None, max_length=40)
+    sample_required: bool | None = None
 
 
 @router.patch("/brands/{brand_id}/campaigns/{campaign_id}")
@@ -856,7 +858,8 @@ def edit_campaign(brand_id: str, campaign_id: str, body: CampaignPatch,
                      ("capacity", body.capacity), ("reward_type", body.reward_type),
                      ("reward_amount", body.reward_amount),
                      ("reward_currency", body.reward_currency),
-                     ("platform", body.platform)]:
+                     ("platform", body.platform),
+                     ("sample_required", body.sample_required)]:
         if val is not None:
             sets.append(f"{col}=%s")
             args.append(val.strip() if isinstance(val, str) else val)
@@ -980,7 +983,8 @@ def team_list(brand_id: str, authorization: str = Header(default=""),
     claims = require_brand(brand_id, authorization, x_admin_key)
     with connect() as conn:
         rows = conn.execute(
-            "SELECT u.user_id, u.email, u.created_at, u.state, r.role"
+            "SELECT u.user_id, u.email, u.created_at, u.state, r.role,"
+            " u.password_hash IS NOT NULL AS pw_set"
             " FROM users u LEFT JOIN brand_team_roles r ON"
             " r.brand_id=u.brand_id AND r.user_id=u.user_id"
             " WHERE u.brand_id=%s AND u.kind='brand'"
@@ -990,6 +994,7 @@ def team_list(brand_id: str, authorization: str = Header(default=""),
         out.append({"userId": str(r["user_id"]), "email": r["email"],
                     "state": r["state"],
                     "role": r["role"] or ("owner" if i == 0 else "manager"),
+                    "passwordSet": r["pw_set"],
                     "joinedAt": r["created_at"].isoformat()})
     return out
 
@@ -1032,6 +1037,54 @@ def set_team_role(brand_id: str, body: RoleIn,
                       body.user_id, {"role": body.role,
                                      "by": str(claims.get("sub"))})
     return {"ok": True}
+
+
+class TeamInviteIn(BaseModel):
+    email: str = Field(min_length=5, max_length=200)
+    role: str = Field(default="manager", pattern="^(manager|viewer)$")
+
+
+@router.post("/brands/{brand_id}/team/members")
+def team_invite(brand_id: str, body: TeamInviteIn,
+                authorization: str = Header(default=""),
+                x_admin_key: str = Header(default="")) -> dict:
+    """owner가 자기 브랜드 manager/viewer 계정을 등록하고 초기 설정 링크(72h)를
+    받는다 — 어드민 계정 관리와 같은 생성·중복·타브랜드 검사를 공유하며
+    링크는 자동 발송되지 않는다."""
+    claims = require_brand(brand_id, authorization, x_admin_key)
+    from .routes_admin_brands import (EMAIL_RE, brand_account_lock,
+                                      create_brand_account, issue_setup_link)
+    email = body.email.strip().lower()
+    if not EMAIL_RE.fullmatch(email):
+        raise HTTPException(400, "이메일 형식을 확인해 주세요")
+    with connect() as conn:
+        brand_account_lock(conn, brand_id)
+        if _team_role(conn, claims, brand_id) not in ("owner", "admin"):
+            raise HTTPException(403, "팀원 등록은 소유자(owner)만 할 수 있습니다")
+        actor = f"brand:{brand_id}:{claims.get('sub')}"
+        acct = create_brand_account(conn, brand_id, email, body.role, actor)
+        acct["invite"] = issue_setup_link(conn, brand_id, acct["userId"], actor)
+    return acct
+
+
+@router.post("/brands/{brand_id}/team/{user_id}/invite-link")
+def team_invite_link(brand_id: str, user_id: str,
+                     authorization: str = Header(default=""),
+                     x_admin_key: str = Header(default="")) -> dict:
+    """아직 비밀번호를 설정하지 않은 팀원의 설정 링크 재발급(이전 링크 폐기)."""
+    claims = require_brand(brand_id, authorization, x_admin_key)
+    from .routes_admin_brands import brand_account_lock, issue_setup_link
+    with connect() as conn:
+        brand_account_lock(conn, brand_id)
+        if _team_role(conn, claims, brand_id) not in ("owner", "admin"):
+            raise HTTPException(403, "초대 링크는 소유자(owner)만 발급할 수 있습니다")
+        try:
+            return issue_setup_link(conn, brand_id, user_id,
+                                    f"brand:{brand_id}:{claims.get('sub')}")
+        except HTTPException as e:
+            if e.status_code == 404:
+                raise HTTPException(404, "이 브랜드의 팀원이 아닙니다")
+            raise
 
 
 # ── 어드민: 브랜드 정지·감사 로그 ────────────────────────────────

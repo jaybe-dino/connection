@@ -160,7 +160,7 @@ ok("발송 로그: 초안 취소(서버 cancelled)", (await api("GET", "/brands/
 // 8) 팀: 서버 역할 표시(운영자=브랜드 전체 운영, 조회자=보기만), 담당 캠페인 제한 미표시
 await nav("팀"); await p.waitForTimeout(1200);
 const team = await main();
-ok("팀: 실제 역할·권한 문구(담당 캠페인 제한 지원 안 함 명시)", team.includes("소유자") && team.includes("캠페인별 담당 제한은 아직 지원하지 않아요") && team.includes("운영팀에 초대 요청"));
+ok("팀: 실제 역할·권한 문구 + 직접 등록 폼", team.includes("소유자") && team.includes("캠페인별 담당 제한은 아직 지원하지 않아요") && team.includes("등록하고 초대 링크 만들기") && !team.includes("준비 중"));
 ok("페이지 오류 없음(브랜드)", !errs.length, errs.join(" | "));
 
 // 9) 관리자: 브랜드 전환 시 데이터·입력 초안 격리

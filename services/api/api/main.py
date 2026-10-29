@@ -101,10 +101,11 @@ async def brand_viewer_readonly(request: Request, call_next):
         from . import auth
         from fastapi.responses import JSONResponse
         u = auth.current_user(request.headers.get("authorization", ""))
-        if u and u.get("kind") == "brand" and u.get("brand_id"):
+        sub = str((u or {}).get("sub") or "")
+        if u and u.get("kind") == "brand" and u.get("brand_id") and re.fullmatch(r"[0-9a-fA-F-]{36}", sub):
             with connect() as conn:
                 r = conn.execute("SELECT role FROM brand_team_roles WHERE brand_id=%s AND user_id=%s::uuid",
-                                 (u["brand_id"], str(u.get("sub")))).fetchone()
+                                 (u["brand_id"], sub)).fetchone()
             if r and r["role"] == "viewer":
                 return JSONResponse({"detail": "조회자(보기 전용) 계정은 변경할 수 없어요. 소유자에게 역할 변경을 요청하세요."}, status_code=403)
     return await call_next(request)

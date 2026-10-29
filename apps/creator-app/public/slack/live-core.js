@@ -42,7 +42,7 @@ function req(method,path,body){
   return fetch(API+path,{method:method,headers:h,body:body?JSON.stringify(body):undefined})
     .then(function(r){return r.json().then(function(data){
       if(gen!==sessionGen||tok!==jwtGet())throw staleError();
-      if(!r.ok){var err=new Error(typeof data.detail==='string'?data.detail:'요청을 처리하지 못했습니다 ('+r.status+')');err.status=r.status;throw err;}
+      if(!r.ok){var err=new Error(typeof data.detail==='string'?data.detail:'요청을 처리하지 못했습니다 ('+r.status+')');err.status=r.status;err.detail=data.detail;throw err;}
       return data;});},
     function(netErr){if(gen!==sessionGen||tok!==jwtGet())throw staleError();throw netErr;});
 }

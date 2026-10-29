@@ -51,6 +51,27 @@ def _terms(conn, campaign_id: str, creator_id: str, lock: bool = True) -> dict:
     return t
 
 
+def _offer_terms(camp: dict | None, commission_pct) -> dict:
+    """크리에이터에게 제안된 조건 — 합의 확인값(fingerprint)과 스냅샷의 공통 원본."""
+    camp = camp or {}
+    return {"rewardType": camp.get("reward_type"),
+            "commissionPct": float(commission_pct) if commission_pct is not None else None,
+            "rewardAmount": camp.get("reward_amount"),
+            "rewardCurrency": camp.get("reward_currency"),
+            "platform": camp.get("platform") or "tiktok",
+            "conditions": [str(x) for x in (camp.get("conditions") or [])
+                           if isinstance(x, (str, int, float))]}
+
+
+def _terms_fingerprint(terms: dict) -> str:
+    """제안 조건의 확인값 — 사용자가 본 조건과 서버가 수락할 조건이 같은지 비교한다."""
+    import hashlib
+    import json as _json
+    keys = ("rewardType", "commissionPct", "rewardAmount", "rewardCurrency", "platform", "conditions")
+    raw = _json.dumps({k: terms.get(k) for k in keys}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
 def _terms_out(t: dict, extra: dict | None = None) -> dict:
     out = {"campaignId": t["campaign_id"], "creatorId": t["creator_id"],
            "state": t["state"],
@@ -509,7 +530,10 @@ def my_offers(authorization: str = Header(default="")) -> list[dict]:
             " LEFT JOIN product_invitation_profiles pip"
             "   ON pip.product_id=bp.product_id"
             " WHERE t.creator_id=%s ORDER BY t.selected_at", (cid,)).fetchall()
-    return [_terms_out(r, {"campaignName": r["campaign_name"],
+    def _offer_extra(r):
+        terms = _offer_terms(r, r["commission_pct"])
+        return {"offerTerms": terms, "termsFingerprint": _terms_fingerprint(terms)}
+    return [_terms_out(r, {**_offer_extra(r), "campaignName": r["campaign_name"],
                            "brandId": r["brand_id"],
                            "brandName": r["brand_name"],
                            "product": r["product"],
@@ -530,6 +554,9 @@ class AgreeIn(BaseModel):
     accept: bool = True
     tiktok_handle: str = Field(default="", max_length=80)
     handle: str = Field(default="", max_length=80)   # 캠페인 플랫폼 계정(TikTok/Instagram)
+    # 화면에서 확인한 제안 조건의 확인값(GET /me/campaign-offers 의 termsFingerprint).
+    # 보내면 현재 조건과 다를 때 409 로 재확인을 요구한다. 비우면 기존 API 와 같다.
+    terms_fingerprint: str = Field(default="", max_length=64)
 
 
 @router.post("/me/campaign-offers/{campaign_id}/agree")
@@ -549,23 +576,26 @@ def agree_offer(campaign_id: str, body: AgreeIn,
             ledger_append(conn, f"creator:{cid}", "CAMPAIGN_TERMS_DECLINED",
                           campaign_id, {})
             return _terms_out(t)
+        # 캠페인 행을 잠가 확인값 비교와 합의 저장 사이에 브랜드 수정이 끼어들지 못하게 한다
         camp = conn.execute(
             "SELECT reward_type, reward_amount, reward_currency, platform,"
-            " conditions, affiliate_pct FROM campaigns WHERE campaign_id=%s",
+            " conditions, affiliate_pct FROM campaigns WHERE campaign_id=%s FOR UPDATE",
             (campaign_id,)).fetchone()
-        platform = (camp and camp["platform"]) or "tiktok"
+        offered = _offer_terms(camp, t["commission_pct"])
+        current_fp = _terms_fingerprint(offered)
+        seen_fp = (body.terms_fingerprint or "").strip()
+        if seen_fp and seen_fp != current_fp:
+            raise HTTPException(409, {"code": "terms_changed",
+                                      "message": "확인하신 뒤 브랜드가 조건을 바꿨어요. 새 조건을 다시 확인해 주세요.",
+                                      "termsFingerprint": current_fp, "offerTerms": offered})
+        platform = offered["platform"]
         handle = (body.handle or body.tiktok_handle).strip()
         if not handle:
             raise HTTPException(400, "합의에는 " + ("Instagram" if platform == "instagram" else "TikTok")
                                      + " 계정 확인이 필요합니다")
         # 합의 시점의 조건을 그대로 남긴다(이후 캠페인 수정과 무관하게 이 합의 기준 유지)
-        snapshot = {"rewardType": camp and camp["reward_type"],
-                    "commissionPct": float(t["commission_pct"]) if t["commission_pct"] is not None else None,
-                    "rewardAmount": camp and camp["reward_amount"],
-                    "rewardCurrency": camp and camp["reward_currency"],
-                    "platform": platform, "handle": handle,
-                    "conditions": [str(x) for x in ((camp and camp["conditions"]) or [])
-                                   if isinstance(x, (str, int, float))]}
+        snapshot = {**offered, "handle": handle, "termsFingerprint": current_fp,
+                    "confirmedByCreator": bool(seen_fp)}
         import json as _json
         t = conn.execute(
             "UPDATE campaign_terms SET state='terms_agreed',"

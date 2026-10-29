@@ -1422,6 +1422,15 @@
       }
       if(collabOpen&&collabOpen.campaignId===c.campaignId){
         if(!collabOpen.rows.length)h+='<p style="font-size:13px">아직 지원자가 없어요.</p>';
+        // 합의 시점 스냅샷(agreedTerms)이 기준 — 이후 캠페인 수정과 무관하게 크리에이터 화면과 같은 조건
+        var agreedHtml=function(a){
+          var t=a.agreedTerms;
+          if(!t)return '<p class="agreed-terms" style="font-size:12px;margin:6px 0">확정 수수료 '+(a.agreedCommissionPct!=null?a.agreedCommissionPct+'%':'-')+' (합의 기록 이전 데이터)</p>';
+          var cur=t.rewardCurrency||'KRW',amt=t.rewardAmount!=null?(cur==='KRW'?Number(t.rewardAmount).toLocaleString('ko-KR')+'원':Number(t.rewardAmount).toLocaleString('en-US')+' '+cur):'금액 미정';
+          var rw=t.rewardType==='paid'?'고정비 '+amt:t.rewardType==='gifted'?'제품 제공':'판매 수수료 '+(t.commissionPct!=null?t.commissionPct+'%':'-');
+          var pl={tiktok:'TikTok',instagram:'Instagram'}[t.platform]||t.platform||'';
+          return '<p class="agreed-terms" style="font-size:12px;margin:6px 0"><b>합의한 조건</b> · '+mailEscape(rw)+' · '+mailEscape(pl)+(t.handle?' 계정 '+mailEscape(t.handle):'')+((t.conditions||[]).length?'<br>콘텐츠: '+mailEscape(t.conditions.join(' · ')):'')+'<br><span style="color:#5a6560">합의 후 캠페인을 수정해도 이 조건이 유지돼요.</span></p>';
+        };
         collabOpen.rows.forEach(function(a){
           var st=a.termsState||'미선정';
           h+='<div style="border-top:1px solid #eee;padding:10px 0;margin-top:6px"><b>@'+mailEscape(a.handle)+'</b> <span style="font-size:12px">'+(a.verified?'검증됨':'미검증')+' · 상태: '+mailEscape(st)+(a.tiktokHandle?' · 핸들 '+mailEscape(a.tiktokHandle):'')+'</span>';
@@ -1433,17 +1442,17 @@
           }else if(a.termsState==='selected'){
             h+='<p style="font-size:12px;margin:6px 0">제안 수수료 '+(a.commissionPct!=null?a.commissionPct+'%':'-')+' — 크리에이터 합의 대기 중.</p>';
           }else if(a.termsState==='terms_agreed'||a.termsState==='sample_shipped'){
-            h+='<p style="font-size:12px;margin:6px 0">확정 수수료 '+(a.agreedCommissionPct!=null?a.agreedCommissionPct+'%':'-')+(a.sampleTracking?' · 송장 '+mailEscape(a.sampleTracking):'')+(a.sparkCode?' · Spark 코드 수령 ✓':'')+'</p>'+sparkRowHtml(a);
+            h+=agreedHtml(a)+'<p style="font-size:12px;margin:6px 0">'+(a.sampleTracking?'송장 '+mailEscape(a.sampleTracking):'샘플 발송 전')+(a.sparkCode?' · Spark 코드 수령 ✓':'')+'</p>'+sparkRowHtml(a);
             h+=collabShippingHtml(a);
             if(a.termsState==='terms_agreed')h+='<div style="display:flex;gap:6px;margin:4px 0"><input id="shp_'+a.creatorId+'" placeholder="샘플 송장 번호" style="flex:1;padding:8px"><span class="cbt" onclick="collabShip(\''+c.campaignId+'\',\''+a.creatorId+'\')">샘플 발송</span></div>';
             h+='<div style="display:flex;gap:6px;margin:4px 0"><input id="afl_'+a.creatorId+'" placeholder="어필리에이트 링크 (https://… — 브랜드 발급)" value="'+mailEscape(a.affiliateLink||'')+'" style="flex:1;padding:8px"><span class="cbt" onclick="collabLink(\''+c.campaignId+'\',\''+a.creatorId+'\')">링크 발급</span></div>';
           }else if(a.termsState==='content_submitted'){
-            h+='<p style="font-size:12px;margin:6px 0">콘텐츠: '+mailEscape(a.contentUrl)+(a.sparkCode?' · Spark 코드 ✓':'')+'</p>'+sparkRowHtml(a)+'<span class="cbt" onclick="collabComplete(\''+c.campaignId+'\',\''+a.creatorId+'\')">완료 처리</span>'
+            h+=agreedHtml(a)+'<p style="font-size:12px;margin:6px 0">콘텐츠: '+mailEscape(a.contentUrl)+(a.sparkCode?' · Spark 코드 ✓':'')+'</p>'+sparkRowHtml(a)+'<span class="cbt" onclick="collabComplete(\''+c.campaignId+'\',\''+a.creatorId+'\')">완료 처리</span>'
               +'<div style="display:flex;gap:6px;margin:6px 0"><input id="rvn_'+a.creatorId+'" placeholder="수정 요청 내용 (크리에이터에게 전달)" style="flex:1;padding:8px"><span class="cbt no" onclick="collabRevision(\''+c.campaignId+'\',\''+a.creatorId+'\')">수정 요청</span></div>';
           }else if(a.termsState==='revision_requested'){
-            h+='<p style="font-size:12px;margin:6px 0">수정 요청 중 — "'+mailEscape(a.revisionNote||'')+'"<br>이전 제출: '+mailEscape(a.contentUrl||'-')+' · 크리에이터의 수정본 제출을 기다리고 있어요.</p>'+sparkRowHtml(a);
+            h+=agreedHtml(a)+'<p style="font-size:12px;margin:6px 0">수정 요청 중 — "'+mailEscape(a.revisionNote||'')+'"<br>이전 제출: '+mailEscape(a.contentUrl||'-')+' · 크리에이터의 수정본 제출을 기다리고 있어요.</p>'+sparkRowHtml(a);
           }else if(a.termsState==='completed'){
-            h+='<p style="font-size:12px;margin:6px 0">✓ 완료 — 확정 수수료 '+(a.agreedCommissionPct!=null?a.agreedCommissionPct+'%':'-')+(a.sampleTracking?' · 송장 '+mailEscape(a.sampleTracking):'')+'<br>콘텐츠: '+(a.contentUrl?'<a href="'+mailEscape(a.contentUrl)+'" target="_blank" rel="noopener">'+mailEscape(a.contentUrl)+'</a>':'-')+'</p>'+sparkRowHtml(a);
+            h+=agreedHtml(a)+'<p style="font-size:12px;margin:6px 0">✓ 완료'+(a.sampleTracking?' · 송장 '+mailEscape(a.sampleTracking):'')+'<br>콘텐츠: '+(a.contentUrl?'<a href="'+mailEscape(a.contentUrl)+'" target="_blank" rel="noopener">'+mailEscape(a.contentUrl)+'</a>':'-')+'</p>'+sparkRowHtml(a);
           }else if(a.termsState==='declined'){
             h+='<p style="font-size:12px;margin:6px 0">크리에이터가 제안을 거절했어요.</p>';
           }

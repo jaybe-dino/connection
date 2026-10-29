@@ -55,6 +55,21 @@
   }
   function contentText(c) { var p = c && c.platform && PLATFORM[c.platform] ? PLATFORM[c.platform] + ' · ' : ''; return c && c.conditions && c.conditions.length ? p + c.conditions.join(' · ') : (p ? p + '세부 조건 브랜드 안내 대기' : '브랜드 안내 대기'); }
 
+  /* ---------- 협업 조건의 기준 ----------
+     합의 후: 서버가 합의 시점에 저장한 agreedTerms 가 기준(이후 캠페인 수정과 무관).
+     선정 후 합의 전: 서버가 확인값(termsFingerprint)과 함께 내려준 offerTerms 가 기준.
+     그 외(신청 전·신청함): 현재 캠페인 값. */
+  function effTerms(c, o) {
+    var t = o && o.state !== 'selected' && o.agreedTerms ? o.agreedTerms : o && o.state === 'selected' && o.offerTerms ? o.offerTerms : null;
+    if (!t) return c;
+    var e = {}; for (var k in c) e[k] = c[k];
+    e.rewardType = t.rewardType; e.rewardAmount = t.rewardAmount; e.rewardCurrency = t.rewardCurrency;
+    e.platform = t.platform; e.conditions = t.conditions || []; e.affiliatePct = t.commissionPct;
+    e._terms = o.state === 'selected' ? 'offer' : 'agreed';
+    return e;
+  }
+  window.__v8effTerms = effTerms;
+
   /* ---------- 참여 상태 (서버 상태 → 시안 단계) ---------- */
   var PST = { applied: '신청', selected: '선정', terms_agreed: '조건 합의', sample_shipped: '샘플 발송', content_submitted: '제출 완료', revision_requested: '수정 요청', completed: '완료', declined: '거절함', rejected: '미선정' };
   var PST_TONE = { applied: 'info', selected: 'ok', terms_agreed: 'ok', sample_shipped: 'warn', content_submitted: 'warn', revision_requested: 'warn', completed: 'ok', declined: 'err', rejected: 'err' };
@@ -62,7 +77,7 @@
   function stepIdx(s) { return ({ applied: 0, selected: 1, terms_agreed: 2, sample_shipped: 3, revision_requested: 4, content_submitted: 5, completed: 6 })[s]; }
   /* 내 참여 목록: 선정 이후(offers) + 신청만 한 캠페인 */
   function parts() {
-    var offers = offersLive().map(function (o) { return { id: o.campaignId, status: o.state, o: o, c: campaignById(o.campaignId) || { campaignId: o.campaignId, name: o.campaignName, product: o.product, imageUrl: o.imageUrl, brandId: o.brandId, rewardType: o.rewardType, rewardAmount: o.rewardAmount, rewardCurrency: o.rewardCurrency, platform: o.platform, conditions: o.conditions || [], affiliatePct: o.commissionPct } }; });
+    var offers = offersLive().map(function (o) { return { id: o.campaignId, status: o.state, o: o, c: effTerms(campaignById(o.campaignId) || { campaignId: o.campaignId, name: o.campaignName, product: o.product, imageUrl: o.imageUrl, brandId: o.brandId, rewardType: o.rewardType, rewardAmount: o.rewardAmount, rewardCurrency: o.rewardCurrency, platform: o.platform, conditions: o.conditions || [], affiliatePct: o.commissionPct }, o) }; });
     var applied = campaignsLive().filter(function (c) { return (c.myStatus === 'applied' || c.myStatus === 'rejected') && !c.termsState && !offers.some(function (p) { return p.id === c.campaignId; }); })
       .map(function (c) { return { id: c.campaignId, status: c.myStatus === 'rejected' ? 'rejected' : 'applied', o: null, c: c }; });
     return offers.concat(applied);
@@ -118,7 +133,7 @@
     return ['신청 전', ''];
   }
   function condSummary(c, o) {
-    return '<div class="v6-cond">' + pimg(c, 64) + '<dl class="v6-kv"><dt>제품</dt><dd>' + h(c.product || '브랜드 안내 대기') + '</dd><dt>보상</dt><dd>' + h(rewardKind(c)) + (c.rewardType === 'affiliate' || (!c.rewardType && o) ? (o && o.agreedCommissionPct != null ? ' · 합의 ' + h(o.agreedCommissionPct) + '%' : o && o.commissionPct != null ? ' · 제안 ' + h(o.commissionPct) + '%' : '') : '') + (o && o.agreedTerms ? ' · 합의 기록 있음' : '') + '</dd><dt>콘텐츠</dt><dd>' + h(contentText(c)) + '</dd>' + (c.usp ? '<dt>소개</dt><dd>' + h(c.usp) + '</dd>' : '') + '<dt>국가 · 인원</dt><dd>' + h(ctry(c.countries)) + (c.capacity ? ' · ' + h(c.capacity) + '명' : '') + '</dd><dt>모집 마감</dt><dd>' + h(c.deadline ? String(c.deadline).slice(0, 10) : '별도 안내') + '</dd></dl></div>';
+    return '<div class="v6-cond">' + pimg(c, 64) + '<dl class="v6-kv"><dt>제품</dt><dd>' + h(c.product || '브랜드 안내 대기') + '</dd><dt>보상</dt><dd>' + h(rewardKind(c)) + (c.rewardType === 'affiliate' || (!c.rewardType && o) ? (o && o.agreedCommissionPct != null ? ' · 합의 ' + h(o.agreedCommissionPct) + '%' : o && o.commissionPct != null ? ' · 제안 ' + h(o.commissionPct) + '%' : '') : '') + (c._terms === 'agreed' ? ' · 합의한 조건(합의 후 캠페인이 바뀌어도 이 조건 유지)' : '') + '</dd><dt>콘텐츠</dt><dd>' + h(contentText(c)) + '</dd>' + (c.usp ? '<dt>소개</dt><dd>' + h(c.usp) + '</dd>' : '') + '<dt>국가 · 인원</dt><dd>' + h(ctry(c.countries)) + (c.capacity ? ' · ' + h(c.capacity) + '명' : '') + '</dd><dt>모집 마감</dt><dd>' + h(c.deadline ? String(c.deadline).slice(0, 10) : '별도 안내') + '</dd></dl></div>';
   }
   function scCampaigns() {
     var action = '<a class="btn ghost" href="/products/">전체 제품 모아보기 (별도 페이지)</a>';
@@ -126,6 +141,7 @@
     if (LIVE.loadErr.campaigns) return '<div class="v6">' + top + loadFail('캠페인') + '</div>';
     if (!LIVE.campaigns) return '<div class="v6">' + top + loading() + '</div>';
     var list = campaignsLive(), sel = V.id && list.find(function (c) { return c.campaignId === V.id; });
+    if (sel) sel = effTerms(sel, offerByCampaign(sel.campaignId));
     var cards = list.length ? '<ul class="v8-cgrid">' + list.map(function (c) {
       var st = myState(c), o = offerByCampaign(c.campaignId);
       var cta = o || c.myStatus !== 'none' ? btn('내 캠페인에서 보기', "V8go('c-work','" + a(c.campaignId) + "')") : btn('조건 보기', "V8go('c-campaigns','" + a(c.campaignId) + "')");
@@ -190,12 +206,12 @@
     var id = a(o.campaignId), s = o.state;
     var plat = c.platform || o.platform || 'tiktok', platName = PLATFORM[plat] || 'TikTok';
     if (s === 'selected') {
-      var rt = c.rewardType || o.rewardType, rew;
-      if (rt === 'paid') rew = '<dt>보상</dt><dd>고정비 ' + h(c.rewardAmount != null ? money(c.rewardAmount, c.rewardCurrency) : (o.rewardAmount != null ? money(o.rewardAmount, o.rewardCurrency) : '금액 브랜드 안내 대기')) + '</dd>';
+      var rt = c.rewardType, rew, changed = V.err._termsChanged === o.campaignId;
+      if (rt === 'paid') rew = '<dt>보상</dt><dd>고정비 ' + h(c.rewardAmount != null ? money(c.rewardAmount, c.rewardCurrency) : '금액 브랜드 안내 대기') + '</dd>';
       else if (rt === 'gifted') rew = '<dt>보상</dt><dd>제품 제공 (금액 보상 없음)</dd>';
-      else rew = '<dt>제안 수수료</dt><dd>' + h(o.commissionPct != null ? o.commissionPct + '%' : '브랜드 안내 대기') + '</dd>';
+      else rew = '<dt>제안 수수료</dt><dd>' + h(c.affiliatePct != null ? c.affiliatePct + '%' : '브랜드 안내 대기') + '</dd>';
       var hk = 'agreeHandle', hv = fv(hk, plat === 'tiktok' ? ((LIVE.profile && LIVE.profile.tiktokHandle) || '') : '');
-      return '<section class="v6-sec"><h2>조건 확인</h2><p class="v6-meta">브랜드가 제안한 조건이에요. 합의하면 이 조건이 그대로 기록되고, 그다음 샘플 받을 주소를 입력해요.</p><dl class="v6-kv">' + rew + '<dt>콘텐츠</dt><dd>' + h(contentText(c.conditions ? c : { platform: plat, conditions: o.conditions })) + '</dd><dt>제품</dt><dd>' + h(c.product || '브랜드 안내 대기') + '</dd>' + (plat === 'tiktok' ? '<dt>광고 사용</dt><dd>합의 후 Spark 코드로 따로 제출</dd>' : '') + '</dl>' +
+      return '<section class="v6-sec"><h2>조건 확인</h2>' + (changed ? '<div class="alert warn" role="alert" id="termsChanged" tabindex="-1"><b>확인하신 뒤 브랜드가 조건을 바꿨어요.</b> 아래 새 조건을 다시 확인하고 합의해 주세요. 이전 조건으로는 합의되지 않았어요.</div>' : '') + '<p class="v6-meta">브랜드가 제안한 조건이에요. 합의하면 이 조건이 그대로 기록되고, 그다음 샘플 받을 주소를 입력해요.</p><dl class="v6-kv">' + rew + '<dt>콘텐츠</dt><dd>' + h(contentText(c)) + '</dd><dt>제품</dt><dd>' + h(c.product || '브랜드 안내 대기') + '</dd>' + (plat === 'tiktok' ? '<dt>광고 사용</dt><dd>합의 후 Spark 코드로 따로 제출</dd>' : '') + '</dl>' +
         '<div class="v6-form">' + field(hk, '본인 ' + platName + ' 계정', hv, { req: true, ph: '@myhandle' }) +
         '<div class="v6-field v6-wide"><label class="v6-inline"><input type="checkbox" id="agreeOk" data-v8f="agreeOk"' + (V.f.agreeOk ? ' checked' : '') + '> 보상·콘텐츠·제출 기준·일정을 확인했어요<span class="req">필수</span></label>' + errOf('agreeOk') + '</div></div>' +
         '<div class="v6-actions">' + btn(V.busy.agree ? '처리 중…' : '조건 합의', "V8agree('" + id + "',true)", 'pri', V.busy.agree ? ' disabled' : '') + btn('거절', "V8agree('" + id + "',false)", 'ghost danger', V.busy.agree ? ' disabled' : '') + '</div></section>';
@@ -245,9 +261,17 @@
       if (!V.f.agreeOk) V.err.agreeOk = '조건을 확인했다고 표시해 주세요.';
       if (Object.keys(V.err).length) { render(); focusErr(); return; }
     }
-    call('agree', 'POST', '/me/campaign-offers/' + encodeURIComponent(cid) + '/agree', { accept: !!accept, handle: handle, tiktok_handle: handle })
+    var seen = (offerByCampaign(cid) || {}).termsFingerprint || '';
+    call('agree', 'POST', '/me/campaign-offers/' + encodeURIComponent(cid) + '/agree', { accept: !!accept, handle: handle, tiktok_handle: handle, terms_fingerprint: accept ? seen : '' })
       .then(function () { delete V.f.agreeOk; delete V.f.agreeHandle; toast(accept ? '조건에 합의했어요 — 이제 샘플 받을 주소를 입력해요.' : '이 캠페인 제안을 거절했어요.'); return collabRefresh(); })
-      .then(function () { render(); }, function (e) { fail(e, '처리하지 못했어요. 입력은 그대로 남아 있어요.'); });
+      .then(function () { render(); }, function (e) {
+        if (e && e.status === 409 && e.detail && e.detail.code === 'terms_changed') {
+          // 옛 조건으로는 합의되지 않았다 — 새 조건을 받아 다시 확인하게 한다(계정 입력은 유지, 확인 체크는 해제)
+          delete V.f.agreeOk; V.err = { _termsChanged: cid };
+          return Promise.resolve(collabRefresh()).then(function () { render(); var el = document.getElementById('termsChanged'); if (el) el.focus(); });
+        }
+        fail(e, '처리하지 못했어요. 입력은 그대로 남아 있어요.');
+      });
   };
   window.V8ship = function (cid) {
     V.err = {};

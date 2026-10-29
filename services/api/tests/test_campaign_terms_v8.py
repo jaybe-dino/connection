@@ -51,3 +51,58 @@ def test_campaign_product_must_belong_to_brand(client):
     p2 = client.post("/brands/prodbrand2/products", json={"name": "다른 브랜드 제품"}, headers=_bearer(t2)).json()
     r = client.post("/brands/prodbrand1/campaigns", json={"name": "교차 제품 연결", "product_id": p2["productId"]}, headers=_bearer(t1))
     assert r.status_code == 404
+
+
+def test_agree_requires_seen_terms_fingerprint_and_keeps_snapshot(client, monkeypatch):
+    """GET 한 100 USD 조건 → 브랜드가 200 KRW 로 변경 → 옛 확인값 합의 409 → 최신 조건 재확인 합의
+    → 합의 후 캠페인 재수정 → 양쪽(크리에이터 offers·브랜드 applicants) 모두 확정 스냅샷 유지."""
+    t = _approved_brand(client, "termsfp", "텀스에프피", "own@termsfp.kr")
+    B = _bearer(t)
+    cid = client.post("/brands/termsfp/campaigns", json={
+        "name": "고정비 리뷰", "reward_type": "paid", "reward_amount": 100, "reward_currency": "USD",
+        "platform": "instagram", "conditions": ["릴스 1개"]}, headers=B).json()["campaignId"]
+    client.post(f"/brands/termsfp/campaigns/{cid}/publish", headers=B)
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    ch = _bearer(_creator_token(client, "fp.creator@ex.com"))
+    client.post("/me/join", json={"brand_id": "termsfp"}, headers=ch)
+    client.post(f"/campaigns/{cid}/apply", json={"creator_id": "x"}, headers=ch)
+    creator_id = client.get(f"/brands/termsfp/campaigns/{cid}/applicants", headers=B).json()[0]["creatorId"]
+    assert client.post(f"/brands/termsfp/campaigns/{cid}/select", json={"creator_id": creator_id}, headers=B).status_code == 200
+    offer = lambda: next(o for o in client.get("/me/campaign-offers", headers=ch).json() if o["campaignId"] == cid)
+    seen = offer()
+    assert seen["offerTerms"]["rewardAmount"] == 100 and seen["offerTerms"]["rewardCurrency"] == "USD"
+    old_fp = seen["termsFingerprint"]
+
+    # 크리에이터가 본 뒤 브랜드가 금액·통화·조건을 바꾼다
+    r = client.patch(f"/brands/termsfp/campaigns/{cid}", json={"reward_amount": 200, "reward_currency": "KRW", "conditions": ["릴스 2개"]}, headers=B)
+    assert r.status_code == 200, r.text
+    stale = client.post(f"/me/campaign-offers/{cid}/agree", json={"accept": True, "handle": "@fp", "terms_fingerprint": old_fp}, headers=ch)
+    assert stale.status_code == 409, stale.text
+    d = stale.json()["detail"]
+    assert d["code"] == "terms_changed" and d["offerTerms"]["rewardAmount"] == 200 and d["offerTerms"]["rewardCurrency"] == "KRW"
+    assert offer()["state"] == "selected" and offer()["agreedTerms"] is None   # 옛 조건으로 합의되지 않음
+
+    # 최신 조건 재확인 후 합의
+    fresh = offer()
+    assert fresh["termsFingerprint"] != old_fp and fresh["termsFingerprint"] == d["termsFingerprint"]
+    ok = client.post(f"/me/campaign-offers/{cid}/agree", json={"accept": True, "handle": "@fp", "terms_fingerprint": fresh["termsFingerprint"]}, headers=ch)
+    assert ok.status_code == 200, ok.text
+    snap = ok.json()["agreedTerms"]
+    assert snap["rewardAmount"] == 200 and snap["rewardCurrency"] == "KRW" and snap["conditions"] == ["릴스 2개"]
+    assert snap["termsFingerprint"] == fresh["termsFingerprint"] and snap["confirmedByCreator"] is True
+
+    # 합의 후 브랜드가 다시 수정해도 양쪽 스냅샷은 그대로
+    client.patch(f"/brands/termsfp/campaigns/{cid}", json={"reward_amount": 999, "reward_currency": "USD", "platform": "tiktok", "conditions": ["바뀐 조건"]}, headers=B)
+    mine = offer()["agreedTerms"]
+    brand_side = next(a for a in client.get(f"/brands/termsfp/campaigns/{cid}/applicants", headers=B).json() if a["creatorId"] == creator_id)["agreedTerms"]
+    for s in (mine, brand_side):
+        assert s["rewardAmount"] == 200 and s["rewardCurrency"] == "KRW" and s["platform"] == "instagram" and s["conditions"] == ["릴스 2개"]
+    assert mine == brand_side
+
+    # 기존 API 호환: 확인값 없이도 합의 가능(구 클라이언트)
+    cid2 = client.post("/brands/termsfp/campaigns", json={"name": "구 클라이언트", "reward_type": "gifted"}, headers=B).json()["campaignId"]
+    client.post(f"/brands/termsfp/campaigns/{cid2}/publish", headers=B)
+    client.post(f"/campaigns/{cid2}/apply", json={"creator_id": "x"}, headers=ch)
+    client.post(f"/brands/termsfp/campaigns/{cid2}/select", json={"creator_id": creator_id}, headers=B)
+    legacy = client.post(f"/me/campaign-offers/{cid2}/agree", json={"accept": True, "tiktok_handle": "@fp"}, headers=ch)
+    assert legacy.status_code == 200 and legacy.json()["agreedTerms"]["confirmedByCreator"] is False

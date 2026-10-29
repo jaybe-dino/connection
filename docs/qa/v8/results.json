@@ -1,0 +1,16 @@
+{
+  "note": "로컬 실 API(uvicorn)·Postgres16·실 Chromium 실행 결과. 운영 데이터·외부 발송 없음. 화면 데이터는 seed_local_v8.py + E2E 생성 데이터라 E2E 수행 이력이 많이 보인다.",
+  "api_pytest": "336 passed",
+  "tests_billing": "95 passed",
+  "tests_ui_node": "96 passed",
+  "e2e": {
+    "tests_e2e/terms-fingerprint.mjs": "18/18 — 100 USD 확인 → 브랜드 200 KRW 변경 → 옛 확인값 합의 409·재확인 → 합의 → 재수정 후 양쪽 스냅샷 유지, 체크 후 자동 새로고침 경합",
+    "tests_e2e/creator-v8-community.mjs": "12/12 — 캠페인 카드 게시→캠페인 공지→상세, 공지별 스레드, 누적 XP=서버 total, 이미지 이니셜 fallback",
+    "tests_e2e/creator-brand-scope.mjs": "25/25 — 레일·메뉴 실클릭, 전환 직후 검사, 알림 _idx (1280/390)",
+    "tests_e2e/creator-v8-terms.mjs": "12/12",
+    "tests_e2e/creator-v8-flow.mjs": "25/25",
+    "tests_e2e/products-v8.mjs": "23/23"
+  },
+  "image_check": "scripts/release/verify_security_api_image.sh — PASS (57 migrations in /app/db/migrations, 058/059 적용·멱등, 신규 컬럼 확인). 샌드박스는 Docker Hub 429 → mirror.gcr.io 로 같은 태그를 받고 오프라인 wheel(VERIFY_PIP_FIND_LINKS)로 빌드",
+  "screens": "shots.json 참고 (1280/390, 가로 넘침 여부 포함)"
+}

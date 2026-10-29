@@ -64,7 +64,7 @@
   document.addEventListener('error', function (e) { var t = e.target; if (t && t.tagName === 'IMG' && t.dataset && t.dataset.fb && t.src !== t.dataset.fb) t.src = t.dataset.fb; }, true);
   function sheet(p) {
     var el = document.getElementById('pd-sheet'), sc = document.getElementById('pd-scrim');
-    el.innerHTML = '<h2 id="pd-sheet-title">' + h(p.name) + '</h2><p class="v6-meta">' + h(p.brandName) + (p.category ? ' · ' + h(p.category) : '') + '</p><img class="v6-pimg" width="96" height="96" src="' + h(p.imageUrl || mono(p.name)) + '" alt="' + h(p.name) + ' 이미지" referrerpolicy="no-referrer"><p>' + h(p.summary) + '</p>' +
+    el.innerHTML = '<h2 id="pd-sheet-title">' + h(p.name) + '</h2><p class="v6-meta">' + h(p.brandName) + (p.category ? ' · ' + h(p.category) : '') + '</p><img class="v6-pimg" width="96" height="96" src="' + h(p.imageUrl || mono(p.name)) + '" data-fb="' + h(mono(p.name)) + '" alt="' + h(p.name) + ' 이미지" referrerpolicy="no-referrer"><p>' + h(p.summary) + '</p>' +
       (p.campaigns.length ? '<h3>모집 중인 캠페인</h3><ul class="v6-list">' + p.campaigns.map(function (c) { return '<li class="v6-row"><div class="v6-grow"><b>' + h(c.name) + '</b><span class="v6-meta">' + h(reward(c)) + ' · ' + h((c.countries || []).map(function (k) { return CTRY[k] || k; }).join(', ') || '국가 제한 없음') + ' · 마감 ' + h(c.deadline || '별도 안내') + '</span></div></li>'; }).join('') + '</ul>' : '<p class="v6-meta">지금 모집 중인 캠페인은 없어요.</p>') +
       '<div class="v6-actions"><button type="button" class="btn" data-act="close">닫기</button></div>';
     el.hidden = false; sc.hidden = false; var b = el.querySelector('[data-act="close"]'); if (b) b.focus();

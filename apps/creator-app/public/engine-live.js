@@ -1429,7 +1429,7 @@
           var cur=t.rewardCurrency||'KRW',amt=t.rewardAmount!=null?(cur==='KRW'?Number(t.rewardAmount).toLocaleString('ko-KR')+'원':Number(t.rewardAmount).toLocaleString('en-US')+' '+cur):'금액 미정';
           var rw=t.rewardType==='paid'?'고정비 '+amt:t.rewardType==='gifted'?'제품 제공':'판매 수수료 '+(t.commissionPct!=null?t.commissionPct+'%':'-');
           var pl={tiktok:'TikTok',instagram:'Instagram'}[t.platform]||t.platform||'';
-          return '<p class="agreed-terms" style="font-size:12px;margin:6px 0"><b>합의한 조건</b> · '+mailEscape(rw)+' · '+mailEscape(pl)+(t.handle?' 계정 '+mailEscape(t.handle):'')+((t.conditions||[]).length?'<br>콘텐츠: '+mailEscape(t.conditions.join(' · ')):'')+'<br><span style="color:#5a6560">합의 후 캠페인을 수정해도 이 조건이 유지돼요.</span></p>';
+          return '<p class="agreed-terms" style="font-size:12px;margin:6px 0"><b>합의한 조건</b> · '+(t.product?'제품 '+mailEscape(t.product)+' · ':'')+mailEscape(rw)+' · '+mailEscape(pl)+(t.handle?' 계정 '+mailEscape(t.handle):'')+((t.conditions||[]).length?'<br>콘텐츠: '+mailEscape(t.conditions.join(' · ')):'')+'<br><span style="color:#5a6560">합의 후 캠페인을 수정해도 이 조건이 유지돼요.</span></p>';
         };
         collabOpen.rows.forEach(function(a){
           var st=a.termsState||'미선정';

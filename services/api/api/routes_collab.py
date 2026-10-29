@@ -54,7 +54,9 @@ def _terms(conn, campaign_id: str, creator_id: str, lock: bool = True) -> dict:
 def _offer_terms(camp: dict | None, commission_pct) -> dict:
     """크리에이터에게 제안된 조건 — 합의 확인값(fingerprint)과 스냅샷의 공통 원본."""
     camp = camp or {}
-    return {"rewardType": camp.get("reward_type"),
+    return {"product": camp.get("product") or "",
+            "productId": str(camp["product_id"]) if camp.get("product_id") else None,
+            "rewardType": camp.get("reward_type"),
             "commissionPct": float(commission_pct) if commission_pct is not None else None,
             "rewardAmount": camp.get("reward_amount"),
             "rewardCurrency": camp.get("reward_currency"),
@@ -67,7 +69,7 @@ def _terms_fingerprint(terms: dict) -> str:
     """제안 조건의 확인값 — 사용자가 본 조건과 서버가 수락할 조건이 같은지 비교한다."""
     import hashlib
     import json as _json
-    keys = ("rewardType", "commissionPct", "rewardAmount", "rewardCurrency", "platform", "conditions")
+    keys = ("product", "productId", "rewardType", "commissionPct", "rewardAmount", "rewardCurrency", "platform", "conditions")
     raw = _json.dumps({k: terms.get(k) for k in keys}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
@@ -130,6 +132,56 @@ def brand_campaigns(brand: str,
              "capacity": r["capacity"] or 0,
              "productId": str(r["product_id"]) if r["product_id"] else None}
             for r in rows]
+
+
+class CampaignPostIn(BaseModel):
+    channel: str = Field(default="chat", pattern="^(chat|tips|products|qna|notice)$")
+
+
+@router.post("/brands/{brand}/campaigns/{campaign_id}/post")
+def post_campaign_card(brand: str, campaign_id: str, body: CampaignPostIn,
+                       authorization: str = Header(default="")) -> dict:
+    """캠페인 카드를 이 브랜드 커뮤니티 채널에 게시 — campaignId 가 붙은 메시지로 남아
+    크리에이터 '캠페인 공지'와 채널에서 같은 캠페인 상세로 열린다.
+    모집 중(발행·미마감)인 이 브랜드 캠페인만, 같은 채널 중복 게시는 거부한다."""
+    _brand_guard(brand, authorization)
+    with connect() as conn:
+        c = _campaign(conn, brand, campaign_id, lock=True)
+        if c["lifecycle"] != "published" or c["status"] != "open":
+            raise HTTPException(409, "모집 중인 캠페인만 게시할 수 있습니다 (발행 후 · 마감 전)")
+        if c["deadline"] and str(c["deadline"]) < conn.execute("SELECT (now() AT TIME ZONE 'Asia/Seoul')::date::text AS d").fetchone()["d"]:
+            raise HTTPException(409, "모집 마감일이 지난 캠페인입니다")
+        cell = conn.execute("SELECT cell_id FROM cells WHERE brand_id=%s AND visibility<>'dm'"
+                            " ORDER BY cell_id LIMIT 1", (brand,)).fetchone()
+        if not cell:
+            raise HTTPException(409, "이 브랜드의 커뮤니티 공간이 아직 없습니다")
+        if conn.execute("SELECT 1 FROM cell_messages WHERE cell_id=%s AND channel=%s AND campaign_id=%s"
+                        " AND thread_parent IS NULL", (cell["cell_id"], body.channel, campaign_id)).fetchone():
+            raise HTTPException(409, "이 채널에는 이미 같은 캠페인을 게시했어요 (중복 게시 방지)")
+        cur = c.get("reward_currency") or "KRW"
+        reward = ("판매 수수료 " + (f"{float(c['affiliate_pct']):g}%" if c["affiliate_pct"] is not None else "안내 예정")
+                  if c["reward_type"] == "affiliate" else
+                  "고정비 " + ((f"{c['reward_amount']:,}원" if cur == "KRW" else f"{c['reward_amount']:,} {cur}")
+                              if c["reward_amount"] is not None else "안내 예정")
+                  if c["reward_type"] == "paid" else "제품 제공")
+        conds = [str(x) for x in (c["conditions"] or []) if isinstance(x, (str, int, float))]
+        text = (f"[캠페인] {c['name']}\n{reward}"
+                + (" · " + " · ".join(conds[:3]) if conds else "")
+                + (f" · 마감 {c['deadline']}" if c["deadline"] else ""))
+        m = conn.execute(
+            "INSERT INTO cell_messages (cell_id, channel, author, author_kind, original,"
+            " original_locale, translations, translation_state, campaign_id)"
+            " VALUES (%s,%s,%s,'brand',%s,'ko','{}','pending',%s) RETURNING msg_id, at",
+            (cell["cell_id"], body.channel, brand, text, campaign_id)).fetchone()
+        if body.channel == "notice":
+            from .routes_service import notify_brand_members
+            notify_brand_members(conn, brand, "campaign", "캠페인 공지: " + c["name"][:60],
+                                 "캠페인 공지에서 조건을 확인하고 신청할 수 있어요.",
+                                 {"campaignId": campaign_id})
+        ledger_append(conn, f"brand:{brand}", "CAMPAIGN_CARD_POSTED", campaign_id,
+                      {"cellId": cell["cell_id"], "channel": body.channel, "msgId": m["msg_id"]})
+    return {"msgId": m["msg_id"], "cellId": cell["cell_id"], "channel": body.channel,
+            "campaignId": campaign_id, "at": m["at"].isoformat()}
 
 
 @router.get("/brands/{brand}/campaigns/{campaign_id}/applicants")
@@ -519,7 +571,7 @@ def my_offers(authorization: str = Header(default="")) -> list[dict]:
         rows = conn.execute(
             "SELECT t.*, c.name AS campaign_name, c.brand_id, c.product,"
             " c.reward_type, c.reward_amount, c.reward_currency, c.platform,"
-            " c.affiliate_pct, c.conditions,"
+            " c.affiliate_pct, c.conditions, c.product_id,"
             " b.name AS brand_name, b.logo_url,"
             " pip.image_url AS product_image"
             " FROM campaign_terms t"
@@ -578,7 +630,7 @@ def agree_offer(campaign_id: str, body: AgreeIn,
             return _terms_out(t)
         # 캠페인 행을 잠가 확인값 비교와 합의 저장 사이에 브랜드 수정이 끼어들지 못하게 한다
         camp = conn.execute(
-            "SELECT reward_type, reward_amount, reward_currency, platform,"
+            "SELECT product, product_id, reward_type, reward_amount, reward_currency, platform,"
             " conditions, affiliate_pct FROM campaigns WHERE campaign_id=%s FOR UPDATE",
             (campaign_id,)).fetchone()
         offered = _offer_terms(camp, t["commission_pct"])
@@ -594,8 +646,12 @@ def agree_offer(campaign_id: str, body: AgreeIn,
             raise HTTPException(400, "합의에는 " + ("Instagram" if platform == "instagram" else "TikTok")
                                      + " 계정 확인이 필요합니다")
         # 합의 시점의 조건을 그대로 남긴다(이후 캠페인 수정과 무관하게 이 합의 기준 유지)
+        # 제품 이미지는 확인값에 넣지 않는다(운영 소개 이미지 교체로 재합의를 요구하지 않음) — 표시용으로만 보관
+        img = conn.execute("SELECT image_url FROM product_invitation_profiles WHERE product_id=%s",
+                           (camp["product_id"],)).fetchone() if camp and camp["product_id"] else None
         snapshot = {**offered, "handle": handle, "termsFingerprint": current_fp,
-                    "confirmedByCreator": bool(seen_fp)}
+                    "confirmedByCreator": bool(seen_fp),
+                    "productImage": img["image_url"] if img and (img["image_url"] or "").startswith("https://") else None}
         import json as _json
         t = conn.execute(
             "UPDATE campaign_terms SET state='terms_agreed',"

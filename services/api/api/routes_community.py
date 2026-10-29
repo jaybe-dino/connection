@@ -157,6 +157,7 @@ def my_cells(authorization: str = Header(default="")) -> list[dict]:
 
 @router.get("/cells/{cell_id}/messages")
 def messages(cell_id: str, channel: str = "", limit: int = 50,
+             campaign_posts: bool = False,
              authorization: str = Header(default="")) -> list[dict]:
     """원문 + 언어별 번역을 함께 반환 — 표시 언어 선택은 클라이언트가,
     원문은 항상 보존·동봉된다."""
@@ -177,6 +178,7 @@ def messages(cell_id: str, channel: str = "", limit: int = 50,
              " FROM cell_messages m WHERE m.cell_id=%s"
              " AND m.thread_parent IS NULL"
              + (" AND m.channel=%s" if channel else "")
+             + (" AND m.campaign_id IS NOT NULL" if campaign_posts else "")
              + " ORDER BY m.pinned_at DESC NULLS LAST, m.at DESC LIMIT %s")
         args = ((actor, cell_id, channel, limit) if channel
                 else (actor, cell_id, limit))

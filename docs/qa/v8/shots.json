@@ -1,0 +1,82 @@
+{
+  "capturedAt": "2026-10-29T18:06:41.659Z",
+  "data": "로컬 실 API·DB(scripts/dev/seed_local_v8.py + E2E 실행 데이터)",
+  "shots": [
+    {
+      "file": "creator-c-tasks-1280.png",
+      "app": "app",
+      "screen": "c-tasks",
+      "brand": "fau",
+      "width": 1280,
+      "overflowX": false
+    },
+    {
+      "file": "creator-c-work-1280.png",
+      "app": "app",
+      "screen": "c-work",
+      "brand": "fau",
+      "width": 1280,
+      "overflowX": false
+    },
+    {
+      "file": "creator-c-recruit-1280.png",
+      "app": "app",
+      "screen": "c-recruit",
+      "brand": "goryeo1392",
+      "width": 1280,
+      "overflowX": false
+    },
+    {
+      "file": "creator-c-ranking-1280.png",
+      "app": "app",
+      "screen": "c-ranking",
+      "brand": "fau",
+      "width": 1280,
+      "overflowX": false
+    },
+    {
+      "file": "products-1280.png",
+      "app": "app/products",
+      "width": 1280,
+      "overflowX": false
+    },
+    {
+      "file": "creator-c-tasks-390.png",
+      "app": "app",
+      "screen": "c-tasks",
+      "brand": "fau",
+      "width": 390,
+      "overflowX": false
+    },
+    {
+      "file": "creator-c-work-390.png",
+      "app": "app",
+      "screen": "c-work",
+      "brand": "fau",
+      "width": 390,
+      "overflowX": false
+    },
+    {
+      "file": "creator-c-recruit-390.png",
+      "app": "app",
+      "screen": "c-recruit",
+      "brand": "goryeo1392",
+      "width": 390,
+      "overflowX": false
+    },
+    {
+      "file": "creator-c-ranking-390.png",
+      "app": "app",
+      "screen": "c-ranking",
+      "brand": "fau",
+      "width": 390,
+      "overflowX": false
+    },
+    {
+      "file": "products-390.png",
+      "app": "app/products",
+      "width": 390,
+      "overflowX": false
+    }
+  ]
+}

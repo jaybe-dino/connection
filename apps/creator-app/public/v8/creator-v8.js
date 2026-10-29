@@ -40,10 +40,21 @@
   function crumb(name) { return h(brandShort()) + ' › ' + h(name); }
   function chip(t, tone) { return '<span class="chip ' + (tone || '') + '">' + h(t) + '</span>'; }
   function btn(label, onclick, cls, extra) { return '<button type="button" class="btn ' + (cls || '') + '" onclick="' + a(onclick) + '"' + (extra || '') + '>' + label + '</button>'; }
-  function pimg(c, size) {
-    var src = c && c.imageUrl && /^https:\/\//.test(c.imageUrl) ? c.imageUrl : (typeof campaignArt === 'function' ? campaignArt(c || {}) : '');
-    return '<img class="v6-pimg" width="' + size + '" height="' + size + '" src="' + a(src) + '" alt="' + a(((c && (c.product || c.name)) || '제품') + ' 이미지') + '" loading="lazy" referrerpolicy="no-referrer">';
+  /* 이미지가 없거나 깨지면 같은 제품/브랜드의 이니셜만 보이는 중립 그림 — 다른 제품 사진처럼 보이는 대체는 쓰지 않는다 */
+  function mono(label) {
+    var l = String(label || '?').trim().slice(0, 1).toUpperCase() || '?';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="10" fill="#f3eff6"/><text x="32" y="42" font-size="26" text-anchor="middle" font-family="sans-serif" fill="#5b4466">' + l.replace(/[<&>"]/g, '') + '</text></svg>');
   }
+  function pimg(c, size) {
+    var label = (c && (c.product || c.name)) || '제품', fb = mono(c && (c.product || c.brandName || c.name));
+    var src = c && c.imageUrl && /^https:\/\//.test(c.imageUrl) ? c.imageUrl : fb;
+    return '<img class="v6-pimg" width="' + size + '" height="' + size + '" src="' + a(src) + '" data-fb="' + a(fb) + '" alt="' + a(label + ' 이미지') + '" loading="lazy" referrerpolicy="no-referrer">';
+  }
+  document.addEventListener('error', function (e) {
+    var t = e.target; if (!t || t.tagName !== 'IMG' || !t.dataset) return;
+    if (t.dataset.fb && t.src !== t.dataset.fb) { t.src = t.dataset.fb; return; }
+    if (t.dataset.fbtext != null && t.parentNode) t.parentNode.replaceChild(document.createTextNode(t.dataset.fbtext), t);
+  }, true);
   function money(n, cur) { if (n == null) return ''; cur = cur || 'KRW'; return cur === 'KRW' ? Number(n).toLocaleString('ko-KR') + '원' : Number(n).toLocaleString('en-US') + ' ' + cur; }
   var PLATFORM = { tiktok: 'TikTok', instagram: 'Instagram' };
   function rewardKind(c) {
@@ -65,6 +76,9 @@
     var e = {}; for (var k in c) e[k] = c[k];
     e.rewardType = t.rewardType; e.rewardAmount = t.rewardAmount; e.rewardCurrency = t.rewardCurrency;
     e.platform = t.platform; e.conditions = t.conditions || []; e.affiliatePct = t.commissionPct;
+    // 제품도 합의 대상 — 합의 후 캠페인의 제품이 바뀌어도 합의한 제품명·이미지로 보인다(이전 스냅샷엔 없으면 현재 값)
+    if ('product' in t) { e.product = t.product; e.productId = t.productId; }
+    if (e._agreedProductImage = (o.state !== 'selected' && 'productImage' in t)) e.imageUrl = t.productImage || null;
     e._terms = o.state === 'selected' ? 'offer' : 'agreed';
     return e;
   }
@@ -171,6 +185,7 @@
     if (!V.f.apAgree) { V.err['ap-a'] = '조건 확인에 동의해 주세요.'; render(); var el = document.getElementById('ap-a'); if (el) el.focus(); return; }
     var c = campaignById(cid), msg = (V.f.apMsg || '').trim();
     Promise.resolve(applyCampaign(cid)).then(function (ok) {
+      if (ok) window.__v8xpRefresh();
       if (!ok) return;
       V.f.apMsg = ''; V.f.apAgree = false;
       if (msg && c) relayToManagerDm(c.brandId, '[신청 메모] ' + c.name + ' — ' + msg).then(function (sent) { if (sent !== true) toast(sent === 'lost' ? '신청은 접수됐어요. 메모 전달은 실패했어요 — 담당자 DM에서 직접 전해 주세요.' : '신청은 접수됐어요. 메모는 담당자 DM 초안으로 보관했어요.'); });
@@ -206,6 +221,8 @@
     var id = a(o.campaignId), s = o.state;
     var plat = c.platform || o.platform || 'tiktok', platName = PLATFORM[plat] || 'TikTok';
     if (s === 'selected') {
+      // 체크한 뒤 자동 새로고침 등으로 조건이 바뀌면(확인값이 달라지면) 체크를 풀고 재확인을 요구한다
+      if (V.f.agreeOk && V.f.agreeFp !== (o.termsFingerprint || '')) { delete V.f.agreeOk; delete V.f.agreeFp; V.err._termsChanged = o.campaignId; }
       var rt = c.rewardType, rew, changed = V.err._termsChanged === o.campaignId;
       if (rt === 'paid') rew = '<dt>보상</dt><dd>고정비 ' + h(c.rewardAmount != null ? money(c.rewardAmount, c.rewardCurrency) : '금액 브랜드 안내 대기') + '</dd>';
       else if (rt === 'gifted') rew = '<dt>보상</dt><dd>제품 제공 (금액 보상 없음)</dd>';
@@ -213,7 +230,7 @@
       var hk = 'agreeHandle', hv = fv(hk, plat === 'tiktok' ? ((LIVE.profile && LIVE.profile.tiktokHandle) || '') : '');
       return '<section class="v6-sec"><h2>조건 확인</h2>' + (changed ? '<div class="alert warn" role="alert" id="termsChanged" tabindex="-1"><b>확인하신 뒤 브랜드가 조건을 바꿨어요.</b> 아래 새 조건을 다시 확인하고 합의해 주세요. 이전 조건으로는 합의되지 않았어요.</div>' : '') + '<p class="v6-meta">브랜드가 제안한 조건이에요. 합의하면 이 조건이 그대로 기록되고, 그다음 샘플 받을 주소를 입력해요.</p><dl class="v6-kv">' + rew + '<dt>콘텐츠</dt><dd>' + h(contentText(c)) + '</dd><dt>제품</dt><dd>' + h(c.product || '브랜드 안내 대기') + '</dd>' + (plat === 'tiktok' ? '<dt>광고 사용</dt><dd>합의 후 Spark 코드로 따로 제출</dd>' : '') + '</dl>' +
         '<div class="v6-form">' + field(hk, '본인 ' + platName + ' 계정', hv, { req: true, ph: '@myhandle' }) +
-        '<div class="v6-field v6-wide"><label class="v6-inline"><input type="checkbox" id="agreeOk" data-v8f="agreeOk"' + (V.f.agreeOk ? ' checked' : '') + '> 보상·콘텐츠·제출 기준·일정을 확인했어요<span class="req">필수</span></label>' + errOf('agreeOk') + '</div></div>' +
+        '<div class="v6-field v6-wide"><label class="v6-inline"><input type="checkbox" id="agreeOk" data-v8f="agreeOk" data-fp="' + a(o.termsFingerprint || '') + '" onchange="V8agreeCheck(this)"' + (V.f.agreeOk ? ' checked' : '') + '> 보상·콘텐츠·제출 기준·일정을 확인했어요<span class="req">필수</span></label>' + errOf('agreeOk') + '</div></div>' +
         '<div class="v6-actions">' + btn(V.busy.agree ? '처리 중…' : '조건 합의', "V8agree('" + id + "',true)", 'pri', V.busy.agree ? ' disabled' : '') + btn('거절', "V8agree('" + id + "',false)", 'ghost danger', V.busy.agree ? ' disabled' : '') + '</div></section>';
     }
     var spark = plat !== 'tiktok' ? '<p class="v6-meta">이 캠페인은 ' + h(platName) + ' 콘텐츠라 Spark 코드가 필요 없어요.</p>' : '<div class="v6-field v6-wide"><label for="sparkCode">Spark Ads 코드<span class="opt">선택</span></label><input id="sparkCode" type="text" data-v8f="sparkCode" value="' + a(fv('sparkCode', o.sparkCode || '')) + '" placeholder="브랜드와 광고 사용에 합의한 경우"><span class="hint">브랜드에만 전달되고 커뮤니티에는 보이지 않아요.</span></div><div class="v6-actions">' + btn(o.sparkCode ? '코드 수정' : '코드 제출', "submitSpark('" + id + "')", '', LIVE.sparkBusy ? ' disabled' : '') + '</div>';
@@ -253,6 +270,8 @@
     return liveReq(method, path, body).finally(function () { V.busy[key] = false; });
   }
   function fail(e, msg) { if (e && e.message === 'busy') return; if (typeof isStale === 'function' && isStale(e)) return; toast((e && e.message) || msg); render(); }
+  /* 체크한 순간 화면에 그려진 조건의 확인값을 보관 — 합의는 이 값으로만 보낸다 */
+  window.V8agreeCheck = function (el) { if (el.checked) { V.f.agreeOk = true; V.f.agreeFp = el.dataset.fp || ''; } else { delete V.f.agreeOk; delete V.f.agreeFp; } };
   window.V8agree = function (cid, accept) {
     V.err = {};
     var handle = String(V.f.agreeHandle != null ? V.f.agreeHandle : ((document.getElementById('agreeHandle') || {}).value || '')).trim();
@@ -261,13 +280,14 @@
       if (!V.f.agreeOk) V.err.agreeOk = '조건을 확인했다고 표시해 주세요.';
       if (Object.keys(V.err).length) { render(); focusErr(); return; }
     }
-    var seen = (offerByCampaign(cid) || {}).termsFingerprint || '';
+    var seen = V.f.agreeFp || '';
+    if (accept && (!seen || seen !== ((offerByCampaign(cid) || {}).termsFingerprint || ''))) { delete V.f.agreeOk; delete V.f.agreeFp; V.err = { _termsChanged: cid }; render(); var tc = document.getElementById('termsChanged'); if (tc) tc.focus(); return; }
     call('agree', 'POST', '/me/campaign-offers/' + encodeURIComponent(cid) + '/agree', { accept: !!accept, handle: handle, tiktok_handle: handle, terms_fingerprint: accept ? seen : '' })
-      .then(function () { delete V.f.agreeOk; delete V.f.agreeHandle; toast(accept ? '조건에 합의했어요 — 이제 샘플 받을 주소를 입력해요.' : '이 캠페인 제안을 거절했어요.'); return collabRefresh(); })
+      .then(function () { delete V.f.agreeOk; delete V.f.agreeFp; delete V.f.agreeHandle; toast(accept ? '조건에 합의했어요 — 이제 샘플 받을 주소를 입력해요.' : '이 캠페인 제안을 거절했어요.'); window.__v8xpRefresh(); return collabRefresh(); })
       .then(function () { render(); }, function (e) {
         if (e && e.status === 409 && e.detail && e.detail.code === 'terms_changed') {
           // 옛 조건으로는 합의되지 않았다 — 새 조건을 받아 다시 확인하게 한다(계정 입력은 유지, 확인 체크는 해제)
-          delete V.f.agreeOk; V.err = { _termsChanged: cid };
+          delete V.f.agreeOk; delete V.f.agreeFp; V.err = { _termsChanged: cid };
           return Promise.resolve(collabRefresh()).then(function () { render(); var el = document.getElementById('termsChanged'); if (el) el.focus(); });
         }
         fail(e, '처리하지 못했어요. 입력은 그대로 남아 있어요.');
@@ -302,7 +322,7 @@
           toast(sent === true ? '영상 제출 완료 — 메모도 담당자 DM으로 전달했어요.' : sent === 'lost' ? '영상은 제출됐어요. 메모 전달에 실패했어요 — 담당자 DM에서 직접 전해 주세요.' : '영상은 제출됐어요. 메모는 담당자 DM 초안으로 보관했어요.');
         });
       })
-      .then(function () { return collabRefresh(); })
+      .then(function () { window.__v8xpRefresh(); return collabRefresh(); })
       .then(function () { V8go('c-work', cid); }, function (e) { fail(e, '제출하지 못했어요. 입력은 그대로 남아 있어요.'); });
   };
   function focusErr() { var k = Object.keys(V.err)[0], el = k && document.getElementById(k); if (el) { el.setAttribute('aria-invalid', 'true'); el.setAttribute('aria-describedby', 'err-' + k); el.focus(); } }
@@ -350,13 +370,42 @@
     loadNotices();
     var ms = noticeMsgs();
     var body = ms === null ? loading() : ms === 'error' ? '<div class="v6-empty" role="alert">공지를 불러오지 못했어요. ' + btn('다시 불러오기', "V8reloadNotices()") + '</div>' :
-      '<ul class="rows">' + (ms.filter(function (m) { return !m.threadParent; }).slice().reverse().map(function (m) { return '<li class="rowi"><div class="grow"><b>' + h(msgText(m).split('\n')[0].slice(0, 120)) + '</b><div class="sub">' + (m.pinnedAt ? '📌 고정 · ' : '') + h(fmtDay(m.at)) + (msgText(m).length > 120 || msgText(m).indexOf('\n') > 0 ? ' · ' + h(msgText(m).slice(0, 160)) : '') + '</div></div>' + btn(m.replyCount ? '답글 ' + m.replyCount + '개' : '공지 열기', "V8openChannel('notice')") + '</li>'; }).join('') || '<li class="rowi"><div class="grow"><b>아직 공지가 없어요.</b><div class="sub">브랜드가 공지를 올리면 여기에 보여요.</div></div></li>') + '</ul>';
+      '<ul class="rows">' + (ms.filter(function (m) { return !m.threadParent; }).slice().reverse().map(function (m) { return '<li class="rowi"><div class="grow"><b>' + h(msgText(m).split('\n')[0].slice(0, 120)) + '</b><div class="sub">' + (m.pinnedAt ? '📌 고정 · ' : '') + h(fmtDay(m.at)) + (msgText(m).length > 120 || msgText(m).indexOf('\n') > 0 ? ' · ' + h(msgText(m).slice(0, 160)) : '') + '</div></div>' + btn(m.replyCount ? '답글 ' + m.replyCount + '개' : '공지 열기', 'V8openNotice(' + Number(m.msgId) + ')') + '</li>'; }).join('') || '<li class="rowi"><div class="grow"><b>아직 공지가 없어요.</b><div class="sub">브랜드가 공지를 올리면 여기에 보여요.</div></div></li>') + '</ul>';
     return '<div class="creator-wrap"><div class="page-head"><div><h1>공지사항</h1><p>' + h(brandShort()) + '가 올린 공지예요. 질문은 각 공지의 답글로 남겨요.</p></div></div>' + body + '</div>';
   }
   window.V8reloadNotices = function () { var b = currentBrand(); if (b && LIVE.notices) delete LIVE.notices[b.cellId]; render(); };
+  /* 캠페인 공지: 브랜드가 채널에 게시한 캠페인 카드(campaignId 가 붙은 메시지) — 서버 실데이터 */
+  function loadCampaignPosts(force) {
+    var b = currentBrand(); if (!b || !b.cellId) return;
+    LIVE.cposts = LIVE.cposts || {};
+    if ((!force && LIVE.cposts[b.cellId]) || V.busy['cp:' + b.cellId]) return;
+    var cell = b.cellId, token = window.jwtGet ? jwtGet() : '';
+    V.busy['cp:' + cell] = true;
+    liveReq('GET', '/community/cells/' + encodeURIComponent(cell) + '/messages?campaign_posts=true&limit=100')
+      .then(function (m) { if (!window.jwtGet || token === jwtGet()) LIVE.cposts[cell] = m || []; })
+      .catch(function (e) { if (typeof isStale === 'function' && isStale(e)) return; LIVE.cposts[cell] = 'error'; })
+      .finally(function () { V.busy['cp:' + cell] = false; render(); });
+  }
+  window.V8reloadPosts = function () { loadCampaignPosts(true); render(); };
   function scRecruit() {
-    return '<div class="v6">' + head('캠페인 공지', h(brandShort()) + '가 채널에 게시한 캠페인 카드를 모아 봐요 (읽기 전용).') +
-      '<ul class="v6-list"><li class="v6-empty"><b>아직 채널에 게시된 캠페인이 없어요.</b><p>모집 중인 캠페인은 캠페인 둘러보기에서 확인할 수 있어요.</p>' + btn('캠페인 둘러보기', "V8go('c-campaigns')") + '</li></ul></div>';
+    loadCampaignPosts();
+    var b = currentBrand(), posts = b && LIVE.cposts ? LIVE.cposts[b.cellId] : null;
+    var top = head('캠페인 공지', h(brandShort()) + '가 채널에 게시한 캠페인 카드를 모아 봐요 (읽기 전용).', btn('새로고침', 'V8reloadPosts()', 'ghost'));
+    if (!b || !b.cellId) return '<div class="v6">' + top + '<div class="v6-empty">이 브랜드의 커뮤니티 공간이 아직 없어요.</div></div>';
+    if (posts === 'error') return '<div class="v6">' + top + '<div class="v6-empty" role="alert">캠페인 공지를 불러오지 못했어요. ' + btn('다시 불러오기', 'V8reloadPosts()') + '</div></div>';
+    if (!posts) return '<div class="v6">' + top + loading() + '</div>';
+    var seen = {}, list = posts.slice().reverse().filter(function (m) { if (!m.campaignId || seen[m.campaignId]) return false; seen[m.campaignId] = 1; return true; });
+    if (!list.length) return '<div class="v6">' + top + '<ul class="v6-list"><li class="v6-empty"><b>아직 채널에 게시된 캠페인이 없어요.</b><p>모집 중인 캠페인은 캠페인 둘러보기에서 확인할 수 있어요.</p>' + btn('캠페인 둘러보기', "V8go('c-campaigns')") + '</li></ul></div>';
+    return '<div class="v6">' + top + scopeBar('캠페인 공지') + '<ul class="v8-cgrid">' + list.map(function (m) {
+      var c = campaignsLive().find(function (x) { return x.campaignId === m.campaignId; }), o = offerByCampaign(m.campaignId);
+      var when = '<span class="v6-meta">' + h(CH_LABEL[m.channel] || m.channel) + ' 채널 · ' + h(fmtDay(m.at)) + ' 게시</span>';
+      if (!c) return '<li class="v8-ccard"><div class="v6-grow">' + when + '<h3>' + h(msgText(m).split('\n')[0].replace(/^\[캠페인\]\s*/, '')) + '</h3><p class="v6-meta">' + h(msgText(m).split('\n').slice(1).join(' ')) + '</p></div><div class="v8-ccard-foot">' + chip('모집 종료 · 목록에서 내려간 캠페인', 'err') + (o ? btn('내 캠페인에서 보기', "V8go('c-work','" + a(m.campaignId) + "')") : '') + '</div></li>';
+      var st = myState(c), e = effTerms(c, o);
+      var cta = o || (c.myStatus && c.myStatus !== 'none') ? btn('내 캠페인에서 보기', "V8go('c-work','" + a(c.campaignId) + "')") : btn('조건 보기', "V8go('c-campaigns','" + a(c.campaignId) + "')", 'pri');
+      return '<li class="v8-ccard"><div class="v8-ccard-top">' + pimg(c, 88) + '<div class="v6-grow">' + when + '<h3>' + h(c.name) + '</h3><span class="v6-meta">' + h(c.product || '') + '</span></div></div>' +
+        '<dl class="v8-facts"><div><dt>보상</dt><dd>' + h(rewardKind(e)) + '</dd></div><div><dt>신청 국가</dt><dd>' + h(ctry(c.countries)) + '</dd></div><div><dt>콘텐츠</dt><dd>' + h(contentText(e)) + '</dd></div><div><dt>모집 마감</dt><dd>' + h(c.deadline ? String(c.deadline).slice(0, 10) : '별도 안내') + ' <span class="v6-meta">' + h(dLabel(c.deadline)) + '</span></dd></div></dl>' +
+        '<div class="v8-ccard-foot">' + chip('내 상태: ' + st[0], st[1]) + cta + '</div></li>';
+    }).join('') + '</ul></div>';
   }
   function scHelpdesk() {
     return '<div class="creator-wrap"><div class="page-head"><div><h1>도움말</h1><p>막혔을 때 어디에 물어볼지 알려 드려요.</p></div>' + btn('담당자에게 문의', "V8go('c-messages')", 'pri') + '</div>' +
@@ -368,13 +417,29 @@
 
   /* ---------- 화면: 랭킹 / 미션 (서버 XP) ---------- */
   function levelInfo(total) { var lo = Math.floor((total || 0) / 300) * 300; return { l: lo / 300 + 1, lo: lo, hi: lo + 300, pct: Math.round(((total || 0) - lo) / 3) }; }
-  function brandXp() { var b = bid(); return ((LIVE.xp && LIVE.xp.events) || []).filter(function (e) { return e.brandId === b; }).reduce(function (n, e) { return n + (e.points || 0); }, 0); }
-  function levelBar() { var x = brandXp(), li = levelInfo(x); return '<div class="v8-level"><div class="v8-level-t"><b>Lv.' + li.l + '</b><span class="v6-meta">누적 ' + x + ' XP · 다음 레벨까지 ' + (li.hi - x) + ' XP</span></div><div class="v6-progress" role="progressbar" aria-label="레벨 진행" aria-valuemin="' + li.lo + '" aria-valuemax="' + li.hi + '" aria-valuenow="' + x + '"><span style="width:' + li.pct + '%"></span></div><p class="v6-meta">XP는 활동 기록이에요. 현금·정산·운영 성과와 관계없어요.</p></div>'; }
+  /* 누적 XP: 서버가 브랜드별로 합산한 /me/xp?brand= 의 total (최근 50건 events 합산이 아님).
+     브랜드별 캐시 — 응답은 요청한 브랜드 키에만 쓰고, 세션이 바뀌면 버린다(브랜드 전환·응답 경합 안전). */
+  var XPC = { token: null, total: {}, events: {}, busy: {}, err: {} };
+  function loadBrandXp(b, force) {
+    var token = window.jwtGet ? jwtGet() : '';
+    if (XPC.token !== token) XPC = { token: token, total: {}, events: {}, busy: {}, err: {} };
+    if (!b || XPC.busy[b] || (!force && (b in XPC.total || XPC.err[b]))) return;
+    XPC.busy[b] = true;
+    var box = XPC;
+    liveReq('GET', '/me/xp?brand=' + encodeURIComponent(b)).then(function (x) {
+      if (box !== XPC) return;                       // 세션이 바뀐 뒤 도착한 응답은 버린다
+      box.total[b] = Number(x && x.total) || 0; box.events[b] = (x && x.events) || []; delete box.err[b];
+    }).catch(function (e) { if (box === XPC && !(typeof isStale === 'function' && isStale(e))) box.err[b] = true; })
+      .finally(function () { if (box === XPC) { box.busy[b] = false; render(); } });
+  }
+  window.__v8xpRefresh = function () { var b = bid(); if (b) loadBrandXp(b, true); };
+  function brandXp() { var b = bid(); loadBrandXp(b); return b && b in XPC.total ? XPC.total[b] : null; }
+  function levelBar() { var x = brandXp(); if (x === null) return '<div class="v8-level" role="status"><p class="v6-meta">' + (XPC.err[bid()] ? '누적 XP를 불러오지 못했어요. ' + btn('다시 불러오기', '__v8xpRefresh()', 'ghost') : '누적 XP 불러오는 중…') + '</p></div>'; var li = levelInfo(x); return '<div class="v8-level"><div class="v8-level-t"><b>Lv.' + li.l + '</b><span class="v6-meta">누적 ' + x + ' XP · 다음 레벨까지 ' + (li.hi - x) + ' XP</span></div><div class="v6-progress" role="progressbar" aria-label="레벨 진행" aria-valuemin="' + li.lo + '" aria-valuemax="' + li.hi + '" aria-valuenow="' + x + '"><span style="width:' + li.pct + '%"></span></div><p class="v6-meta">XP는 활동 기록이에요. 현금·정산·운영 성과와 관계없어요.</p></div>'; }
   function ensureSpace() { var b = bid(); if (!b || !LIVE.ranking || LIVE.ranking[b] || LIVE.spaceBusy || V.busy['s:' + b]) return; V.busy['s:' + b] = true; loadSpace(b); }  /* 한 번만 자동 요청 — 실패하면 화면의 '다시 불러오기'로 재시도 */
   var XP_LABEL = { join: '브랜드 합류', first_message: '커뮤니티 첫 인사', application: '캠페인 신청', agreement: '조건 합의', content_submitted: '콘텐츠 제출', completed: '협업 완료' };
   function scRanking() {
     ensureSpace();
-    var b = bid(), set = LIVE.ranking && LIVE.ranking[b], rows = set && set.week, hist = ((LIVE.xp && LIVE.xp.events) || []).filter(function (e) { return e.brandId === b; });
+    var b = bid(), set = LIVE.ranking && LIVE.ranking[b], rows = set && set.week, hist = XPC.events[b] || [];
     var me = rows && rows.find(function (r) { return r.me; });
     var max = rows && rows.length ? Math.max.apply(null, rows.map(function (r) { return r.total || 0; }).concat([1])) : 1;
     var table = !set ? (LIVE.spaceBusy ? loading() : '<div class="v6-empty">랭킹을 불러오지 못했어요. ' + btn('다시 불러오기', "loadSpace('" + a(b) + "')") + '</div>') : !rows || !rows.length ? '<div class="v6-empty">이번 주 활동 기록이 아직 없어요.</div>' :
@@ -413,6 +478,14 @@
 
   /* ---------- 화면: 커뮤니티 채널 ---------- */
   function cellOpenFor(ch) { var b = currentBrand(); return LIVE.open && b && LIVE.open.cellId === b.cellId && LIVE.open.channel === ch && !LIVE.open.dm; }
+  /* 공지 목록에서 고른 공지를 공지 채널과 함께 그 스레드로 연다 */
+  window.V8openNotice = function (mid) {
+    var b = currentBrand(); captureDraft(); V.screen = 'c-community'; V.id = 'notice'; V.tab = 'msg'; V.info = false; pushHash();
+    if (!b || !b.cellId) return render();
+    return Promise.resolve(openCell(b.cellId, b.cellName || b.name, 'notice')).then(function () {
+      if (V.screen === 'c-community' && V.id === 'notice' && LIVE.open && LIVE.open.cellId === b.cellId) return threadOpen(mid);
+    });
+  };
   window.V8openChannel = function (ch) {
     var b = currentBrand(); captureDraft(); V.screen = 'c-community'; V.id = ch; V.tab = 'msg'; V.info = false; pushHash();
     if (b && b.cellId) { openCell(b.cellId, b.cellName || b.name, ch); } else render();
@@ -516,12 +589,12 @@
   function shell(content) {
     var bs = brandsLive(), b = currentBrand();
     if (V.screen !== V.last) { V.nav = false; V.rail = false; V.last = V.screen; }
-    var todo = actionableOffers().length, x = brandXp(), lv = levelInfo(x).l;
+    var todo = actionableOffers().length, x = brandXp(), lv = x === null ? '–' : levelInfo(x).l;
     var dm = b && dmCellFor(b.brandId), dmUnread = dm ? unreadCount(dm.cellId) : 0, chUnread = b && b.cellId ? unreadCount(b.cellId) : 0;
     var n = notifScoped(), nUnread = n ? n.unreadCount : 0;
     var curLabel = V.screen === 'c-community' ? '# ' + (CH_LABEL[V.id] || '자유대화') : LABEL[V.screen];
     var rail = '<nav class="v2-rail" aria-label="브랜드 선택"><button type="button" onclick="V8go(\'c-rewards\')" aria-label="내 공간" data-v5="">pr.</button>' +
-      bs.map(function (v) { return '<button type="button" onclick="V8brand(\'' + a(v.brandId) + '\')" aria-label="' + a(v.name) + '"' + (b && b.brandId === v.brandId ? ' aria-current="true"' : '') + ' data-v5="">' + (v.logoUrl && /^https:\/\//.test(v.logoUrl) ? '<img src="' + a(v.logoUrl) + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">' : h((v.name || v.brandId).slice(0, 1).toUpperCase())) + '</button>'; }).join('') +
+      bs.map(function (v) { return '<button type="button" onclick="V8brand(\'' + a(v.brandId) + '\')" aria-label="' + a(v.name) + '"' + (b && b.brandId === v.brandId ? ' aria-current="true"' : '') + ' data-v5="">' + (v.logoUrl && /^https:\/\//.test(v.logoUrl) ? '<img src="' + a(v.logoUrl) + '" alt="" data-fbtext="' + a((v.name || v.brandId).slice(0, 1).toUpperCase()) + '" referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">' : h((v.name || v.brandId).slice(0, 1).toUpperCase())) + '</button>'; }).join('') +
       '<button type="button" onclick="inviteDialog()" aria-label="브랜드 초대로 참여" data-v5="">' + icon('plus') + '</button><button type="button" onclick="V8go(\'c-profile\')" aria-label="설정" data-v5="">' + icon('gear') + '</button></nav>';
     var side = '<nav class="v2-side" aria-label="크리에이터 채널·메뉴"><div class="v2-ws"><b>' + h(b ? b.name : 'theprlist') + '</b><span class="small">' + (b ? '브랜드 커뮤니티 · 멤버 ' + h(b.memberCount || 0) : '크리에이터 워크스페이스') + '</span></div>' +
       navBtn('c-tasks', 'check', '내 할 일' + (todo ? ' <span class="badge-n" aria-label="할 일 ' + todo + '개">' + todo + '</span>' : '')) + navBtn('c-campaigns', 'compass', '캠페인 둘러보기') + navBtn('c-rewards', 'user', '내 공간') +
@@ -547,6 +620,8 @@
     if (screen !== 'c-community' && LIVE.thread) LIVE.thread = null;
     V.screen = screen; V.id = id || ''; V.err = {}; V.info = false; if (screen !== 'c-community') V.tab = 'msg';
     if (screen === 'c-profile' && !LIVE.notifPrefs && !LIVE.notifPrefsError) loadNotifPrefs();
+    if (screen === 'c-ranking' || screen === 'c-missions') window.__v8xpRefresh();   // 화면에 들어올 때 서버 누적값으로 갱신
+    if (screen === 'c-recruit') loadCampaignPosts(true);
     ui.page = 'v8'; pushHash(); render(); try { var m = document.querySelector('.v2-main'); if (m && screen !== 'c-community') m.scrollTop = 0; } catch (e) {}
   };
   var LEGACY = { community: 'c-community', campaigns: 'c-campaigns', detail: 'c-campaigns', application: 'c-campaigns', applied: 'c-work', applicationstatus: 'c-work', work: 'c-work', collaboration: 'c-work', submission: 'c-work', messages: 'c-messages', space: 'c-rewards', settings: 'c-profile', ranking: 'c-ranking', achievements: 'c-missions', routes: 'c-helpdesk' };

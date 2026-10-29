@@ -60,6 +60,26 @@ await p.evaluate(() => V8go("c-tasks")); await p.waitForTimeout(400);
 ok("크리에이터 할 일: 합의 조건 기준", !(await main()).includes("999"));
 ok("크리에이터 페이지 오류 없음", !errs.length, errs.join(" | "));
 
+// 체크 후 자동 새로고침 경합: 체크한 시점의 확인값만 쓰고, 새로고침으로 조건이 바뀌면 체크 해제·재확인
+const cid3 = (await api("POST", "/brands/fau/campaigns", { name: `경합 ${tag}`, product: "수분 선크림", reward_type: "paid", reward_amount: 50, reward_currency: "USD", platform: "instagram", conditions: ["릴스 1개"], countries: ["US"], deadline: "2026-12-30" }, T.fau)).body.campaignId;
+await api("POST", `/brands/fau/campaigns/${cid3}/publish`, null, T.fau);
+await api("POST", `/campaigns/${cid3}/apply`, { creator_id: "me" }, T.creator);
+await api("POST", `/brands/fau/campaigns/${cid3}/select`, { creator_id: me.creatorId }, T.fau);
+await p.evaluate(() => collabRefresh()); await p.waitForTimeout(1200);
+await p.evaluate((id) => V8go("c-work", id), cid3); await p.waitForTimeout(500);
+await p.locator("#agreeHandle").fill("@race"); await p.locator("#agreeOk").check();
+await p.evaluate(() => collabRefresh()); await p.waitForTimeout(1200);   // 조건 변화 없는 자동 새로고침
+ok("경합: 변화 없는 새로고침은 체크 유지", await p.locator("#agreeOk").isChecked() && !(await main()).includes("확인하신 뒤 브랜드가 조건을 바꿨어요"));
+await api("PATCH", `/brands/fau/campaigns/${cid3}`, { reward_amount: 70 }, T.fau);
+await p.evaluate(() => collabRefresh()); await p.waitForTimeout(1200);   // 조건이 바뀐 자동 새로고침
+const raced = await main();
+ok("경합: 새로고침으로 조건 변경 감지 → 체크 해제·재확인 안내·새 금액 표시", !(await p.locator("#agreeOk").isChecked()) && raced.includes("확인하신 뒤 브랜드가 조건을 바꿨어요") && raced.includes("고정비 70 USD"));
+await p.getByRole("button", { name: "조건 합의" }).click(); await p.waitForTimeout(800);
+ok("경합: 재확인 없이 합의 클릭 → 합의되지 않음", (await offer(cid3)).state === "selected");
+await p.locator("#agreeOk").check(); await p.getByRole("button", { name: "조건 합의" }).click(); await p.waitForTimeout(1500);
+const o3 = await offer(cid3);
+ok("경합: 재확인 후 합의 → 70 USD 스냅샷", o3.state === "terms_agreed" && o3.agreedTerms.rewardAmount === 70 && o3.agreedTerms.confirmedByCreator === true);
+
 // 브랜드 콘솔 지원자 화면 — 같은 합의 데이터
 const q = await br.newPage({ viewport: { width: 1280, height: 900 } });
 const qerr = []; q.on("pageerror", (e) => qerr.push(e.message));

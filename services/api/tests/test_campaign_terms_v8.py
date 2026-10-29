@@ -106,3 +106,54 @@ def test_agree_requires_seen_terms_fingerprint_and_keeps_snapshot(client, monkey
     client.post(f"/brands/termsfp/campaigns/{cid2}/select", json={"creator_id": creator_id}, headers=B)
     legacy = client.post(f"/me/campaign-offers/{cid2}/agree", json={"accept": True, "tiktok_handle": "@fp"}, headers=ch)
     assert legacy.status_code == 200 and legacy.json()["agreedTerms"]["confirmedByCreator"] is False
+
+
+def test_product_is_part_of_agreed_terms(client, monkeypatch):
+    """제품도 합의 대상: 본 뒤 제품이 바뀌면 409, 합의 후 제품이 바뀌어도 스냅샷은 합의한 제품."""
+    t = _approved_brand(client, "termsprod", "텀스프로드", "own@termsprod.kr")
+    B = _bearer(t)
+    p1 = client.post("/brands/termsprod/products", json={"name": "앰플 A"}, headers=B).json()["productId"]
+    p2 = client.post("/brands/termsprod/products", json={"name": "크림 B"}, headers=B).json()["productId"]
+    cid = client.post("/brands/termsprod/campaigns", json={"name": "제품 합의", "reward_type": "gifted", "product": "앰플 A", "product_id": p1}, headers=B).json()["campaignId"]
+    client.post(f"/brands/termsprod/campaigns/{cid}/publish", headers=B)
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    ch = _bearer(_creator_token(client, "prod.creator@ex.com"))
+    client.post("/me/join", json={"brand_id": "termsprod"}, headers=ch)
+    client.post(f"/campaigns/{cid}/apply", json={"creator_id": "x"}, headers=ch)
+    creator_id = client.get(f"/brands/termsprod/campaigns/{cid}/applicants", headers=B).json()[0]["creatorId"]
+    client.post(f"/brands/termsprod/campaigns/{cid}/select", json={"creator_id": creator_id}, headers=B)
+    offer = lambda: next(o for o in client.get("/me/campaign-offers", headers=ch).json() if o["campaignId"] == cid)
+    seen = offer()
+    assert seen["offerTerms"]["product"] == "앰플 A" and seen["offerTerms"]["productId"] == p1
+    client.patch(f"/brands/termsprod/campaigns/{cid}", json={"product": "크림 B", "product_id": p2}, headers=B)
+    r = client.post(f"/me/campaign-offers/{cid}/agree", json={"accept": True, "handle": "@p", "terms_fingerprint": seen["termsFingerprint"]}, headers=ch)
+    assert r.status_code == 409 and r.json()["detail"]["offerTerms"]["product"] == "크림 B"
+    fp = offer()["termsFingerprint"]
+    snap = client.post(f"/me/campaign-offers/{cid}/agree", json={"accept": True, "handle": "@p", "terms_fingerprint": fp}, headers=ch).json()["agreedTerms"]
+    assert snap["product"] == "크림 B" and snap["productId"] == p2
+    client.patch(f"/brands/termsprod/campaigns/{cid}", json={"product": "앰플 A", "product_id": p1}, headers=B)
+    assert offer()["agreedTerms"]["product"] == "크림 B"
+    brand_side = client.get(f"/brands/termsprod/campaigns/{cid}/applicants", headers=B).json()[0]["agreedTerms"]
+    assert brand_side["product"] == "크림 B" and brand_side == offer()["agreedTerms"]
+
+
+def test_campaign_card_post_is_real_message_with_campaign_id(client, monkeypatch):
+    t = _approved_brand(client, "postbrand", "포스트브랜드", "own@postbrand.kr")
+    B = _bearer(t)
+    draft = client.post("/brands/postbrand/campaigns", json={"name": "초안 캠페인"}, headers=B).json()["campaignId"]
+    assert client.post(f"/brands/postbrand/campaigns/{draft}/post", json={"channel": "notice"}, headers=B).status_code == 409
+    cid = client.post("/brands/postbrand/campaigns", json={"name": "게시할 캠페인", "reward_type": "paid", "reward_amount": 30, "reward_currency": "USD", "conditions": ["릴스 1개"]}, headers=B).json()["campaignId"]
+    client.post(f"/brands/postbrand/campaigns/{cid}/publish", headers=B)
+    r = client.post(f"/brands/postbrand/campaigns/{cid}/post", json={"channel": "notice"}, headers=B)
+    assert r.status_code == 200, r.text
+    cell = r.json()["cellId"]
+    assert client.post(f"/brands/postbrand/campaigns/{cid}/post", json={"channel": "notice"}, headers=B).status_code == 409   # 중복 게시 방지
+    # 다른 브랜드는 이 브랜드 캠페인을 게시할 수 없다
+    t2 = _approved_brand(client, "postother", "다른브랜드", "own@postother.kr")
+    assert client.post(f"/brands/postother/campaigns/{cid}/post", json={"channel": "notice"}, headers=_bearer(t2)).status_code == 404
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    ch = _bearer(_creator_token(client, "post.creator@ex.com"))
+    client.post("/me/join", json={"brand_id": "postbrand"}, headers=ch)
+    client.post(f"/community/cells/{cell}/messages", json={"text": "일반 대화"}, headers=ch)
+    posts = client.get(f"/community/cells/{cell}/messages?campaign_posts=true", headers=ch).json()
+    assert [m["campaignId"] for m in posts] == [cid] and "30 USD" in posts[0]["original"] and posts[0]["channel"] == "notice"

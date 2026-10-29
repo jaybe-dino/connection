@@ -35,9 +35,21 @@ for (const w of [1280, 390]) {
   ok(`[${w}] 상세 시트 열림`, await p.locator("#pd-sheet").isVisible() && (await p.locator("#pd-sheet").innerText()).includes(pub[0].name));
   await p.keyboard.press("Escape"); await p.waitForTimeout(150);
   ok(`[${w}] Esc로 닫히고 상세 버튼으로 포커스 복귀`, !(await p.locator("#pd-sheet").isVisible()) && await p.evaluate(() => !!document.activeElement.dataset.detail));
+  if (w < 500) {
+    // 모바일 첫 화면: 검색만 보이고 필터는 접힘, 제품 카드 1개와 그 신청/참여 버튼이 첫 화면 안
+    const first = await p.locator(".v6-pcard").first().boundingBox(), cta = await p.locator(".v6-pcard").first().locator("a.btn").first().boundingBox();
+    ok(`[${w}] 모바일 첫 화면에 제품 1개·신청 버튼`, first && cta && cta.y + cta.height <= 844 && !(await p.locator("#v6pf-brand").isVisible()) && await p.locator("#v6pf-q").isVisible(), JSON.stringify(cta));
+    await p.screenshot({ path: "docs/qa/v8/products-390-first.png" });
+  }
   await p.locator(".v6-pcard").first().getByRole("button", { name: "저장" }).click(); await p.waitForTimeout(150);
+  if (w < 500) { await p.getByRole("button", { name: /^필터/ }).click(); await p.waitForTimeout(150); }
   await p.selectOption("#v6pf-view", "saved"); await p.waitForTimeout(700);
   ok(`[${w}] 저장 → 저장한 제품 보기`, await p.locator(".v6-pcard").count() === 1);
+  if (w < 500) {
+    await p.getByRole("button", { name: /^필터/ }).click(); await p.waitForTimeout(150);   // 접기
+    ok(`[${w}] 접힌 상태에서도 적용 수·초기화 보임`, (await p.locator(".v8-pf-toggle").innerText()).includes("1개 적용") && await p.locator(".v8-pf-reset").isVisible() && !(await p.locator("#v6pf-view").isVisible()));
+    await p.screenshot({ path: "docs/qa/v8/products-390-filtered.png" });
+  }
   ok(`[${w}] 비로그인: 브랜드 참여 후 신청(초대 링크)`, (await p.locator(".v6-pcard a.btn").first().getAttribute("href")).startsWith("/?brand=" + pub[0].brandId));
   ok(`[${w}] 가로 넘침 없음`, await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   ok(`[${w}] 페이지 오류 없음`, !errs.length, errs.join("|"));

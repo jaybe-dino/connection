@@ -6,3 +6,19 @@ body.v8-live { margin: 0; }
 .v2-creator .v2-search input { cursor: pointer; }
 .v2-creator .sp-reply[aria-pressed="true"] { color: var(--c-accent, #4a2c5a); font-weight: 700; }
 a.btn,a.btn:hover{text-decoration:none}
+/* 내 캠페인: 모바일은 목록 → (보기) → 선택 상세 한 화면씩. 데스크톱은 양쪽 패널 유지 */
+.v8-back{display:none}
+@media (max-width:719px){
+  .v8-work.v8-has-sel > .v6-list{display:none}
+  .v8-work:not(.v8-has-sel) > .v6-panel{display:none}
+  .v8-back{display:block;margin:0 0 8px}
+}
+.v8-video{display:inline-flex;margin:2px 6px 2px 0}
+/* 제품 모아보기 필터: 데스크톱은 한 줄 그대로, 모바일은 검색 + '필터 N개' 접이식 */
+.v8-pf-bar{display:none}
+.v8-pf-more{display:contents}
+@media (max-width:719px){
+  .v8-pf-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .v8-pf-more{display:none}
+  .v8-pf-more.is-open{display:flex;flex-direction:column;gap:10px;width:100%}
+}

@@ -157,3 +157,27 @@ def test_campaign_card_post_is_real_message_with_campaign_id(client, monkeypatch
     client.post(f"/community/cells/{cell}/messages", json={"text": "일반 대화"}, headers=ch)
     posts = client.get(f"/community/cells/{cell}/messages?campaign_posts=true", headers=ch).json()
     assert [m["campaignId"] for m in posts] == [cid] and "30 USD" in posts[0]["original"] and posts[0]["channel"] == "notice"
+
+
+def test_closed_and_rejected_applications_stay_in_creator_history(client, monkeypatch):
+    t = _approved_brand(client, "histbrand", "히스토리", "own@histbrand.kr")
+    B = _bearer(t)
+    a = client.post("/brands/histbrand/campaigns", json={"name": "마감될 캠페인", "reward_type": "gifted"}, headers=B).json()["campaignId"]
+    r = client.post("/brands/histbrand/campaigns", json={"name": "반려될 캠페인", "reward_type": "gifted"}, headers=B).json()["campaignId"]
+    o = client.post("/brands/histbrand/campaigns", json={"name": "신청 안 한 마감", "reward_type": "gifted"}, headers=B).json()["campaignId"]
+    for c in (a, r, o):
+        client.post(f"/brands/histbrand/campaigns/{c}/publish", headers=B)
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    ch = _bearer(_creator_token(client, "hist.creator@ex.com"))
+    client.post("/me/join", json={"brand_id": "histbrand"}, headers=ch)
+    for c in (a, r):
+        assert client.post(f"/campaigns/{c}/apply", json={"creator_id": "x"}, headers=ch).status_code == 200
+    creator_id = client.get(f"/brands/histbrand/campaigns/{r}/applicants", headers=B).json()[0]["creatorId"]
+    client.post(f"/brands/histbrand/campaigns/{r}/applicants/{creator_id}/reject", json={"reason": "이번 모집 국가와 달라요"}, headers=B)
+    for c in (a, r, o):
+        client.post(f"/brands/histbrand/campaigns/{c}/close", headers=B)
+    mine = {x["campaignId"]: x for x in client.get("/me/campaigns", headers=ch).json() if x["brandId"] == "histbrand"}
+    assert set(mine) == {a, r}                      # 신청하지 않은 마감 캠페인은 안 보임
+    assert mine[a]["open"] is False and mine[a]["myStatus"] == "applied" and mine[a]["appliedAt"]
+    assert mine[r]["myStatus"] == "rejected" and mine[r]["rejectReason"] == "이번 모집 국가와 달라요" and mine[r]["rejectedAt"]
+    assert client.post(f"/campaigns/{a}/apply", json={"creator_id": "x"}, headers=ch).status_code == 409   # 마감 건 재신청 불가

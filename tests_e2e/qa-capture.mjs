@@ -11,7 +11,7 @@ const T = JSON.parse(readFileSync(process.env.SEED_TOKENS || "tests_e2e/shots/.s
 mkdirSync(OUT, { recursive: true });
 const shots = [];
 const br = await chromium.launch();
-const creatorScreens = [["c-tasks", "fau"], ["c-work", "fau"], ["c-recruit", "goryeo1392"], ["c-ranking", "fau"]];
+const creatorScreens = [["c-tasks", "fau"], ["c-recruit", "goryeo1392"], ["c-ranking", "fau"]];
 for (const w of [1280, 390]) {
   const p = await br.newPage({ viewport: { width: w, height: w < 500 ? 844 : 900 } });
   await p.route(/invalid\.example|cdn\.example\.com/, (r) => r.abort());

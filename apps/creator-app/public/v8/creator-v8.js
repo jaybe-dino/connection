@@ -100,8 +100,8 @@
   function nextAction(p) {
     var go = "V8go('c-work','" + a(p.id) + "')";
     switch (p.status) {
-      case 'applied': return ['브랜드 검토를 기다리는 중', btn('신청 내용 보기', go)];
-      case 'rejected': return ['이번에는 선정되지 않았어요', btn('다른 캠페인 보기', "V8go('c-campaigns')")];
+      case 'applied': return [p.c && p.c.open === false ? '모집이 마감됐어요 · 브랜드 결과 안내를 기다리는 중' : '브랜드 검토를 기다리는 중', btn('신청 내용 보기', go)];
+      case 'rejected': return ['이번에는 선정되지 않았어요' + (p.c && p.c.rejectedAt ? ' · ' + h(String(p.c.rejectedAt).slice(0, 10)) : '') + (p.c && p.c.rejectReason ? ' · 사유: ' + h(p.c.rejectReason) : ''), btn('다른 캠페인 보기', "V8go('c-campaigns')")];
       case 'selected': return ['제안 조건을 확인하고 합의해요', btn('조건 확인', go, 'pri')];
       case 'terms_agreed': return p.o && p.o.shipping ? ['샘플 발송을 기다리는 중', btn('상세 보기', go)] : ['샘플 받을 주소를 입력해요', btn('샘플 주소 입력', go, 'pri')];
       case 'sample_shipped': return ['샘플이 오고 있어요' + (p.o && p.o.sampleTracking ? ' · 송장 ' + h(p.o.sampleTracking) : '') + ' · 받은 뒤 영상을 제출해요', btn('영상 제출', go, 'pri')];
@@ -154,7 +154,8 @@
     var top = head('캠페인 둘러보기', '신청 전 / 신청함 / 선정됨 / 진행 중 / 완료 상태를 함께 보여 줘요. 참여 중인 건은 ‘내 캠페인’에서 관리해요.', action);
     if (LIVE.loadErr.campaigns) return '<div class="v6">' + top + loadFail('캠페인') + '</div>';
     if (!LIVE.campaigns) return '<div class="v6">' + top + loading() + '</div>';
-    var list = campaignsLive(), sel = V.id && list.find(function (c) { return c.campaignId === V.id; });
+    // 둘러보기는 모집 중만. 마감·미선정이 된 내 신청 건(open=false)은 목록에서 빠지지만 상세·내 캠페인 이력으로는 남는다
+    var all = campaignsLive(), list = all.filter(function (c) { return c.open !== false; }), sel = V.id && all.find(function (c) { return c.campaignId === V.id; });
     if (sel) sel = effTerms(sel, offerByCampaign(sel.campaignId));
     var cards = list.length ? '<ul class="v8-cgrid">' + list.map(function (c) {
       var st = myState(c), o = offerByCampaign(c.campaignId);
@@ -165,7 +166,7 @@
     }).join('') + '</ul>' : '<div class="v6-empty">이 브랜드에서 모집 중인 캠페인이 없어요.</div>';
     var detail = '';
     if (sel) {
-      var st = myState(sel), closed = campExpired(sel), busy = LIVE.applyBusy && LIVE.applyBusy[sel.campaignId];
+      var st = myState(sel), closed = campExpired(sel) || sel.open === false, busy = LIVE.applyBusy && LIVE.applyBusy[sel.campaignId];
       var body;
       if (closed) body = '<p class="alert warn">모집이 마감된 캠페인이에요. 신청할 수 없어요.</p>';
       else if (st[0] !== '신청 전') body = '<p>' + chip(st[0], st[1]) + ' 이미 참여 기록이 있어요. ' + btn('내 캠페인에서 보기', "V8go('c-work','" + a(sel.campaignId) + "')") + '</p>';
@@ -203,12 +204,18 @@
     if (!p) return '<div class="v6 v8-creator">' + top + scopeBar('캠페인') + '<div class="v6-empty">이 브랜드에서 참여한 캠페인이 없어요. ' + btn('이 브랜드 캠페인 보기', "V8go('c-campaigns')", 'ghost') + '</div></div>';
     var c = p.c, o = p.o, si = stepIdx(p.status), rej = ['declined', 'rejected'].indexOf(p.status) >= 0, na = nextAction(p);
     var stepper = '<ol class="v8-stepper" aria-label="진행 단계">' + STEPS.map(function (l, i) { var cls = rej ? '' : i < si ? 'is-done' : i === si ? 'is-now' : ''; return '<li class="' + cls + '"' + (i === si && !rej ? ' aria-current="step"' : '') + '><span class="v8-dot" aria-hidden="true">' + (i < si && !rej ? '✓' : i + 1) + '</span>' + l + '</li>'; }).join('') + '</ol>';
-    var now = '<div class="v8-now"><p class="v8-eyebrow">' + (rej ? '결과' : '지금 할 일') + '</p><p class="v8-feature-t">' + na[0] + '</p>' + (o && o.contentUrl ? '<p class="v6-meta v6-wrap">제출물: ' + h(o.contentUrl) + '</p>' : '') + (o && o.sampleTracking ? '<p class="v6-meta">송장: ' + h(o.sampleTracking) + '</p>' : '') + '<div class="v6-actions">' + btn('담당자에게 묻기', "V8dm('" + a(c.brandId || bid()) + "','" + a(c.campaignId) + "')") + '</div></div>';
+    var now = '<div class="v8-now"><p class="v8-eyebrow">' + (rej ? '결과' : '지금 할 일') + '</p><p class="v8-feature-t">' + na[0] + '</p>' + (o && o.contentUrl ? '<p class="v6-meta">제출물: ' + videoLink(o.contentUrl) + '</p>' : '') + (o && o.sampleTracking ? '<p class="v6-meta">송장: ' + h(o.sampleTracking) + '</p>' : '') + '<div class="v6-actions">' + btn('담당자에게 묻기', "V8dm('" + a(c.brandId || bid()) + "','" + a(c.campaignId) + "')") + '</div></div>';
     var act = o ? workAction(o, c) : '';
-    return '<div class="v6 v8-creator">' + top + scopeBar('캠페인') + '<div class="v6-split v6-split-list"><ul class="v6-list">' + list.map(function (x) {
+    return '<div class="v6 v8-creator">' + top + scopeBar('캠페인') + '<div class="v6-split v6-split-list v8-work' + (V.id ? ' v8-has-sel' : '') + '"><ul class="v6-list">' + list.map(function (x) {
       return '<li class="v6-row' + (x === p ? ' on' : '') + '">' + pimg(x.c, 36) + '<div class="v6-grow"><b>' + crumb(x.c.name) + '</b></div>' + chip(PST[x.status], PST_TONE[x.status]) + btn('보기', "V8go('c-work','" + a(x.id) + "')") + '</li>';
-    }).join('') + '</ul><div class="v6-col v6-panel"><h2>' + crumb(c.name) + ' ' + chip(PST[p.status], PST_TONE[p.status]) + '</h2>' + stepper + now + condSummary(c, o) + ' ' + act +
+    }).join('') + '</ul><div class="v6-col v6-panel"><div class="v8-back">' + btn('← 캠페인 목록', "V8go('c-work')", 'ghost') + '</div><h2 id="v8-work-h" tabindex="-1">' + crumb(c.name) + ' ' + chip(PST[p.status], PST_TONE[p.status]) + '</h2>' + stepper + now + condSummary(c, o) + ' ' + act +
       '<div class="v6-actions">' + btn('브랜드 담당자에게 묻기', "V8dm('" + a(c.brandId || bid()) + "','" + a(c.campaignId) + "')") + btn('보상 보기', "V8go('c-rewards')", 'ghost') + '</div></div></div></div>';
+  }
+  /* 제출 영상 링크: 안전한 https 주소만 새 창 링크로 연다(그 외는 텍스트만) */
+  function videoLink(url) {
+    var u = String(url || '');
+    if (!/^https:\/\/[^\s"'<>`]{4,1000}$/.test(u)) return '<span class="v6-wrap">' + h(u) + '</span>';
+    return '<a class="btn ghost v8-video" href="' + a(u) + '" target="_blank" rel="noopener noreferrer">제출 영상 보기</a> <span class="v6-meta v6-wrap">' + h(u) + '</span>';
   }
   function field(id, label, value, opts) {
     opts = opts || {};
@@ -252,14 +259,14 @@
     if (s === 'sample_shipped' || s === 'revision_requested' || s === 'content_submitted') {
       var rev = s === 'revision_requested', done = s === 'content_submitted';
       return '<section class="v6-sec"><h2>' + (rev ? '수정본 제출' : done ? '제출한 영상' : '영상 제출') + '</h2>' +
-        (rev ? '<div class="alert warn">브랜드 수정 요청: ' + h(o.revisionNote || '담당자 DM에서 확인해 주세요.') + (o.contentUrl ? ' · 이전 제출 ' + h(o.contentUrl) : '') + '</div>' : '') +
+        (rev ? '<div class="alert warn">브랜드 수정 요청: ' + h(o.revisionNote || '담당자 DM에서 확인해 주세요.') + (o.contentUrl ? '<br>이전 제출: ' + videoLink(o.contentUrl) : '') + '</div>' : '') +
         (s === 'sample_shipped' ? '<p>송장: ' + h(o.sampleTracking || '브랜드 등록 대기') + '</p>' : '') +
-        (done ? '<p>제출함: <span class="v6-wrap">' + h(o.contentUrl || '') + '</span> · 브랜드 확인 대기</p>' : '') +
+        (done ? '<p>제출함: ' + videoLink(o.contentUrl || '') + ' · 브랜드 확인 대기</p>' : '') +
         '<div class="v6-form">' + field('vdUrl', done ? '제출 링크 수정' : '영상 링크', fv('vdUrl', done ? o.contentUrl || '' : ''), { req: true, wide: true, type: 'url', ph: plat === 'instagram' ? 'https://www.instagram.com/reel/…' : 'https://www.tiktok.com/@…', hint: '요청: ' + h(contentText(c)) }) +
         field('vdMemo', '담당자에게 남길 메모', fv('vdMemo'), { opt: true, wide: true, area: true, max: 1000 }) + '</div>' +
         '<div class="v6-actions">' + btn(V.busy.content ? '제출 중…' : rev ? '수정본 제출' : done ? '링크 수정 저장' : '영상 제출', "V8content('" + id + "')", 'pri', V.busy.content ? ' disabled' : '') + '</div></section><section class="v6-sec"><h2>광고 사용 코드</h2><div class="v6-form">' + spark + '</div></section>';
     }
-    if (s === 'completed') return '<section class="v6-sec"><h2>협업 완료</h2><p>' + (o.agreedTerms && o.agreedTerms.rewardType === 'paid' ? '합의한 고정비 ' + h(money(o.agreedTerms.rewardAmount, o.agreedTerms.rewardCurrency) || '—') : o.agreedTerms && o.agreedTerms.rewardType === 'gifted' ? '제품 제공 조건' : '확정 수수료 ' + h(o.agreedCommissionPct != null ? o.agreedCommissionPct + '%' : '—')) + ' 기준이에요.' + (o.contentUrl ? '<br>제출 영상: <span class="v6-wrap">' + h(o.contentUrl) + '</span>' : '') + (o.affiliateLink ? '<br>어필리에이트 링크(브랜드 발급): <span class="v6-wrap">' + h(o.affiliateLink) + '</span>' : '') + '</p><p class="v6-meta">정산 금액·지급일은 아직 연동되지 않아 표시하지 않아요.</p></section>';
+    if (s === 'completed') return '<section class="v6-sec"><h2>협업 완료</h2><p>' + (o.agreedTerms && o.agreedTerms.rewardType === 'paid' ? '합의한 고정비 ' + h(money(o.agreedTerms.rewardAmount, o.agreedTerms.rewardCurrency) || '—') : o.agreedTerms && o.agreedTerms.rewardType === 'gifted' ? '제품 제공 조건' : '확정 수수료 ' + h(o.agreedCommissionPct != null ? o.agreedCommissionPct + '%' : '—')) + ' 기준이에요.' + (o.contentUrl ? '<br>제출 영상: ' + videoLink(o.contentUrl) : '') + (o.affiliateLink ? '<br>어필리에이트 링크(브랜드 발급): <span class="v6-wrap">' + h(o.affiliateLink) + '</span>' : '') + '</p><p class="v6-meta">정산 금액·지급일은 아직 연동되지 않아 표시하지 않아요.</p></section>';
     return '';
   }
   window.V8set = function (k, v) { V.f[k] = v; render(); };

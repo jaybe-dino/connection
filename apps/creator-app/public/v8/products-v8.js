@@ -43,6 +43,7 @@
     var f = S.f, list = S.list || [];
     var brands = (S.facets.brands || []).map(function (b) { return [b.brandId, b.name]; }), cats = S.facets.categories || [];
     var res = filtered();
+    var nActive = ['brand', 'cat', 'ctry', 'rtype'].filter(function (k) { return f[k]; }).length + (f.view && f.view !== 'all' ? 1 : 0) + (f.can ? 1 : 0);
     var body = S.err ? '<div class="v6-empty" role="alert"><b>제품 목록을 불러오지 못했어요.</b><p>연결 상태를 확인한 뒤 다시 시도해 주세요.</p><button type="button" class="btn" data-act="reload">다시 불러오기</button></div>' :
       !S.list ? '<div class="v6-empty" role="status">불러오는 중…</div>' :
       '<p class="v6-count" id="v6pf-count" aria-live="polite">결과 ' + S.total + '개' + (res.length < S.total ? ' · ' + res.length + '개 표시' : '') + '</p>' + (res.length ? '<ul class="v6-pgrid">' + res.map(card).join('') + '</ul>' + (S.next != null ? '<div class="v6-actions"><button type="button" class="btn" data-act="more"' + (S.more ? ' disabled' : '') + '>' + (S.more ? '불러오는 중…' : '더 보기') + '</button></div>' : '') : '<div class="v6-empty">' + (S.filtered ? '조건에 맞는 제품이 없어요. <button type="button" class="btn" data-act="reset">필터 초기화</button>' : '아직 공개된 제품이 없어요.') + '</div>');
@@ -52,12 +53,14 @@
       '<div class="catalog-main" role="region" aria-label="제품 모아보기"><div class="v6 v6-market"><div class="v6-head"><div class="v6-head-t"><h1>제품 모아보기 </h1><p class="v6-sub">브랜드가 공개한 제품을 한 목록으로 봐요. 모집 중이면 조건을 보고 신청하고, 모집이 없으면 브랜드 커뮤니티에 참여할 수 있어요.</p></div></div>' +
       '<p class="v6-note v6-meta">브랜드가 공개 표시한 제품만 보여요 (비공개·초안·정지 브랜드 제외). ‘저장’은 이 기기에만 남아요.</p>' +
       '<div class="v6-filters" role="search"><div class="v6-field v6-q"><label for="v6pf-q">검색 (제품명·브랜드)</label><input id="v6pf-q" type="text" data-f="q" value="' + h(f.q) + '"></div>' +
-      '<div class="v6-field"><label for="v6pf-brand">브랜드</label><select id="v6pf-brand" data-f="brand">' + opt('', '전체 브랜드', f.brand) + brands.map(function (b) { return opt(b[0], b[1], f.brand); }).join('') + '</select></div>' +
+      // 모바일: 검색만 기본 노출, 나머지는 '필터 N개'로 접는다(닫혀 있어도 적용 수·초기화가 보임). 데스크톱은 그대로 한 줄.
+      '<div class="v8-pf-bar"><button type="button" class="btn v8-pf-toggle" data-act="ftoggle" aria-expanded="' + !!S.fopen + '" aria-controls="v8-pf-more">필터' + (nActive ? ' ' + nActive + '개 적용' : '') + ' ' + (S.fopen ? '▴' : '▾') + '</button>' + (nActive ? '<button type="button" class="btn ghost v8-pf-reset" data-act="reset">초기화</button>' : '') + '</div>' +
+      '<div class="v8-pf-more' + (S.fopen ? ' is-open' : '') + '" id="v8-pf-more"><div class="v6-field"><label for="v6pf-brand">브랜드</label><select id="v6pf-brand" data-f="brand">' + opt('', '전체 브랜드', f.brand) + brands.map(function (b) { return opt(b[0], b[1], f.brand); }).join('') + '</select></div>' +
       '<div class="v6-field"><label for="v6pf-cat">분야</label><select id="v6pf-cat" data-f="cat">' + opt('', '전체', f.cat) + cats.map(function (c) { return opt(c, c, f.cat); }).join('') + '</select></div>' +
       '<div class="v6-field"><label for="v6pf-ctry">신청 국가</label><select id="v6pf-ctry" data-f="ctry">' + opt('', '전체', f.ctry) + Object.keys(CTRY).map(function (k) { return opt(k, CTRY[k], f.ctry); }).join('') + '</select></div>' +
       '<div class="v6-field"><label for="v6pf-rtype">보상 방식</label><select id="v6pf-rtype" data-f="rtype">' + opt('', '전체', f.rtype) + opt('affiliate', '판매 보상', f.rtype) + opt('ugc', '고정비 (유료 UGC)', f.rtype) + opt('sample', '샘플 (제품 제공)', f.rtype) + '</select></div>' +
       '<div class="v6-field"><label for="v6pf-view">보기</label><select id="v6pf-view" data-f="view">' + opt('all', '전체 제품', f.view) + opt('saved', '저장한 제품', f.view) + (JWT ? opt('applied', '신청한 제품', f.view) : '') + '</select></div>' +
-      '<label class="v6-inline"><input type="checkbox" id="v6pf-can" data-f="can"' + (f.can ? ' checked' : '') + '> 신청 가능만</label><button type="button" class="btn " data-act="reset">초기화</button></div>' + body + '</div></div></div>';
+      '<label class="v6-inline"><input type="checkbox" id="v6pf-can" data-f="can"' + (f.can ? ' checked' : '') + '> 신청 가능만</label><button type="button" class="btn " data-act="reset">초기화</button></div></div>' + body + '</div></div></div>';
     if (focused) { var el = document.getElementById(focused); if (el) { el.focus(); try { if (caret != null) el.setSelectionRange(caret, caret); } catch (e) {} } }
   }
   // 공개 이미지가 열리지 않으면 중립 모노그램으로 바꾼다(가짜 제품 사진 없음)
@@ -76,6 +79,7 @@
   document.addEventListener('change', function (e) { var k = e.target.dataset && e.target.dataset.f; if (k && k !== 'q') { S.f[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; fetchPage(true); } });
   document.addEventListener('click', function (e) {
     var t = e.target.closest('button'); if (!t) { if (e.target.id === 'pd-scrim') closeSheet(); return; }
+    if (t.dataset.act === 'ftoggle') { S.fopen = !S.fopen; render(); var tg = document.querySelector('[data-act="ftoggle"]'); if (tg) tg.focus(); return; }
     if (t.dataset.act === 'reset') { S.f = { q: '', brand: '', cat: '', ctry: '', rtype: '', view: 'all', can: false }; fetchPage(true); }
     if (t.dataset.act === 'reload') load();
     if (t.dataset.act === 'more') fetchPage(false);

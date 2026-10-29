@@ -1438,7 +1438,7 @@
             h+='<p style="font-size:12px;margin:6px 0;color:#a2372b">반려된 지원입니다.</p>';
           }else if(!a.termsState){
             h+='<div style="display:flex;gap:6px;margin-top:6px"><input id="sel_'+a.creatorId+'" placeholder="제안 수수료 % (소수 가능)" style="flex:1;padding:8px"><span class="cbt" onclick="collabSelect(\''+c.campaignId+'\',\''+a.creatorId+'\')">선정 + 수수료 제안</span></div>'
-              +'<div style="display:flex;gap:6px;margin:4px 0"><input id="rej_'+a.creatorId+'" placeholder="반려 사유 (선택)" style="flex:1;padding:8px"><span class="cbt no" onclick="collabReject(\''+c.campaignId+'\',\''+a.creatorId+'\')">반려</span></div>';
+              +'<div style="display:flex;gap:6px;margin:4px 0"><input id="rej_'+a.creatorId+'" placeholder="반려 사유 (선택 · 크리에이터 화면에 보여요)" style="flex:1;padding:8px"><span class="cbt no" onclick="collabReject(\''+c.campaignId+'\',\''+a.creatorId+'\')">반려</span></div>';
           }else if(a.termsState==='selected'){
             h+='<p style="font-size:12px;margin:6px 0">제안 수수료 '+(a.commissionPct!=null?a.commissionPct+'%':'-')+' — 크리에이터 합의 대기 중.</p>';
           }else if(a.termsState==='terms_agreed'||a.termsState==='sample_shipped'){

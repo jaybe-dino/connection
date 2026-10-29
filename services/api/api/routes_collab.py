@@ -498,7 +498,8 @@ def complete_terms(brand: str, campaign_id: str, creator_id: str,
 
 @router.get("/me/campaigns")
 def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
-    """내 멤버십 브랜드의 모집 중 캠페인 + 내 지원/선정 상태."""
+    """내 멤버십 브랜드의 모집 중 캠페인 + 내가 신청한 캠페인(마감·미선정 포함, 이력 보존) + 내 지원/선정 상태.
+    open=false 인 항목은 신청 이력용이며 신청할 수 없다."""
     with connect() as conn:
         cid = _creator(conn, authorization)
         rows = conn.execute(
@@ -508,6 +509,7 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
             " c.reward_amount, c.capacity, c.conditions,"
             " c.reward_currency, c.platform, c.product_id,"
             " a.status AS my_status, t.state AS terms_state,"
+            " a.applied_at, a.rejected_at, a.reject_reason, c.lifecycle,"
             # 캠페인 제품 이미지 — 반드시 같은 브랜드의 제품만 연결(타 브랜드
             # 이미지 금지). 초대 소개 이미지(최신 운영 입력)를 사용한다.
             " pip.image_url AS product_image"
@@ -521,7 +523,8 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
             "   ON a.campaign_id=c.campaign_id AND a.creator_id=%s"
             " LEFT JOIN campaign_terms t"
             "   ON t.campaign_id=c.campaign_id AND t.creator_id=%s"
-            " WHERE c.status='open' AND c.lifecycle='published'"
+            " WHERE (c.status='open' AND c.lifecycle='published')"
+            "    OR a.creator_id IS NOT NULL"
             " ORDER BY c.campaign_id",
             (cid, cid, cid)).fetchall()
         prof = conn.execute(
@@ -555,6 +558,10 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
              "conditions": [str(x) for x in (r["conditions"] or [])
                             if isinstance(x, (str, int, float))],
              "myStatus": r["my_status"] or "none",
+             "open": r["status"] == "open" and r["lifecycle"] == "published",
+             "appliedAt": r["applied_at"].isoformat() if r["applied_at"] else None,
+             "rejectedAt": r["rejected_at"].isoformat() if r["rejected_at"] else None,
+             "rejectReason": (r["reject_reason"] or "") if r["my_status"] == "rejected" else "",
              "termsState": r["terms_state"],
              "countries": list(countries), "eligible": eligible,
              "ineligibleReason": (None if eligible else

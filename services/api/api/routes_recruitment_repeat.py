@@ -13,7 +13,7 @@ router=APIRouter(prefix='/admin/recruitment/repeat-plans',dependencies=[Depends(
 
 class Definition(BaseModel):
     mapping_ids:list[UUID]=Field(min_length=1,max_length=30)
-    sender_ids:list[UUID]=Field(default_factory=list,max_length=50)
+    sender_ids:list[UUID]=Field(default_factory=list,max_length=200)
     count_per_brand:int=Field(default=100,ge=1,le=1000)
     countries:str=Field(default='',max_length=100)
     categories:str=Field(default='',max_length=300)
@@ -90,7 +90,7 @@ class MultiGroup(BaseModel):
 
 class MultiPreview(BaseModel):
     groups:list[MultiGroup]=Field(min_length=1,max_length=30)
-    sender_ids:list[UUID]=Field(min_length=1,max_length=50)
+    sender_ids:list[UUID]=Field(min_length=1,max_length=200)
 
 
 class MultiSave(MultiPreview):

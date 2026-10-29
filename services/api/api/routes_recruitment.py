@@ -80,7 +80,7 @@ class DraftRows(RowsIn):
 
 
 class DistributedRows(RowsIn):
-    sender_ids: list[UUID] = Field(min_length=1,max_length=50)
+    sender_ids: list[UUID] = Field(min_length=1,max_length=200)   # 공용 발신 계정 최대 200개 운영
 
 
 class DistributedDrafts(DistributedRows):

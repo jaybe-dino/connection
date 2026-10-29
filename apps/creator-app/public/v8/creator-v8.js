@@ -26,7 +26,27 @@
   function icon(k) { return '<svg class="v5-ic " width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="' + (P[k] || P.dot) + '"/></svg>'; }
 
   /* ---------- 상태 ---------- */
-  var V = window.__V8 = { screen: 'c-tasks', id: '', nav: false, rail: false, more: false, welcome: false, info: false, tab: 'msg', last: '', f: {}, err: {}, dmCamp: '', busy: {} };
+  /* v8 화면 상태는 (사용자 ID, 세션 세대)에 묶는다 — 로그아웃·같은 SPA 계정 교체 때 폼(주소·핸들·메모·체크)·선택·오류·busy 를 즉시 비우고,
+     이전 세션 요청의 늦은 응답/finally 는 세대(gen)가 달라 새 세션 상태를 건드리지 못한다. 계정별 채팅 초안(captureDraft)은 기존 정책 그대로. */
+  function v8Fresh() { return { screen: 'c-tasks', id: '', nav: false, rail: false, more: false, welcome: false, info: false, tab: 'msg', last: '', f: {}, err: {}, dmCamp: '', busy: {} }; }
+  var V = window.__V8 = v8Fresh();
+  V.gen = 0; V.sk = '';
+  function sessKey() { return ((window.__ME && (window.__ME.userId || window.__ME.creatorId)) || '') + '|' + (window.__sessionGen ? window.__sessionGen() : 0); }
+  function resetV8Session() {
+    var gen = (V.gen || 0) + 1, prevUser = String(V.sk || '').split('|')[0];
+    // 이전에 로그인한 사람이 없던 경우(첫 진입·로그아웃 뒤 로그인): 세대만 올리고 첫 화면 딥링크(#/c-work/…)는 유지
+    if (!prevUser) { V.gen = gen; V.sk = sessKey(); return; }
+    Object.keys(V).forEach(function (k) { delete V[k]; });
+    var f = v8Fresh(); Object.keys(f).forEach(function (k) { V[k] = f[k]; });
+    V.gen = gen; V.sk = sessKey();
+    CHC = {}; CHT = {}; XPC = { token: null, total: {}, events: {}, busy: {}, err: {} };
+    if (window.LIVE) { LIVE.notices = {}; LIVE.cposts = {}; LIVE.sparkBusy = false; }
+    // 이전 사람의 상세 주소(#/c-work/…)가 다음 사람 화면으로 이어지지 않게
+    try { if (/^#\/c-/.test(location.hash || '')) history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    var root = document.getElementById('root'); if (root) delete root.dataset.v8screen;
+  }
+  function ensureSess() { if (V.sk !== sessKey()) resetV8Session(); }
+  function mine(gen) { return V.gen === gen; }
   var SCREENS = ['c-tasks', 'c-campaigns', 'c-rewards', 'c-profile', 'c-announcements', 'c-community', 'c-ranking', 'c-missions', 'c-recruit', 'c-work', 'c-messages', 'c-helpdesk'];
   var CH_LABEL = { chat: '자유대화', products: '제품후기', qna: '질문', tips: '콘텐츠팁', notice: '공지사항' };
   var CH_DESC = { chat: '멤버 누구나 이야기해요', products: '사용 후기를 나눠요', qna: '협업·배송 질문', tips: '촬영·편집 팁을 나눠요', notice: '브랜드의 새 소식' };
@@ -310,8 +330,9 @@
   /* 서버 응답이 성공일 때만 입력을 지운다. 4xx/5xx 면 입력·체크·주소가 그대로 남는다. */
   function call(key, method, path, body) {
     if (V.busy[key]) return Promise.reject(new Error('busy'));
-    V.busy[key] = true; render();
-    return liveReq(method, path, body).finally(function () { V.busy[key] = false; });
+    var gen = V.gen; V.busy[key] = true; render();
+    return liveReq(method, path, body).then(function (r) { if (!mine(gen)) { var e = new Error('stale'); e.stale = true; throw e; } return r; })
+      .finally(function () { if (mine(gen)) V.busy[key] = false; });
   }
   function fail(e, msg) { if (e && e.message === 'busy') return; if (typeof isStale === 'function' && isStale(e)) return; toast((e && e.message) || msg); render(); }
   /* 체크한 순간 화면에 그려진 조건의 확인값을 보관 — 합의는 이 값으로만 보낸다 */
@@ -405,9 +426,9 @@
     var b = currentBrand(); if (!b || !b.cellId) return;
     LIVE.notices = LIVE.notices || {};
     if (LIVE.notices[b.cellId] || V.busy['n:' + b.cellId]) return;
-    V.busy['n:' + b.cellId] = true;
-    liveReq('GET', '/community/cells/' + encodeURIComponent(b.cellId) + '/messages?channel=notice&limit=50').then(function (m) { LIVE.notices[b.cellId] = m || []; })
-      .catch(function () { LIVE.notices[b.cellId] = 'error'; }).finally(function () { V.busy['n:' + b.cellId] = false; render(); });
+    var gen = V.gen; V.busy['n:' + b.cellId] = true;
+    liveReq('GET', '/community/cells/' + encodeURIComponent(b.cellId) + '/messages?channel=notice&limit=50').then(function (m) { if (mine(gen)) LIVE.notices[b.cellId] = m || []; })
+      .catch(function (e) { if (mine(gen) && !(typeof isStale === 'function' && isStale(e))) LIVE.notices[b.cellId] = 'error'; }).finally(function () { if (mine(gen)) { V.busy['n:' + b.cellId] = false; render(); } });
   }
   function msgText(m) { var l = window.__USER_LANG || 'ko', t = m.translations && m.translations[l]; return (typeof t === 'string' && t.trim() && !/^\[[a-z]{2}·번역대기\]/.test(t)) ? t : m.original; }
   function scAnnouncements() {
@@ -424,11 +445,11 @@
     LIVE.cposts = LIVE.cposts || {};
     if ((!force && LIVE.cposts[b.cellId]) || V.busy['cp:' + b.cellId]) return;
     var cell = b.cellId, token = window.jwtGet ? jwtGet() : '';
-    V.busy['cp:' + cell] = true;
+    var gen = V.gen; V.busy['cp:' + cell] = true;
     liveReq('GET', '/community/cells/' + encodeURIComponent(cell) + '/messages?campaign_posts=true&limit=100')
-      .then(function (m) { if (!window.jwtGet || token === jwtGet()) LIVE.cposts[cell] = m || []; })
-      .catch(function (e) { if (typeof isStale === 'function' && isStale(e)) return; LIVE.cposts[cell] = 'error'; })
-      .finally(function () { V.busy['cp:' + cell] = false; render(); });
+      .then(function (m) { if (mine(gen) && (!window.jwtGet || token === jwtGet())) LIVE.cposts[cell] = m || []; })
+      .catch(function (e) { if (!mine(gen) || (typeof isStale === 'function' && isStale(e))) return; LIVE.cposts[cell] = 'error'; })
+      .finally(function () { if (mine(gen)) { V.busy['cp:' + cell] = false; render(); } });
   }
   window.V8reloadPosts = function () { loadCampaignPosts(true); render(); };
   function scRecruit() {
@@ -602,7 +623,7 @@
     var b = currentBrand();
     if (!b) return '<div class="v6"><div class="v6-empty">참여한 브랜드가 없어요.</div></div>';
     var dm = dmCellFor(b.brandId), open = dm && LIVE.open && LIVE.open.cellId === dm.cellId ? LIVE.open : null;
-    if (!dm && !V.busy['dm:' + b.brandId]) { V.busy['dm:' + b.brandId] = true; liveReq('POST', '/community/dm/' + encodeURIComponent(b.brandId), {}).then(function (r) { if (!(LIVE.cells || []).some(function (c) { return c.cellId === r.cellId; })) LIVE.cells = (LIVE.cells || []).concat([{ cellId: r.cellId, name: '담당자 DM', brandId: b.brandId, brandName: b.name, kind: 'dm' }]); render(); }).catch(function () { V.busy['dm:' + b.brandId] = 'error'; render(); }); }
+    if (!dm && !V.busy['dm:' + b.brandId]) { var dg = V.gen; V.busy['dm:' + b.brandId] = true; liveReq('POST', '/community/dm/' + encodeURIComponent(b.brandId), {}).then(function (r) { if (!mine(dg)) return; if (!(LIVE.cells || []).some(function (c) { return c.cellId === r.cellId; })) LIVE.cells = (LIVE.cells || []).concat([{ cellId: r.cellId, name: '담당자 DM', brandId: b.brandId, brandName: b.name, kind: 'dm' }]); render(); }).catch(function (e) { if (!mine(dg) || (typeof isStale === 'function' && isStale(e))) return; V.busy['dm:' + b.brandId] = 'error'; render(); }); }
     else if (dm && !open && !(LIVE.open && LIVE.open.cellId === dm.cellId)) setTimeout(function () { if (V.screen === 'c-messages') openCell(dm.cellId, '담당자 DM'); }, 0);
     var camps = campaignsLive();
     var key = open ? chatKey() : '';
@@ -682,6 +703,10 @@
   };
   var LEGACY = { community: 'c-community', campaigns: 'c-campaigns', detail: 'c-campaigns', application: 'c-campaigns', applied: 'c-work', applicationstatus: 'c-work', work: 'c-work', collaboration: 'c-work', submission: 'c-work', messages: 'c-messages', space: 'c-rewards', settings: 'c-profile', ranking: 'c-ranking', achievements: 'c-missions', routes: 'c-helpdesk' };
   var PUBLIC = ['invite', 'login', 'checkemail', 'onboarding', 'join', 'welcome', 'state'];
+  ['resetLiveSession', 'sessionBind'].forEach(function (fn) {
+    var base = window[fn]; if (typeof base !== 'function') return;
+    window[fn] = function () { var r = base.apply(this, arguments); resetV8Session(); return r; };
+  });
   var baseNavigate = navigate;
   navigate = function (page, id) {
     if (LEGACY[page] && window.__ME) { if (page === 'community') return V8openChannel(V.screen === 'c-community' ? (V.id || 'chat') : (LIVE.open && !LIVE.open.dm ? LIVE.open.channel : 'chat')); return V8go(LEGACY[page], id || ''); }
@@ -719,6 +744,7 @@
   }
   var baseRender = render;
   render = function () {
+    ensureSess();
     if (!workspace()) { setMode(false); return baseRender.apply(this, arguments); }
     if (ui.page !== 'v8') { if (!fromHash()) { V.screen = LEGACY[ui.page] || 'c-tasks'; V.id = ui.page === 'community' ? 'chat' : (ui.campaign || ''); ui.page = 'v8'; pushHash(true); } }
     setMode(true);

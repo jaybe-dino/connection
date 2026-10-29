@@ -35,8 +35,13 @@
     if (/\/brands\/(null|undefined)?\//.test(path)) return Promise.reject(new Error('브랜드를 먼저 선택하세요'));
     var opt = { method: method, headers: headers(raw ? { 'Content-Type': raw.type } : { 'Content-Type': 'application/json' }) };
     if (raw) opt.body = raw.body; else if (body !== undefined && body !== null) opt.body = JSON.stringify(body);
+    var tok = jwt();   // 요청 시점 JWT — 응답 때 바뀌어 있으면 이전 세션 응답이라 버린다
+    var stale = function () { var e = new Error('이전 세션의 응답이라 적용하지 않았어요'); e.stale = true; return e; };
     return fetch(API + path, opt).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (d) {
+        if (tok !== jwt()) throw stale();
+        // 현재 세션의 요청이 401 이면 인증 상실 — 기존 인증 core(authLogout)로 로그아웃. 이전 계정의 늦은 401 은 위에서 버려진다
+        if (r.status === 401 && tok) { sessionLost('로그인이 만료됐어요. 다시 로그인해 주세요.'); throw stale(); }
         if (!r.ok) { var e = new Error(typeof d.detail === 'string' ? d.detail : (d.detail && d.detail.message) || '요청을 처리하지 못했어요 (' + r.status + ')'); e.status = r.status; e.detail = d.detail; throw e; }
         return d;
       });
@@ -58,6 +63,7 @@
   var D = null;           // 브랜드·세션별 데이터 — 키가 바뀌면 통째로 버린다
   var U = null;           // 화면·입력 상태 — 같은 규칙
   function fresh() {
+    try { if (U && U.pendImg && U.pendImg.url) URL.revokeObjectURL(U.pendImg.url); } catch (e) {}   // 세션·브랜드가 바뀌면 선택 사진 메모리도 버린다
     D = { key: (bid() || '') + '|' + jwt(), bid: bid(), err: {}, busy: {}, apps: {}, dm: {}, unread: {}, threads: {}, cand: {}, seq: {}, ver: 0 };
     U = { screen: U && U.screen || 'b-today', id: U && U.screen ? U.id : '', nav: false, rail: false, pop: false, f: {}, err: {}, busy: {}, tab: {}, wiz: 1, mail: 1, sel: [], lists: [], init: {}, flash: '' };
   }
@@ -120,30 +126,57 @@
   function appsReady() { return camps().filter(function (c) { return c.lifecycle !== 'draft'; }).every(function (c) { return D.apps[c.campaignId] !== undefined; }); }
 
   /* ---------- 실시간 갱신 (engine-live 폴러와 같은 규칙: 숨김 중단·복귀 즉시·단일 비행·오류 backoff·stale 무시) ---------- */
-  var poll = { t: null, busy: false, fail: 0, wired: false };
-  function pollSchedule() { if (poll.t) clearTimeout(poll.t); poll.t = setTimeout(pollTick, Math.min(8000 * Math.pow(2, poll.fail), 60000)); }
+  /* 단일 폴러 — 활성 세션(브랜드|JWT 키)마다 하나. 로그아웃·브랜드 교체 때 기존 타이머를 끄고, 이전 키의 늦은 완료는 새 폴러를 건드리지 않는다. */
+  var poll = { t: null, busy: false, fail: 0, wired: false, key: null };
+  function pollStop() { if (poll.t) clearTimeout(poll.t); poll.t = null; poll.key = null; poll.busy = false; poll.fail = 0; }
+  function pollEnsure() {
+    if (!active() || !D) return pollStop();
+    if (poll.key === D.key && (poll.t || poll.busy)) return;
+    pollStop(); poll.key = D.key;
+    if (!poll.wired) { poll.wired = true; document.addEventListener('visibilitychange', function () { if (document.hidden) { if (poll.t) clearTimeout(poll.t); poll.t = null; } else if (poll.key && !poll.busy) { poll.fail = 0; pollTick(); } }); }
+    pollSchedule();
+  }
+  function pollSchedule() { if (poll.t) clearTimeout(poll.t); poll.t = null; if (!poll.key) return; poll.t = setTimeout(pollTick, Math.min(8000 * Math.pow(2, poll.fail), 60000)); }
   function pollTick() {
+    poll.t = null;
+    if (!poll.key || !active() || !D || D.key !== poll.key) { pollStop(); return pollEnsure(); }
     if (poll.busy) return pollSchedule();
-    if (document.hidden || !active()) return;
-    ensure(); poll.busy = true;
-    var key = D.key, changed = false;
+    if (document.hidden) return;
+    var pk = poll.key, key = D.key, changed = false; poll.busy = true;
     var work = req('GET', '/me/unread').then(function (u) {
       if (D.key !== key) return; var next = {}; (u || []).forEach(function (x) { next[x.cellId] = x; });
       if (JSON.stringify(next) !== JSON.stringify(D.unread)) { D.unread = next; changed = true; }
     }).then(function () {
-      var cell = U.dmSel; if (!cell || U.screen !== 'b-community') return;
+      var cell = U.dmSel; if (!cell || U.screen !== 'b-community' || D.key !== key) return;
       return req('GET', '/community/cells/' + encodeURIComponent(cell) + '/messages?limit=200').then(function (rows) {
         if (D.key !== key || U.dmSel !== cell) return;
         if (JSON.stringify(rows) !== JSON.stringify(D.dm[cell])) { D.dm[cell] = rows; changed = true; markRead(cell, rows); }
       });
     });
-    return work.then(function () { poll.fail = 0; }, function () { poll.fail = Math.min(poll.fail + 1, 4); })
-      .then(function () { poll.busy = false; if (changed) paint(); pollSchedule(); });
+    return work.then(function () { if (poll.key === pk) poll.fail = 0; }, function () { if (poll.key === pk) poll.fail = Math.min(poll.fail + 1, 4); })
+      .then(function () { if (poll.key !== pk) return; poll.busy = false; if (changed) paint(); pollSchedule(); });
   }
-  function pollStart() {
-    if (!poll.wired) { poll.wired = true; document.addEventListener('visibilitychange', function () { if (document.hidden) { if (poll.t) clearTimeout(poll.t); } else { poll.fail = 0; pollTick(); } }); }
-    pollSchedule();
+  /* 세션 정리 — 로그아웃·인증 상실·다른 탭 로그아웃 공통: 폴러 종료, 사진 File/objectURL·D/U 폐기 */
+  function sessionClear() {
+    pollStop();
+    try { if (U && U.pendImg && U.pendImg.url) URL.revokeObjectURL(U.pendImg.url); } catch (e) {}
+    D = null; U = null; fresh(); U.screen = 'b-today'; U.id = '';
   }
+  function sessionLost(msg) {
+    if (!window.__ME && !jwt()) return;
+    sessionClear();
+    if (typeof window.authLogout === 'function') window.authLogout(); else { try { localStorage.removeItem('CONNECTION_JWT'); } catch (e) {} window.__ME = null; }
+    if (msg) toast(msg);
+  }
+  // 다른 탭에서 로그아웃(JWT 삭제) → 이 탭도 인증 화면으로, 다른 계정 로그인(JWT 교체) → 깨끗하게 다시 불러오기
+  try {
+    window.addEventListener('storage', function (e) {
+      if (e.key !== 'CONNECTION_JWT' && e.key !== null) return;
+      var now = jwt();
+      if (!now) { if (window.__ME) sessionLost('다른 창에서 로그아웃되어 이 창도 로그아웃했어요.'); }
+      else if (e.key === 'CONNECTION_JWT' && e.newValue !== e.oldValue) location.reload();
+    });
+  } catch (e) {}
   function markRead(cell, rows) {
     var max = 0; (rows || []).forEach(function (m) { if (m.msgId > max) max = m.msgId; });
     if (max) req('POST', '/community/cells/' + encodeURIComponent(cell) + '/read', { last_msg_id: max }).then(function () { if (D.unread[cell]) { delete D.unread[cell]; paint(); } }).catch(function () {});
@@ -215,7 +248,7 @@
     if (U.busy[k]) return Promise.resolve();
     U.busy[k] = true; paint();
     var key = D.key;
-    return Promise.resolve(p).then(function (r) { if (D.key !== key) return; return ok && ok(r); }, function (e) { if (D.key !== key) return; toast((e && e.message) || failMsg || '처리하지 못했어요. 입력은 그대로 남아 있어요.'); })
+    return Promise.resolve(p).then(function (r) { if (D.key !== key) return; return ok && ok(r); }, function (e) { if (D.key !== key || (e && e.stale)) return; toast((e && e.message) || failMsg || '처리하지 못했어요. 입력은 그대로 남아 있어요.'); })
       .then(function () { if (D.key === key) { U.busy[k] = false; paint(); } });
   }
 
@@ -909,7 +942,7 @@
   };
   C8.unpick = function () { if (typeof window.adminSwitchBrand === 'function') window.adminSwitchBrand(); };
   C8.account = function () { U.acct = !U.acct; paint(); };
-  C8.logout = function () { if (typeof window.authLogout === 'function') window.authLogout(); };
+  C8.logout = function () { sessionClear(); if (typeof window.authLogout === 'function') window.authLogout(); };
   C8.addBrand = function () { toast(me().kind === 'admin' ? '다른 브랜드는 브랜드 메뉴(▾)의 ‘다른 브랜드 고르기’에서 선택해요.' : '새 브랜드는 가입 신청 후 운영팀 승인으로 추가돼요 (theprlist.net/signup).'); };
   function mobile() { return window.matchMedia && window.matchMedia('(max-width:719px)').matches; }
   function focusDetail(id) { var el = document.getElementById(id); if (!el) return; el.focus({ preventScroll: true }); if (mobile()) { var t = el.closest('.v6-panel, .v6-iconvo') || el; t.scrollIntoView({ block: 'start' }); } }
@@ -1276,8 +1309,8 @@
   var painting = false;
   function paint() {
     if (painting) return;
-    if (!active()) return legacyRender();
-    ensure(); setMode(true); load('identity'); if (me().kind !== 'admin') load('team');
+    if (!active()) { pollStop(); return legacyRender(); }
+    ensure(); pollEnsure(); setMode(true); load('identity'); if (me().kind !== 'admin') load('team');
     var stage = document.getElementById('stage'); if (!stage) return;
     var act_ = document.activeElement, fidx = act_ && act_.id, caret = null;
     try { if (fidx && /^(INPUT|TEXTAREA)$/.test(act_.tagName) && act_.type !== 'file') caret = [act_.selectionStart, act_.selectionEnd]; } catch (e) {}
@@ -1325,5 +1358,5 @@
   legacyRender = function () { setMode(false); return base.apply(window, arguments); };
   window.render = function () { if (active()) return paint(); return legacyRender.apply(window, arguments); };
   window.__C8 = { active: active, paint: paint };
-  fresh(); route(true); window.render(); pollStart();
+  fresh(); route(true); window.render();
 })();

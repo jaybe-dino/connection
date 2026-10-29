@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-29T20:12:06.131Z",
+  "results": [
+    "PASS 로그인 전 8초+ 대기 → UI 로그인 → 크리에이터 새 DM 자동 표시(탭 전환·이동·새로고침 없음)",
+    "PASS 다른 탭 로그아웃 → 이 탭 즉시 인증 화면(옛 __ME·입력 폼 없음) — {\"me\":null,\"active\":false,\"c8\":false,\"name\":false,\"blobAlive\":null,\"chip\":\"🔐 로그인\"}",
+    "PASS 다른 탭 로그아웃 → 선택 사진 objectURL 폐기",
+    "PASS 다른 탭 재로그인 → 이 탭 깨끗한 재로딩 후 로그인 상태",
+    "PASS 이전 세션(고려)의 늦은 401 → 새 로그인(FAU) 유지 — {\"jwt\":true,\"me\":\"fau\",\"active\":true}",
+    "PASS 현재 세션 401 → 기존 인증 core 로 로그아웃(JWT·__ME 제거) — {\"jwt\":null,\"me\":null,\"active\":false}",
+    "PASS 로그아웃 뒤 폴러 정지(이전 세션 요청 없음) — 0",
+    "PASS 페이지 오류 없음"
+  ]
+}

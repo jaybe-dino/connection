@@ -17,7 +17,8 @@
     var id = bid(), items = [];
     (n.items || []).forEach(function (i, idx) {
       var b = (i.target || {}).brandId;
-      if (!b || b === id) items.push(Object.assign({}, i, { _idx: idx }));
+      // 이미 범위화된 목록(렌더 중 LIVE.notifs)을 다시 좁혀도 원래 서버 목록의 인덱스를 유지한다
+      if (!b || b === id) items.push(Object.assign({}, i, { _idx: i._idx != null ? i._idx : idx }));
     });
     return { items: items, unreadCount: items.filter(function (i) { return !i.read; }).length };
   }

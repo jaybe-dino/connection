@@ -513,14 +513,16 @@ def my_unread(authorization: str = Header(default="")) -> list[dict]:
         if not ids:
             return []
         rows = conn.execute(
-            "SELECT m.cell_id, count(*) AS unread, max(m.msg_id) AS last_id"
+            "SELECT m.cell_id, count(*) AS unread, max(m.msg_id) AS last_id, min(m.at) AS first_at"
             " FROM cell_messages m LEFT JOIN cell_reads r ON"
             " r.cell_id=m.cell_id AND r.user_id=%s"
             " WHERE m.cell_id = ANY(%s) AND m.thread_parent IS NULL AND m.hidden_at IS NULL"
             "   AND m.msg_id > COALESCE(r.last_read_msg, 0)"
             " GROUP BY m.cell_id", (uid, ids)).fetchall()
     return [{"cellId": r["cell_id"], "unread": r["unread"],
-             "lastMsgId": r["last_id"]} for r in rows]
+             "lastMsgId": r["last_id"],
+             # 안 읽은 첫 메시지 시각 — 화면의 '답장 대기 n시간째'
+             "firstUnreadAt": r["first_at"].isoformat() if r["first_at"] else None} for r in rows]
 
 
 @router.get("/community/cells/{cell_id}/messages/{msg_id}/thread")

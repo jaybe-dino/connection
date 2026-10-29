@@ -49,7 +49,7 @@
 | 브랜드 신청 `a-onboard` | `/applications` | `/admin/applications*`, `/admin/prelaunch-applications` | 실연결 |
 | 신고 처리함 `a-reports` | `/reports` | `GET /admin/reports`, `POST …/{id}/action`(숨김·7일·무기한 제한), `POST …/{id}/restore`, `GET /admin/reports/handled` | 실연결(D05 실제 효과) |
 | 분쟁 심판 `a-reports-dis` | `/disputes` | `GET /admin/disputes`, `POST …/resolve` | 실연결(실패 표시 D07) |
-| 검수 현황 `a-review` | `/submissions` | `GET /submissions?status=in_review`, `POST /submissions/{id}/review` | 실연결(D03 협업 제출 버전) |
+| 검수 현황 `a-review` | `/submissions` | `GET /submissions`(대기 + 전체 이력), `POST /submissions/{id}/review` | 실연결(D03 협업 제출 버전, D10 이전 링크·수정 요청 메모 읽기 전용) |
 | 디노 공용 모집 `a-recruit` | `/recruitment` | `/admin/recruitment/*`(options·mappings·cohort·multi preview/drafts·batches·repeat-plans·test-mail·setup) | 실연결. 8탭·5단계, 발신 200개 상한 |
 | 브랜드 운영 › 브랜드 목록 `a-brands` | `/brands` | `/admin/brands*`, `POST /auth/console-handoff` → 콘솔 `POST /auth/console-handoff/redeem` | 실연결(대리운영 1회용 전환) |
 | 브랜드 운영 › 사람·권한 `a-people` | `/people` | `GET /admin/brands/{b}/accounts` | 실연결 |

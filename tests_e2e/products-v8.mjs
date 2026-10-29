@@ -13,6 +13,8 @@ const tag = Date.now().toString(36).slice(-5);
 const call = (m, p, b, tok) => fetch(API + p, { method: m, headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok }, body: b ? JSON.stringify(b) : undefined }).then((r) => r.json());
 const fresh = await call("POST", "/brands/goryeo1392/products", { name: "공개 확인 " + tag, commission_pct: 11 }, T.goryeo1392);
 await call("PUT", `/admin/recruitment/setup/brands/goryeo1392/products/${fresh.productId}/invitation`, { summary: "E2E 공개 확인용 제품 소개 " + tag, image_url: "https://cdn.example.com/e2e.png" }, T.admin);
+// 공개 필수 항목(카테고리·USP 3개·배송 국가)은 브랜드 제품 정보 저장 경로로 채운다 — 서버 공개 기준과 같다
+await call("POST", `/brands/goryeo1392/products/${fresh.productId}/profile`, { answers: { category: "스킨케어", usp: "진정\n보습\n저자극", ship: "US" } }, T.goryeo1392);
 await call("POST", `/brands/goryeo1392/products/${fresh.productId}/public`, { listed: true }, T.goryeo1392);
 await call("POST", `/brands/goryeo1392/products/${fresh.productId}/campaigns`, { name: "공개 확인 캠페인 " + tag, deadline: "2026-12-31", conditions: ["TikTok 영상 1개"] }, T.goryeo1392);
 const pub = (await (await fetch(API + "/public/products?limit=100")).json()).items;

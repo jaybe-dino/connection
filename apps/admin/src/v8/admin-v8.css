@@ -26,5 +26,10 @@ body.a8 #root { min-height: 100dvh; }
 .recruitment-workspace .v6-tabs button:hover:not(:disabled) { background: var(--c-hover, #f6f3f8); }
 .recruitment-workspace .v6-steps button { margin: 0; min-height: var(--ctl, 36px); border-radius: var(--r2, 8px); }
 .recruitment-workspace .v6-steps button.on { background: var(--c-accent, #4a2c5a); color: #fff; border-color: var(--c-accent, #4a2c5a); }
-.recruitment-workspace .v6-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+.recruitment-workspace .v6-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.recruitment-workspace .v6-head .v6-head-t { flex: 1 1 260px; min-width: 0; }
+.recruitment-workspace .v6-head > button { flex-shrink: 0; white-space: nowrap; }
 .recruitment-workspace .v8-senders .v6-tr button, .recruitment-workspace .v6-pager button { margin: 0; }
+.v2-admin .a8-history { margin-top: 8px; }
+.v2-admin .a8-history ol { margin: 6px 0 0; padding-left: 18px; }
+.v2-admin .a8-history li { margin-bottom: 6px; }

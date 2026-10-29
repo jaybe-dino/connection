@@ -106,3 +106,29 @@ def test_console_handoff_is_one_time_admin_only(client, monkeypatch, A):
     with connect() as c:
         raw = c.execute("SELECT token_hash FROM auth_tokens WHERE kind='console_handoff' ORDER BY created_at DESC LIMIT 1").fetchone()
         assert raw and tok not in raw["token_hash"]                                                         # 원문 미저장
+
+
+def test_brand_decision_after_admin_review_is_kept_on_latest_version(client, monkeypatch, A):
+    """관리자가 먼저 검수(통과)한 버전에도 브랜드 수정 요청이 기록되고, 재제출 뒤 이전 링크·메모·관리자 검수 기록이 이력에 남는다.
+    관리자 검수는 브랜드 상태(content_submitted)를 바꾸지 않는다."""
+    B, ch, cid, creator = _collab(client, monkeypatch, "d10order", "d10order.creator@ex.com")
+    client.post(f"/me/campaign-offers/{cid}/content", json={"content_url": "https://www.tiktok.com/@d10/video/1"}, headers=ch)
+    v1 = next(r for r in client.get("/submissions?status=in_review", headers=A).json() if r["campaignId"] == cid)
+    assert client.post(f"/submissions/{v1['submissionId']}/review", json={"result": "passed", "reviewer": "ops"}, headers=A).status_code == 200
+    assert next(o for o in client.get("/me/campaign-offers", headers=ch).json() if o["campaignId"] == cid)["state"] == "content_submitted"
+    # 관리자 검수 뒤 브랜드 수정 요청 → 같은 v1 에 브랜드 결정·메모 기록, 관리자 기록도 유지
+    assert client.post(f"/brands/d10order/campaigns/{cid}/terms/{creator}/request-revision", json={"note": "로고를 보여 주세요"}, headers=B).status_code == 200
+    rows = {r["version"]: r for r in client.get("/submissions", headers=A).json() if r["campaignId"] == cid}
+    assert rows[1]["status"] == "needs_fix" and rows[1]["reviewedBy"] == "brand:d10order"
+    labels = [(c["label"], c.get("fix")) for c in rows[1]["autoChecks"]]
+    assert ("브랜드 수정 요청", "로고를 보여 주세요") in labels and any(l == "전사 검수" for l, _ in labels)
+    # 재제출 → v2 대기, v1 링크·메모 보존. v2 를 관리자가 보완 요청해도 브랜드 완료가 v2 에 남는다
+    client.post(f"/me/campaign-offers/{cid}/content", json={"content_url": "https://www.tiktok.com/@d10/video/2"}, headers=ch)
+    rows = {r["version"]: r for r in client.get("/submissions", headers=A).json() if r["campaignId"] == cid}
+    assert rows[1]["url"].endswith("/1") and rows[1]["status"] == "needs_fix" and rows[2]["status"] == "in_review"
+    assert client.post(f"/submissions/{rows[2]['submissionId']}/review", json={"result": "needs_fix", "reviewer": "ops", "note": "자막"}, headers=A).status_code == 200
+    assert client.post(f"/brands/d10order/campaigns/{cid}/terms/{creator}/complete", headers=B).status_code == 200
+    rows = {r["version"]: r for r in client.get("/submissions", headers=A).json() if r["campaignId"] == cid}
+    assert rows[2]["status"] == "passed" and rows[2]["reviewedBy"] == "brand:d10order"
+    assert any(c["label"] == "전사 검수" and c.get("fix") == "보완 요청 · 자막" for c in rows[2]["autoChecks"])
+    assert rows[1]["status"] == "needs_fix"                                   # 이전 버전은 그대로

@@ -1,5 +1,6 @@
 """독립 제품 모아보기 — 공개 표시한 제품만, 필요한 정보가 있어야 공개, 브랜드 경계."""
 import psycopg, os
+from conftest import listing_ready
 
 
 def _brand(client, slug):
@@ -20,10 +21,14 @@ def test_public_listing_requires_presentation_and_hides_unlisted(client):
     assert p['publicListed'] is False and p['publicMissing']
     # 소개·이미지가 없으면 공개 거부
     r = client.post(f"/brands/pubco/products/{p['productId']}/public", json={'listed': True}, headers=H)
-    assert r.status_code == 409 and '제품 소개' in r.json()['detail']
+    assert r.status_code == 409 and '상세 설명' in r.json()['detail'] and '카테고리' in r.json()['detail']
     with psycopg.connect(os.environ['DATABASE_URL']) as c:
         c.execute("INSERT INTO product_invitation_profiles (product_id, summary, image_url) VALUES (%s,%s,%s)",
                   (p['productId'], '건조한 피부를 위한 진정 앰플입니다', 'https://cdn.example.com/a.png'))
+    # 운영 소개·이미지만으로는 부족 — 편집기 필수 항목(카테고리·USP·배송 국가)까지 있어야 공개
+    r = client.post(f"/brands/pubco/products/{p['productId']}/public", json={'listed': True}, headers=H)
+    assert r.status_code == 409 and '카테고리' in r.json()['detail'] and '상세 설명' not in r.json()['detail']
+    listing_ready(client, 'pubco', p['productId'], H)
     r = client.post(f"/brands/pubco/products/{p['productId']}/public", json={'listed': True}, headers=H)
     assert r.status_code == 200 and r.json()['publicListed'] is True
     c1 = client.post('/brands/pubco/campaigns', json={'name': '앰플 영상', 'product': '공개 앰플', 'reward_type': 'affiliate',
@@ -50,6 +55,7 @@ def test_suspended_brand_products_are_not_public(client):
     with psycopg.connect(os.environ['DATABASE_URL']) as c:
         c.execute("INSERT INTO product_invitation_profiles (product_id, summary, image_url) VALUES (%s,%s,%s)",
                   (p['productId'], '공개용 제품 소개입니다 열 글자', 'https://cdn.example.com/b.png'))
+    listing_ready(client, 'pubsus', p['productId'], H)
     assert client.post(f"/brands/pubsus/products/{p['productId']}/public", json={'listed': True}, headers=H).status_code == 200
     with psycopg.connect(os.environ['DATABASE_URL']) as c:
         c.execute("UPDATE brands SET suspended_at=now() WHERE brand_id='pubsus'")
@@ -66,7 +72,7 @@ def _present(pid, summary='공개용 제품 소개입니다 열 글자 이상', 
 def test_other_brand_campaign_linked_to_product_is_never_shown(client):
     H = _brand(client, 'xbrand1'); H2 = _brand(client, 'xbrand2')
     p = client.post('/brands/xbrand1/products', json={'name': '교차 확인 제품'}, headers=H).json()
-    _present(p['productId'])
+    _present(p['productId']); listing_ready(client, 'xbrand1', p['productId'], H)
     assert client.post(f"/brands/xbrand1/products/{p['productId']}/public", json={'listed': True}, headers=H).status_code == 200
     # 잘못 연결된 fixture: 다른 브랜드 캠페인이 이 제품 id 를 가리킴
     bad = client.post('/brands/xbrand2/campaigns', json={'name': '다른 브랜드 캠페인', 'reward_type': 'gifted'}, headers=H2).json()
@@ -83,7 +89,7 @@ def test_listing_drops_when_presentation_removed_and_paging_filters(client):
     pids = []
     for i in range(3):
         p = client.post('/brands/pagebr/products', json={'name': f'페이지 제품 {i}'}, headers=H).json()
-        _present(p['productId']); pids.append(p['productId'])
+        _present(p['productId']); pids.append(p['productId']); listing_ready(client, 'pagebr', p['productId'], H)
         assert client.post(f"/brands/pagebr/products/{p['productId']}/public", json={'listed': True}, headers=H).status_code == 200
     r1 = client.get('/public/products?brand=pagebr&limit=2').json()
     assert r1['total'] == 3 and len(r1['items']) == 2 and r1['nextOffset'] == 2
@@ -96,8 +102,9 @@ def test_listing_drops_when_presentation_removed_and_paging_filters(client):
     assert pids[0] not in [x['productId'] for x in client.get('/public/products?brand=pagebr').json()['items']]
     # 제품 분야가 저장돼 있으면 브랜드 분야 대신 그 값
     with psycopg.connect(os.environ['DATABASE_URL']) as c:
-        c.execute("INSERT INTO product_profile_versions (product_id, version, fields, note) VALUES (%s, 1, %s, 'test')",
-                  (pids[1], '{"category": {"value": "헤어"}}'))
+        c.execute("INSERT INTO product_profile_versions (product_id, version, fields, note)"
+                  " SELECT %s, COALESCE(max(version),0)+1, %s, 'test' FROM product_profile_versions WHERE product_id=%s",
+                  (pids[1], '{"category": {"value": "헤어"}}', pids[1]))
     row = next(x for x in client.get('/public/products?brand=pagebr').json()['items'] if x['productId'] == pids[1])
     assert row['category'] == '헤어'
     assert [x['productId'] for x in client.get('/public/products?brand=pagebr&category=헤어').json()['items']] == [pids[1]]

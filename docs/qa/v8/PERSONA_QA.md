@@ -19,12 +19,13 @@
 
 | 묶음 | 결과 | 파일 |
 |---|---|---|
-| API(pytest) | 358 passed | `runs/api-pytest.txt` |
+| API(pytest) | 361 passed | `runs/api-pytest.txt` |
 | 크리에이터 흐름 / 조건(고정비·IG) / 확인값 / 이력 / 커뮤니티 / 채널 | 24 / 12 / 18 / 17 / 12 / 6 | `runs/creator-v8-*.txt`, `runs/terms-fingerprint.txt` |
 | 크리에이터 브랜드 범위 / 제품 모아보기 / 제품 이미지 / 세션 격리 | 25 / 25 / 8 / 11 | `runs/creator-brand-scope.txt`, `runs/products-v8.txt`, `runs/product-images.txt`, `runs/creator-session-v8.txt` |
 | 콘솔 / 콘솔 검수 반영 / 콘솔 세션 | 39 / 34 / 8 | `runs/console-v8*.txt`, `runs/console-session-v8.txt` |
 | 관리자 | 22 | `runs/admin-v8.txt` |
 | 이번에 추가 검수한 빈 경로 | 9 | `runs/persona-gaps-v8.txt` (`tests_e2e/persona-gaps-v8.mjs`) |
+| 미확인 5개 화면 확인 + 공개 완성도·D10 이력·관리자 390 | 19 | `runs/persona-unconfirmed-v8.txt` (`tests_e2e/persona-unconfirmed-v8.mjs`) |
 
 이전 세대 E2E 6개(translation-retry, signup-magic, live-updates, mobile-width, campaign-flow, pool-flow)는 별도 `e2e_c3` DB 하네스가 필요해요. 이번 로컬 스택에서는 실행하지 않았어요. 해당 기능은 아래 API 테스트로 대신 확인했어요.
 
@@ -61,7 +62,7 @@
 | 단계 | 실제 행동 | 기대 결과 | 증거 | 결과 |
 |---|---|---|---|---|
 | 제품·국가별 후보 분리 | 받는 사람 CSV 검수(국가 포함) | 형식 오류·중복 제외 | console-v8 ‘받는 사람: CSV 검수’ | 통과 |
-| 관련 게시 근거 검토 | 후보별 근거 열람 | 근거 표시 | — | 미확인(브랜드 콘솔 후보 근거 화면) |
+| 관련 게시 근거 검토 | 받는 사람 찾기 › 보유 DB 에서 후보 찾기 | 후보별 근거(분류·태그 일치)·이메일 검증 상태·적합도 산정 방식 안내 | persona-unconfirmed ‘후보 근거 화면’, `console-invite-evidence-1280.png` | 통과 |
 | 중복·거부 제외 | 제외 확인 단계 | 수신 거부·최근 연락·대기열 중복 서버 판정 | console-v8 ‘제외 확인: 서버 판정’, `test_creator_conflicts_duplicates_optouts_and_draft_reservations` | 통과 |
 | 치환 제안 확인 | 수신자별 미리보기 | 개인별 문안·참여 링크 | `console-v8` 3단계, `test_delivery_uses_personalized_text_and_original_sender_only` | 통과 |
 | 담당 배정 | 회신 담당자 지정 | 저장·다른 담당자에게도 같은 값 | `test_brand_reply_task_optimistic_and_optout` | 통과 |
@@ -73,7 +74,7 @@
 |---|---|---|---|---|
 | 직원 2명 동시 회신 | 두 콘솔 창에서 같은 회신을 다르게 저장 | 늦은 저장은 거부·안내, 입력 유지 | persona-gaps ‘B2 동시 회신 처리’ | 통과 |
 | 휴가자 인계 | 최신 상태 불러온 뒤 다른 담당자가 저장 | 반영(revision 2) | persona-gaps ‘B2 인계’ | 통과 |
-| 지연 답변 | 오래된 회신 확인 | 홈 할 일·회신함에 남음 | console-v8 홈·회신함 | 통과(대기 시간 표시는 미확인) |
+| 지연 답변 | 오래된 회신·DM 확인 | 홈 할 일·DM 목록·회신함에 ‘답장 필요 · n분/시간/일째’ | persona-unconfirmed 대기 시간 3건, `console-reply-wait-1280.png` | 통과 |
 | 주소 변경/출고 충돌 | 발송 후 크리에이터가 주소 수정 | 서버 409, 화면에 수정 버튼 없음 | persona-gaps ‘C2 발송 후 주소 변경 차단’ | 통과 |
 | 수정 2회 | 수정 요청 2번 → 재제출 | 최신 요청 표시, v1·v2 보존, v3 검수 대기 | persona-gaps ‘C2 수정 2회’, ‘B2/D03 수정 2회 기록 보존’ | 통과 |
 | 국가별 주간 리포트 | 결과·보상 화면 | 캠페인별 집계(조회·판매 미연동 표시) | console-v8 ‘결과: 같은 참여 건 집계’ | 통과(국가별 분할 보고서는 v8.1 미노출) |
@@ -162,7 +163,7 @@
 |---|---|---|---|---|
 | 메일 만료 | 만료 링크 | 만료 안내 | `test_wrong_email_wrong_brand_and_expired_links_fail_closed` | 통과(API) |
 | 인증 대기 | — | 승인 대기 안내 | — | 미실행(외부: TikTok 승인) |
-| 캠페인 0 | 모집 중 없음 | 빈 상태 안내 | creator 빈 상태 문구(코드) | 미확인 |
+| 캠페인 0 | 모집 중 캠페인이 없는 브랜드 | ‘이 브랜드에서 모집 중인 캠페인이 없어요’, 다른 브랜드 캠페인 혼입 없음 | persona-unconfirmed ‘캠페인 0’, `creator-campaigns-empty-1280.png` | 통과 |
 | 반려·마감 | 미선정·마감 건 | 이력 유지·사유·신청 불가 | creator-v8-history 17건 | 통과 |
 | 첫 질문 | 질문 채널·스레드 | 게시·답글 | creator-v8-flow ‘# 질문 채널’ | 통과 |
 | 새 모집 알림 | 공지 열기 | 그 공지 스레드로 이동 | creator-v8-community ‘공지 열기’ | 통과 |
@@ -218,10 +219,10 @@
 | 단계 | 실제 행동 | 기대 결과 | 증거 | 결과 |
 |---|---|---|---|---|
 | 언어 선택 | 표시 언어 | 번역 표시, 원문 보존 | `test_cell_message_translated_fallback`, `test_translate_failure_preserves_original` | 통과(API) |
-| 국가·배송 주소 | 국가별 주소 칸 | 국가에 맞는 라벨·자리표시 | creator-v8-flow 주소(US), 코드 | 통과(US) · 태국 형식 화면 미확인 |
-| 원문·번역 비교 | 채널 메시지 | 원문 확인 가능 | API 번역 테스트 | 통과(API) · 화면 미확인 |
+| 국가·배송 주소 | 국가 TH 선택 후 주소 저장 | ‘도시·도’·‘우편번호’(ZIP 아님), 서버에 TH 주소 | persona-unconfirmed 태국 주소 2건, `creator-thai-address-1280.png` | 통과 |
+| 원문·번역 비교 | 번역 언어 태국어로 채널 보기 | 태국어 번역 + ‘번역 표시’, 원문 보기로 한국어, 번역 실패는 원문 유지 | persona-unconfirmed 번역 2건, `creator-thai-translation-1280.png` | 통과 |
 | 협업 진행 | 390 화면 | 목록 → 상세, 가로 넘침 없음 | creator-v8-history [390], creator-v8-flow [390] | 통과 |
-| 현지 시각 마감 | — | — | — | 미확인 |
+| 현지 시각 마감 | 방콕 시간대 기기로 캠페인 상세 | ‘2026-12-20 23:59 (한국 시간) · 내 시간 12. 20. 21:59’ | persona-unconfirmed ‘현지 시각 마감’, `creator-deadline-local-1280.png` | 통과 |
 
 ### 2회차 — 예외·재방문
 
@@ -293,8 +294,5 @@
 
 ## 미확인으로 남은 v8.1 노출 경로
 
-- 브랜드 콘솔 후보 근거 화면
-- 회신 대기 시간 표시
-- 크리에이터 ‘캠페인 0’ 빈 상태
-- 태국 주소·번역 화면 표시
-- 현지 시각 마감 표시
+- 없음. 이전에 남긴 5개(후보 근거, 회신 대기 시간, 캠페인 0 빈 상태, 태국 주소·번역, 현지 시각 마감)는 `tests_e2e/persona-unconfirmed-v8.mjs` 로 실제 화면에서 확인했어요.
+- 그중 회신 대기 시간과 현지 시각 마감은 시안·서버 기준을 화면에 그대로 보이도록 표시만 보강했어요(새 기능 아님).

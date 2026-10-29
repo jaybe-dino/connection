@@ -57,3 +57,11 @@ def tiktok_connect(client, headers, open_id):
                  "error": {"code": "ok"}})):
             r = client.get(f"/tiktok/callback?code=c&state={state}")
         assert r.status_code == 200, r.text
+
+
+def listing_ready(client, brand, pid, headers, category="스킨케어"):
+    """공개 목록 필수 항목(카테고리·USP 3개·배송 국가)을 실제 저장 경로로 채운다 — 콘솔 제품 편집기와 같은 기준.
+    상세 설명·대표 이미지는 각 테스트가 정한 방식(운영 소개/업로드)을 그대로 쓴다."""
+    r = client.post(f"/brands/{brand}/products/{pid}/profile", headers=headers, json={"answers": {
+        "category": category, "usp": "진정\n보습\n저자극", "ship": "US"}})
+    assert r.status_code == 200, r.text

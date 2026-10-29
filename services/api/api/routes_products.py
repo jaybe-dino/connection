@@ -108,23 +108,35 @@ def _latest_fields(conn, product_id):
 
 
 def _listing_missing(conn, p) -> list[str]:
-    """공개 목록에 올리기 전에 채워야 할 항목 — 비어 있으면 공개할 수 없다.
-    운영팀이 검수한 소개·이미지가 있으면 그것을 우선하고, 없으면 브랜드가 입력한 상세 설명·업로드한 대표 이미지로 채운다."""
+    """공개 목록에 올리기 전에 채워야 할 항목 — 콘솔 제품 편집기의 필수 항목과 같은 기준.
+    (제품명·카테고리·USP 3개·상세 설명·배송 가능 국가·대표 이미지 + 활성)
+    운영팀이 검수한 소개·이미지(product_invitation_profiles)가 있으면 상세 설명·대표 이미지로 인정한다."""
     pres = conn.execute(
         "SELECT summary, image_url FROM product_invitation_profiles"
         " WHERE product_id=%s", (p["product_id"],)).fetchone()
     _, fields = _latest_fields(conn, p["product_id"])
-    desc = ((fields or {}).get("description") or {})
-    desc = (desc.get("value") if isinstance(desc, dict) else str(desc)) or ""
-    summary = ((pres["summary"] if pres else "") or "").strip() or desc.strip()
+
+    def fv(k: str) -> str:
+        v = (fields or {}).get(k)
+        return str((v.get("value") if isinstance(v, dict) else v) or "").strip()
+    desc = fv("description")
+    summary = ((pres["summary"] if pres else "") or "").strip() or desc
     has_image = bool(pres and (pres["image_url"] or "").startswith("https://")) or bool(conn.execute(
         "SELECT 1 FROM product_images WHERE product_id=%s AND slot='main' AND deleted_at IS NULL",
         (p["product_id"],)).fetchone())
     missing = []
+    if not (p["name"] or "").strip():
+        missing.append("제품명")
+    if not fv("category"):
+        missing.append("카테고리")
+    if len([x for x in fv("usp").split("\n") if x.strip()]) < 3:
+        missing.append("USP 3개")
     if len(summary) < 10:
-        missing.append("공개용 제품 소개(10자 이상 · 상세 설명)")
+        missing.append("상세 설명(10자 이상)")
+    if not [x for x in fv("ship").split(",") if x.strip()]:
+        missing.append("배송 가능 국가")
     if not has_image:
-        missing.append("공개 HTTPS 제품 이미지(대표 이미지 업로드)")
+        missing.append("대표 이미지")
     if p["state"] != "active":
         missing.append("활성 제품")
     return missing

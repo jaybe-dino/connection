@@ -92,10 +92,12 @@ def _collab_review(conn, campaign_id: str, creator_id: str, status: str, by: str
     """브랜드 수정 요청/완료를 같은 제출 행에 기록 — 관리자 검수 화면에서 같은 건으로 보인다."""
     import json as _json
     extra = _json.dumps([{"label": "브랜드 수정 요청", "pass": False, "fix": note}], ensure_ascii=False) if note else "[]"
+    # 최신 협업 버전에 기록한다 — 관리자가 먼저 검수(passed/needs_fix)했어도 브랜드 결정이 그 버전에 남는다.
+    # 관리자 검수 결과는 검수 때 auto_checks 에 따로 남겨 두므로 여기서 상태를 덮어도 사라지지 않는다.
     conn.execute(
         "UPDATE submissions SET status=%s, reviewed_by=%s, reviewed_at=now(), auto_checks=auto_checks || %s::jsonb"
         " WHERE submission_id=(SELECT submission_id FROM submissions WHERE campaign_id=%s AND creator_id=%s"
-        "   AND source='collab' AND status='in_review' ORDER BY version DESC LIMIT 1)",
+        "   AND source='collab' AND status<>'superseded' ORDER BY version DESC LIMIT 1)",
         (status, by, extra, campaign_id, creator_id))
 
 

@@ -13,7 +13,7 @@ const RED = png("iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4oaG
 const BLUE = png("iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGPQ0DiBFTEMLQkAMl1GAd0cO4AAAAAASUVORK5CYII=");
 const tag = Date.now().toString(36).slice(-5), name = `업로드 제품 ${tag}`;
 const pid = (await j("POST", "/brands/goryeo1392/products", { name })).body.productId;
-await j("POST", `/brands/goryeo1392/products/${pid}/profile`, { answers: { description: "브랜드가 직접 입력한 상세 설명 " + tag } });
+await j("POST", `/brands/goryeo1392/products/${pid}/profile`, { answers: { description: "브랜드가 직접 입력한 상세 설명 " + tag, category: "스킨케어", usp: "진정\n보습\n저자극", ship: "US" } });
 const up = (buf, slot) => fetch(`${API}/brands/goryeo1392/products/${pid}/images?slot=${slot}`, { method: "POST", headers: { ...H, "Content-Type": "image/png" }, body: buf }).then((r) => r.status);
 ok("업로드: 대표·추가 이미지(실 API)", (await up(RED, "main")) === 200 && (await up(BLUE, "extra")) === 200);
 ok("업로드: 형식 오류 거부", (await fetch(`${API}/brands/goryeo1392/products/${pid}/images?slot=main`, { method: "POST", headers: { ...H, "Content-Type": "image/png" }, body: Buffer.from("not an image") })).status === 415);

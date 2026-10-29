@@ -73,6 +73,14 @@
   var ctry = function (cs) { return (cs || []).map(function (c) { return CTRY[c] || c; }).join(', ') || '국가 제한 없음'; };
 
   function today() { try { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); } catch (e) { return new Date().toISOString().slice(0, 10); } }
+  /* 마감은 서버 기준(한국 시간 그날 23:59)까지 — 해외 크리에이터는 내 기기 시각으로도 함께 보여 준다 */
+  function dueText(d) {
+    if (!d) return '별도 안내';
+    var day = String(d).slice(0, 10), end = new Date(day + 'T23:59:59+09:00'), mine = '';
+    try { mine = new Intl.DateTimeFormat('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(end); } catch (e) {}
+    var tz = ''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+    return day + ' 23:59 (한국 시간)' + (mine && tz !== 'Asia/Seoul' ? ' · 내 시간 ' + mine : '');
+  }
   function dLabel(d) { if (!d) return ''; var n = Math.round((Date.parse(String(d).slice(0, 10)) - Date.parse(today())) / 864e5); return n < 0 ? '마감' : n === 0 ? 'D-day' : 'D-' + n; }
   function brandShort() { var b = currentBrand(); return b ? b.name : ''; }
   function bid() { var b = currentBrand(); return b ? b.brandId : ''; }
@@ -204,7 +212,7 @@
     return ['신청 전', ''];
   }
   function condSummary(c, o) {
-    return '<div class="v6-cond">' + pimg(c, 64) + '<dl class="v6-kv"><dt>제품</dt><dd>' + h(c.product || '브랜드 안내 대기') + '</dd><dt>보상</dt><dd>' + h(rewardKind(c)) + (c.rewardType === 'affiliate' || (!c.rewardType && o) ? (o && o.agreedCommissionPct != null ? ' · 합의 ' + h(o.agreedCommissionPct) + '%' : o && o.commissionPct != null ? ' · 제안 ' + h(o.commissionPct) + '%' : '') : '') + (c._terms === 'agreed' ? ' · 합의한 조건(합의 후 캠페인이 바뀌어도 이 조건 유지)' : '') + '</dd><dt>콘텐츠</dt><dd>' + h(contentText(c)) + '</dd>' + (c.usp ? '<dt>소개</dt><dd>' + h(c.usp) + '</dd>' : '') + '<dt>국가 · 인원</dt><dd>' + h(ctry(c.countries)) + (c.capacity ? ' · ' + h(c.capacity) + '명' : '') + '</dd><dt>모집 마감</dt><dd>' + h(c.deadline ? String(c.deadline).slice(0, 10) : '별도 안내') + '</dd></dl></div>';
+    return '<div class="v6-cond">' + pimg(c, 64) + '<dl class="v6-kv"><dt>제품</dt><dd>' + h(c.product || '브랜드 안내 대기') + '</dd><dt>보상</dt><dd>' + h(rewardKind(c)) + (c.rewardType === 'affiliate' || (!c.rewardType && o) ? (o && o.agreedCommissionPct != null ? ' · 합의 ' + h(o.agreedCommissionPct) + '%' : o && o.commissionPct != null ? ' · 제안 ' + h(o.commissionPct) + '%' : '') : '') + (c._terms === 'agreed' ? ' · 합의한 조건(합의 후 캠페인이 바뀌어도 이 조건 유지)' : '') + '</dd><dt>콘텐츠</dt><dd>' + h(contentText(c)) + '</dd>' + (c.usp ? '<dt>소개</dt><dd>' + h(c.usp) + '</dd>' : '') + '<dt>국가 · 인원</dt><dd>' + h(ctry(c.countries)) + (c.capacity ? ' · ' + h(c.capacity) + '명' : '') + '</dd><dt>모집 마감</dt><dd>' + h(dueText(c.deadline)) + '</dd></dl></div>';
   }
   function scCampaigns() {
     var action = '<a class="btn ghost" href="/products/">전체 제품 모아보기 (별도 페이지)</a>';
@@ -218,7 +226,7 @@
       var st = myState(c), o = offerByCampaign(c.campaignId);
       var cta = o || c.myStatus !== 'none' ? btn('내 캠페인에서 보기', "V8go('c-work','" + a(c.campaignId) + "')") : btn('조건 보기', "V8go('c-campaigns','" + a(c.campaignId) + "')");
       return '<li class="v8-ccard' + (sel && sel.campaignId === c.campaignId ? ' on' : '') + '"><div class="v8-ccard-top">' + pimg(c, 88) + '<div class="v6-grow"><span class="v6-meta">' + h(c.brandName || brandShort()) + '</span><h3>' + h(c.name) + '</h3><span class="v6-meta">' + h(c.product || '') + '</span></div></div>' +
-        '<dl class="v8-facts"><div><dt>보상</dt><dd>' + h(rewardKind(c)) + '</dd></div><div><dt>신청 국가</dt><dd>' + h(ctry(c.countries)) + '</dd></div><div><dt>콘텐츠</dt><dd>' + h(contentText(c)) + '</dd></div><div><dt>모집 마감</dt><dd>' + h(c.deadline ? String(c.deadline).slice(0, 10) : '별도 안내') + ' <span class="v6-meta">' + h(dLabel(c.deadline)) + '</span></dd></div></dl>' +
+        '<dl class="v8-facts"><div><dt>보상</dt><dd>' + h(rewardKind(c)) + '</dd></div><div><dt>신청 국가</dt><dd>' + h(ctry(c.countries)) + '</dd></div><div><dt>콘텐츠</dt><dd>' + h(contentText(c)) + '</dd></div><div><dt>모집 마감</dt><dd>' + h(dueText(c.deadline)) + ' <span class="v6-meta">' + h(dLabel(c.deadline)) + '</span></dd></div></dl>' +
         '<div class="v8-ccard-foot">' + chip('내 상태: ' + st[0], st[1]) + cta + '</div></li>';
     }).join('') + '</ul>' : '<div class="v6-empty">이 브랜드에서 모집 중인 캠페인이 없어요.</div>';
     var detail = '';
@@ -468,7 +476,7 @@
       var st = myState(c), e = effTerms(c, o);
       var cta = o || (c.myStatus && c.myStatus !== 'none') ? btn('내 캠페인에서 보기', "V8go('c-work','" + a(c.campaignId) + "')") : btn('조건 보기', "V8go('c-campaigns','" + a(c.campaignId) + "')", 'pri');
       return '<li class="v8-ccard"><div class="v8-ccard-top">' + pimg(c, 88) + '<div class="v6-grow">' + when + '<h3>' + h(c.name) + '</h3><span class="v6-meta">' + h(c.product || '') + '</span></div></div>' +
-        '<dl class="v8-facts"><div><dt>보상</dt><dd>' + h(rewardKind(e)) + '</dd></div><div><dt>신청 국가</dt><dd>' + h(ctry(c.countries)) + '</dd></div><div><dt>콘텐츠</dt><dd>' + h(contentText(e)) + '</dd></div><div><dt>모집 마감</dt><dd>' + h(c.deadline ? String(c.deadline).slice(0, 10) : '별도 안내') + ' <span class="v6-meta">' + h(dLabel(c.deadline)) + '</span></dd></div></dl>' +
+        '<dl class="v8-facts"><div><dt>보상</dt><dd>' + h(rewardKind(e)) + '</dd></div><div><dt>신청 국가</dt><dd>' + h(ctry(c.countries)) + '</dd></div><div><dt>콘텐츠</dt><dd>' + h(contentText(e)) + '</dd></div><div><dt>모집 마감</dt><dd>' + h(dueText(c.deadline)) + ' <span class="v6-meta">' + h(dLabel(c.deadline)) + '</span></dd></div></dl>' +
         '<div class="v8-ccard-foot">' + chip('내 상태: ' + st[0], st[1]) + cta + '</div></li>';
     }).join('') + '</ul></div>';
   }

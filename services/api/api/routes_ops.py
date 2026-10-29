@@ -544,8 +544,12 @@ def review_submission(submission_id: str, body: ReviewIn) -> dict:
                       submission_id, {"campaign": row["campaign_id"],
                                       "note": body.note})
         if row["source"] == "collab":
-            # 협업 제출의 전사 검수는 기록만 — 브랜드 확인·지급 상태를 대신 바꾸지 않는다(검수 통과≠지급)
-            pass
+            # 협업 제출의 전사 검수는 기록만 — 브랜드 확인·지급 상태를 대신 바꾸지 않는다(검수 통과≠지급).
+            # 이후 브랜드 수정 요청·완료가 같은 버전의 상태를 바꿔도 이 검수 기록은 남도록 따로 적는다.
+            conn.execute("UPDATE submissions SET auto_checks=auto_checks || %s::jsonb WHERE submission_id=%s",
+                         (_j([{"label": "전사 검수", "pass": body.result == "passed",
+                               "fix": (("보완 요청 · " + body.note) if body.note else "보완 요청") if body.result != "passed" else None,
+                               "by": body.reviewer}]), submission_id))
         elif body.result == "passed":
             conn.execute(
                 "UPDATE campaign_applications SET status='passed'"

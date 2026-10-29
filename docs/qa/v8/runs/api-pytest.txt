@@ -20,6 +20,7 @@ PASSED tests/test_admin_brand_accounts.py::test_account_add_email_conflicts
 PASSED tests/test_admin_effects.py::test_collab_submission_is_same_record_in_admin_review
 PASSED tests/test_admin_effects.py::test_report_actions_have_real_effects_and_restore
 PASSED tests/test_admin_effects.py::test_console_handoff_is_one_time_admin_only
+PASSED tests/test_admin_effects.py::test_brand_decision_after_admin_review_is_kept_on_latest_version
 PASSED tests/test_agents_api.py::test_agent_files_outbound_gate
 PASSED tests/test_agents_api.py::test_bad_gate_kind
 PASSED tests/test_agents_api.py::test_create_campaign_posts_notice
@@ -157,6 +158,8 @@ PASSED tests/test_launch_five_journeys.py::test_independent_brand_creator_journe
 PASSED tests/test_launch_gmail_review.py::test_production_token_storage_fails_closed
 PASSED tests/test_launch_gmail_review.py::test_new_oauth_without_refresh_token_not_connected
 PASSED tests/test_launch_gmail_review.py::test_token_expiry_is_bounded
+PASSED tests/test_listing_completeness.py::test_draft_saved_product_cannot_bypass_required_fields_to_public
+PASSED tests/test_listing_completeness.py::test_ops_reviewed_intro_still_counts_as_description
 PASSED tests/test_locale.py::test_ip_country_header_wins
 PASSED tests/test_locale.py::test_cloudflare_header
 PASSED tests/test_locale.py::test_accept_language_fallback
@@ -360,4 +363,4 @@ PASSED tests/test_translation_retry.py::test_retry_failure_requeues_for_runner
 PASSED tests/test_translation_retry.py::test_duplicate_click_single_requeue
 PASSED tests/test_translation_retry.py::test_admin_can_retry_and_missing_message_404
 PASSED tests/test_translation_retry.py::test_runner_cannot_pick_message_during_manual_retry
-358 passed in 87.95s (0:01:27)
+361 passed in 88.26s (0:01:28)

@@ -1,9 +1,9 @@
 PASS 업로드: 대표·추가 이미지(실 API)
 PASS 업로드: 형식 오류 거부
-PASS 명시적 공개(운영 소개 없이 상세 설명+업로드 이미지) — {"productId":"9e4ee116-3191-45b4-b795-9c472d44b63e","brandId":"goryeo1392","name":"업로드 제품 0necf","ti
-PASS [1280] 로그아웃 /products/: 업로드 대표 사진 표시 — {"src":"http://localhost:8765/public/product-images/390ee1db-7557-4ac5-9333-dab5c8f48900","w":8}
-PASS [1280] 상세: 추가 이미지 표시 — [{"w":8,"src":"http://localhost:8765/public/product-images/24e0355c-1c15-483f-bdc3-b988d5f70dcd"}]
-PASS [390] 로그아웃 /products/: 업로드 대표 사진 표시 — {"src":"http://localhost:8765/public/product-images/390ee1db-7557-4ac5-9333-dab5c8f48900","w":8}
-PASS [390] 상세: 추가 이미지 표시 — [{"w":8,"src":"http://localhost:8765/public/product-images/24e0355c-1c15-483f-bdc3-b988d5f70dcd"}]
+PASS 명시적 공개(운영 소개 없이 상세 설명+업로드 이미지) — {"productId":"1f046a20-f370-4307-9ac7-28c0203b2121","brandId":"goryeo1392","name":"업로드 제품 6jgb8","ti
+PASS [1280] 로그아웃 /products/: 업로드 대표 사진 표시 — {"src":"http://localhost:8765/public/product-images/83ee8419-3d75-448a-8d46-cc88c1229b73","w":8}
+PASS [1280] 상세: 추가 이미지 표시 — [{"w":8,"src":"http://localhost:8765/public/product-images/7eae3fcb-aac8-4ff1-83ea-a00a2dd7f2e6"}]
+PASS [390] 로그아웃 /products/: 업로드 대표 사진 표시 — {"src":"http://localhost:8765/public/product-images/83ee8419-3d75-448a-8d46-cc88c1229b73","w":8}
+PASS [390] 상세: 추가 이미지 표시 — [{"w":8,"src":"http://localhost:8765/public/product-images/7eae3fcb-aac8-4ff1-83ea-a00a2dd7f2e6"}]
 PASS 공개 해제: 목록 제외 + 익명 이미지 403 + 소유 브랜드 서명 주소는 열림
 PASS 8 FAIL 0

@@ -56,7 +56,7 @@ def test_product_edit_and_v8_fields(client):
     assert ok.status_code == 200, ok.text
     got = next(x for x in client.get("/brands/prodedit/products", headers=B).json() if x["productId"] == p)
     assert got["fields"]["ship"]["value"] == "US,KR" and got["fields"]["usp"]["value"] == "진정\n보습\n저자극"
-    assert got["publicSummary"] == "" and got["publicImageUrl"] is None and any(m.startswith("공개 HTTPS 제품 이미지") for m in got["publicMissing"])
+    assert got["publicSummary"] == "" and got["publicImageUrl"] is None and "대표 이미지" in got["publicMissing"]
     for bad in ({"link": "http://x"}, {"category": "가전"}, {"ship": "US,ZZ"}, {"price": "싸요"}, {"image_url": "javascript:1"}):
         assert client.post(f"/brands/prodedit/products/{p}/profile", json={"answers": bad}, headers=B).status_code == 400, bad
 
@@ -172,6 +172,8 @@ def test_uploaded_images_reach_public_catalog_only_while_listed(client):
     # 운영 소개 없이도: 상세 설명 + 대표 이미지 업로드로 공개 가능
     assert client.post(f"/brands/pubimg/products/{pid}/public", json={"listed": True}, headers=B).status_code == 409
     client.post(f"/brands/pubimg/products/{pid}/profile", json={"answers": {"description": "피부 진정에 쓰는 한방 앰플이에요"}}, headers=B)
+    from conftest import listing_ready
+    listing_ready(client, "pubimg", pid, B)
     main = _up(client, B, "pubimg", pid, PNG).json()["imageId"]
     extra = _up(client, B, "pubimg", pid, JPG, "image/jpeg", "extra").json()["imageId"]
     unsigned = f"/public/product-images/{main}"

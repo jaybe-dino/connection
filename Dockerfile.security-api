@@ -29,6 +29,11 @@ RUN python -m pip install --no-cache-dir -r requirements-security-api.txt
 
 # 3) 프로젝트 로컬 패키지(core·harvest·api)를 소스에서 설치(--no-deps:
 #    의존성은 위에서 이미 고정). 새 의존성/기능 추가 없음.
+# 3-0) DB 마이그레이션 SQL — api/db.py 의 MIGRATIONS_DIR(= /app/db/migrations,
+#      --app-dir services/api 로 import 된 /app/services/api/api/db.py 기준)이
+#      시작 시 미적용분을 적용한다. 이 경로가 없으면 새 마이그레이션이 조용히 건너뛰어진다.
+#      db/ 전체가 아니라 migrations 만 정확히 넣는다.
+COPY db/migrations ./db/migrations
 COPY services/core ./services/core
 COPY services/harvest ./services/harvest
 COPY services/api ./services/api

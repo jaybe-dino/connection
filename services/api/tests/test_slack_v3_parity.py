@@ -58,6 +58,7 @@ def _campaign_to_state(client, box, ch, state="content_submitted"):
         headers=ch).status_code == 200
     if state == "terms_agreed":
         return cid, creator_id, bh
+    assert client.post(f"/me/campaign-offers/{cid}/shipping", json={"recipient": "QA 수령인", "country": "KR", "address": "서울시 테스트로 1", "phone": "010-0000-0000"}, headers=ch).status_code == 200
     assert client.post(
         f"/brands/{box['a']}/campaigns/{cid}/terms/{creator_id}"
         "/sample-shipped", json={"tracking": "CJ-1"},

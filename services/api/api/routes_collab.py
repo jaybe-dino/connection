@@ -227,6 +227,8 @@ class SelectIn(BaseModel):
     creator_id: str
     # 판매 수수료(어필리에이트) 캠페인만 필수. 고정 보상·제품 제공은 캠페인 조건으로 합의한다.
     commission_pct: float | None = Field(default=None, ge=0, le=80)
+    # 이미 미선정 처리한 지원자를 다시 선정할 때는 명시적 재검토 확인이 필요하다(실수 선정 방지)
+    reconsider: bool = False
 
 
 @router.post("/brands/{brand}/campaigns/{campaign_id}/select")
@@ -245,10 +247,12 @@ def select_creator(brand: str, campaign_id: str, body: SelectIn,
         if camp["reward_type"] == "affiliate" and body.commission_pct is None:
             raise HTTPException(400, "판매 수수료 캠페인은 제안 수수료(%)가 필요합니다")
         applied = conn.execute(
-            "SELECT 1 FROM campaign_applications WHERE campaign_id=%s"
+            "SELECT status FROM campaign_applications WHERE campaign_id=%s"
             " AND creator_id=%s", (campaign_id, body.creator_id)).fetchone()
         if not applied:
             raise HTTPException(409, "지원하지 않은 크리에이터는 선정할 수 없습니다")
+        if applied["status"] == "rejected" and not body.reconsider:
+            raise HTTPException(409, "미선정 처리한 지원자입니다. 재검토 후 선정하려면 재검토 선정을 확인해 주세요")
         if camp["capacity"] and camp["capacity"] > 0:
             n = conn.execute(
                 "SELECT count(*) c FROM campaign_terms"
@@ -292,6 +296,8 @@ def sample_shipped(brand: str, campaign_id: str, creator_id: str,
         t = _terms(conn, campaign_id, creator_id)
         if t["state"] != "terms_agreed":
             raise HTTPException(409, f"합의 후에만 발송 처리 가능 (현재 {t['state']})")
+        if not t.get("shipping"):
+            raise HTTPException(409, "크리에이터가 아직 샘플 받을 주소를 입력하지 않았습니다 — 주소 입력 후 발송 처리하세요")
         t = conn.execute(
             "UPDATE campaign_terms SET state='sample_shipped',"
             " sample_tracking=%s, shipped_at=now()"
@@ -530,6 +536,10 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
         prof = conn.execute(
             "SELECT country, ship_countries FROM creator_profiles"
             " WHERE creator_id=%s", (cid,)).fetchone()
+        # 운영 소개 이미지가 없으면 브랜드가 올린 대표 이미지(서명 URL, 멤버 응답에만)
+        from .routes_products import main_image_url
+        brand_img = {r["product_id"]: main_image_url(conn, r["product_id"]) for r in rows
+                     if r["product_id"] and not (r["product_image"] or "").startswith("https://")}
     my_countries = set()
     if prof:
         if prof["country"]:
@@ -544,7 +554,7 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
              "brandName": r["brand_name"], "logoUrl": r["logo_url"],
              "imageUrl": (r["product_image"]
                           if (r["product_image"] or "").startswith("https://")
-                          else None),
+                          else brand_img.get(r["product_id"])),
              "name": r["name"], "product": r["product"],
              "usp": r["usp"] or "", "rewardType": r["reward_type"],
              "affiliatePct": (float(r["affiliate_pct"])
@@ -589,9 +599,16 @@ def my_offers(authorization: str = Header(default="")) -> list[dict]:
             " LEFT JOIN product_invitation_profiles pip"
             "   ON pip.product_id=bp.product_id"
             " WHERE t.creator_id=%s ORDER BY t.selected_at", (cid,)).fetchall()
+        from .routes_products import main_image_url
+        brand_img = {r["product_id"]: main_image_url(conn, r["product_id"]) for r in rows
+                     if r["product_id"] and not (r["product_image"] or "").startswith("https://")}
+    from .routes_products import image_url as _img_url
+
     def _offer_extra(r):
         terms = _offer_terms(r, r["commission_pct"])
-        return {"offerTerms": terms, "termsFingerprint": _terms_fingerprint(terms)}
+        snap = r.get("agreed_terms") or {}
+        return {"offerTerms": terms, "termsFingerprint": _terms_fingerprint(terms),
+                "agreedImageUrl": _img_url(snap["productImageId"]) if snap.get("productImageId") else None}
     return [_terms_out(r, {**_offer_extra(r), "campaignName": r["campaign_name"],
                            "brandId": r["brand_id"],
                            "brandName": r["brand_name"],
@@ -605,7 +622,7 @@ def my_offers(authorization: str = Header(default="")) -> list[dict]:
                            "logoUrl": r["logo_url"],
                            "imageUrl": (r["product_image"]
                                         if (r["product_image"] or "")
-                                        .startswith("https://") else None)})
+                                        .startswith("https://") else brand_img.get(r["product_id"]))})
             for r in rows]
 
 
@@ -658,7 +675,11 @@ def agree_offer(campaign_id: str, body: AgreeIn,
                            (camp["product_id"],)).fetchone() if camp and camp["product_id"] else None
         snapshot = {**offered, "handle": handle, "termsFingerprint": current_fp,
                     "confirmedByCreator": bool(seen_fp),
-                    "productImage": img["image_url"] if img and (img["image_url"] or "").startswith("https://") else None}
+                    "productImage": img["image_url"] if img and (img["image_url"] or "").startswith("https://") else None,
+                    # 브랜드 업로드 대표 이미지는 서명 URL 이 만료되므로 ID 만 남기고, 조회 때 새 서명 URL 을 만든다
+                    "productImageId": (lambda m: str(m["image_id"]) if m else None)(conn.execute(
+                        "SELECT image_id FROM product_images WHERE product_id=%s AND slot='main' AND deleted_at IS NULL",
+                        (camp["product_id"],)).fetchone() if camp and camp["product_id"] else None)}
         import json as _json
         t = conn.execute(
             "UPDATE campaign_terms SET state='terms_agreed',"

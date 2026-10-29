@@ -490,9 +490,64 @@ def list_inbox(brand_id: str,
     _guard(brand_id, authorization, x_admin_key)
     with connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM mail_threads WHERE brand_id=%s"
-            " ORDER BY last_message_at DESC LIMIT 100", (brand_id,)).fetchall()
-    return [_thread_out(r) for r in rows]
+            "SELECT t.*, q.label AS task_label, q.owner_name, q.next_action, q.due_at,"
+            " q.revision AS task_revision,"
+            " (SELECT o.campaign_id FROM outreach_recipients r JOIN outreach_batches o USING(batch_id)"
+            "   WHERE (o.brand_id=t.brand_id OR o.target_brand_id=t.brand_id) AND r.email=t.creator_email"
+            "   ORDER BY o.created_at DESC LIMIT 1) AS campaign_id,"
+            " (SELECT m.gmail_account_id FROM mail_messages m WHERE m.thread_id=t.thread_id AND m.direction='out'"
+            "   AND m.gmail_account_id IS NOT NULL ORDER BY m.created_at DESC LIMIT 1) AS sender_account_id"
+            " FROM mail_threads t LEFT JOIN recruitment_thread_tasks q USING(thread_id)"
+            " WHERE t.brand_id=%s ORDER BY t.last_message_at DESC LIMIT 100", (brand_id,)).fetchall()
+    return [{**_thread_out(r), "task": _task_out(r), "campaignId": r["campaign_id"],
+             "senderAccountId": str(r["sender_account_id"]) if r["sender_account_id"] else None} for r in rows]
+
+
+# ── 회신함 후속 처리(v8.1 B07) — 상태·담당자·후속 할 일. 관리자 공용 모집과 같은 테이블,
+#    같은 낙관적 잠금(revision). 수신 거부는 이 브랜드의 발송 제외(outreach_optouts)로 실제 반영한다.
+BRAND_REPLY_LABELS = ("unreviewed", "interested", "question", "declined", "optout")
+
+
+def _task_out(r: dict) -> dict:
+    return {"label": r.get("task_label") or "unreviewed", "owner": r.get("owner_name") or "",
+            "nextAction": r.get("next_action") or "",
+            "dueAt": r["due_at"].isoformat() if r.get("due_at") else None,
+            "revision": r.get("task_revision") or 0}
+
+
+class BrandTaskIn(BaseModel):
+    label: str = Field(pattern="^(unreviewed|interested|question|declined|optout)$")
+    owner: str = Field(default="", max_length=100)
+    next_action: str = Field(default="", max_length=500)
+    revision: int = Field(ge=0)
+
+
+@router.put("/brands/{brand_id}/inbox/threads/{thread_id}/task")
+def save_brand_task(brand_id: str, thread_id: UUID, body: BrandTaskIn,
+                    authorization: str = Header(default=""),
+                    x_admin_key: str = Header(default="")) -> dict:
+    _guard(brand_id, authorization, x_admin_key)
+    with connect() as conn:
+        t = conn.execute("SELECT creator_email FROM mail_threads WHERE thread_id=%s AND brand_id=%s FOR UPDATE",
+                         (thread_id, brand_id)).fetchone()
+        if not t:
+            raise HTTPException(404, "이 브랜드의 회신이 아닙니다")
+        old = conn.execute("SELECT revision FROM recruitment_thread_tasks WHERE thread_id=%s", (thread_id,)).fetchone()
+        if (old["revision"] if old else 0) != body.revision:
+            raise HTTPException(409, "다른 담당자가 먼저 수정했어요. 새로고침한 뒤 다시 저장해 주세요")
+        r = conn.execute(
+            "INSERT INTO recruitment_thread_tasks(thread_id,label,owner_name,next_action) VALUES(%s,%s,%s,%s)"
+            " ON CONFLICT(thread_id) DO UPDATE SET label=EXCLUDED.label, owner_name=EXCLUDED.owner_name,"
+            " next_action=EXCLUDED.next_action, revision=recruitment_thread_tasks.revision+1, updated_at=now()"
+            " RETURNING label AS task_label, owner_name, next_action, due_at, revision AS task_revision",
+            (thread_id, body.label, body.owner.strip(), body.next_action.strip())).fetchone()
+        if body.label == "optout":
+            conn.execute("INSERT INTO outreach_optouts(brand_id,email,opted_out_at) VALUES(%s,%s,now())"
+                         " ON CONFLICT (brand_id,email) DO UPDATE SET opted_out_at=COALESCE(outreach_optouts.opted_out_at,now())",
+                         (brand_id, t["creator_email"]))
+        ledger_append(conn, f"brand:{brand_id}", "BRAND_REPLY_TRIAGED", str(thread_id),
+                      {"label": body.label, "revision": r["task_revision"]})
+    return {"threadId": str(thread_id), "task": _task_out(r)}
 
 
 @router.get("/inbox/threads/{thread_id}")

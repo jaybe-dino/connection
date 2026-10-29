@@ -15,7 +15,7 @@ import re
 import unicodedata
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from . import auth
@@ -24,7 +24,34 @@ from .db import connect, ledger_append
 router = APIRouter()
 
 PRODUCT_KEYS = {"product_one_liner", "hero_product", "ingredients",
-                "price_range", "usp", "target_audience", "voice"}
+                "price_range", "usp", "target_audience", "voice",
+                # v8.1 제품 편집기(B03) — 추가 키. 크리에이터용 소개·캠페인 미리보기·AI 초안 근거
+                "category", "description", "howto", "banned", "link",
+                "price", "currency", "ship", "image_url"}
+PRODUCT_CATEGORIES = {"스킨케어", "헤어", "생활", "식품"}
+_COUNTRY_CODES = {"KR", "TH", "US", "VN", "JP"}
+
+
+def _validate_product_answers(answers: dict[str, str]) -> None:
+    """형식 검사 — 빈 값은 삭제 의미라 통과."""
+    def bad(msg):
+        raise HTTPException(400, msg)
+    v = answers.get("category")
+    if v and v not in PRODUCT_CATEGORIES:
+        bad("카테고리는 스킨케어·헤어·생활·식품 중에서 고르세요")
+    for k in ("link", "image_url"):
+        v = answers.get(k)
+        if v and not re.fullmatch(r"https://[^\s\"'<>]{4,480}", v):
+            bad(("판매 링크" if k == "link" else "대표 이미지") + "는 https:// 주소로 적어 주세요")
+    v = answers.get("price")
+    if v and not re.fullmatch(r"\d{1,9}(\.\d{1,2})?", v):
+        bad("정가는 숫자로 적어 주세요")
+    v = answers.get("currency")
+    if v and v not in ("KRW", "USD", "THB", "VND", "JPY"):
+        bad("통화를 확인하세요")
+    v = answers.get("ship")
+    if v and not set(x.strip() for x in v.split(",") if x.strip()) <= _COUNTRY_CODES:
+        bad("배송 가능 국가를 확인하세요")
 
 # ── 다국어 토큰 정책 (검수 반영) — 제품 텍스트와 후보 태그 양쪽에 동일 적용 ──
 # 유니코드 \w 기반이라 태국어·일본어·베트남어 등 비라틴 문자가 보존된다.
@@ -81,15 +108,23 @@ def _latest_fields(conn, product_id):
 
 
 def _listing_missing(conn, p) -> list[str]:
-    """공개 목록에 올리기 전에 채워야 할 항목 — 비어 있으면 공개할 수 없다."""
+    """공개 목록에 올리기 전에 채워야 할 항목 — 비어 있으면 공개할 수 없다.
+    운영팀이 검수한 소개·이미지가 있으면 그것을 우선하고, 없으면 브랜드가 입력한 상세 설명·업로드한 대표 이미지로 채운다."""
     pres = conn.execute(
         "SELECT summary, image_url FROM product_invitation_profiles"
         " WHERE product_id=%s", (p["product_id"],)).fetchone()
+    _, fields = _latest_fields(conn, p["product_id"])
+    desc = ((fields or {}).get("description") or {})
+    desc = (desc.get("value") if isinstance(desc, dict) else str(desc)) or ""
+    summary = ((pres["summary"] if pres else "") or "").strip() or desc.strip()
+    has_image = bool(pres and (pres["image_url"] or "").startswith("https://")) or bool(conn.execute(
+        "SELECT 1 FROM product_images WHERE product_id=%s AND slot='main' AND deleted_at IS NULL",
+        (p["product_id"],)).fetchone())
     missing = []
-    if not pres or len((pres["summary"] or "").strip()) < 10:
-        missing.append("공개용 제품 소개(10자 이상)")
-    if not pres or not (pres["image_url"] or "").startswith("https://"):
-        missing.append("공개 HTTPS 제품 이미지")
+    if len(summary) < 10:
+        missing.append("공개용 제품 소개(10자 이상 · 상세 설명)")
+    if not has_image:
+        missing.append("공개 HTTPS 제품 이미지(대표 이미지 업로드)")
     if p["state"] != "active":
         missing.append("활성 제품")
     return missing
@@ -97,12 +132,19 @@ def _listing_missing(conn, p) -> list[str]:
 
 def _out(conn, p):
     version, fields = _latest_fields(conn, p["product_id"])
+    pres = conn.execute("SELECT summary, image_url FROM product_invitation_profiles WHERE product_id=%s",
+                        (p["product_id"],)).fetchone()
     return {"productId": str(p["product_id"]), "brandId": p["brand_id"],
             "name": p["name"], "tiktokProductRef": p["tiktok_product_ref"],
             "commissionPct": float(p["commission_pct"]), "state": p["state"],
             "profileVersion": version, "fields": fields,
             "publicListed": bool(p.get("public_listed")),
-            "publicMissing": _listing_missing(conn, p)}
+            "publicMissing": _listing_missing(conn, p),
+            # 운영팀이 검수해 등록한 공개 소개·이미지(공개 목록·초대에 쓰임) — 브랜드는 읽기만
+            "publicSummary": (pres["summary"] if pres else "") or "",
+            "publicImageUrl": (pres["image_url"] if pres and (pres["image_url"] or "").startswith("https://") else None),
+            # 브랜드가 올린 제품 이미지(대표 1 + 추가 최대 4) — 서명된 단기 URL 로만 열린다
+            "images": product_images_out(conn, p["product_id"])}
 
 
 class ProductIn(BaseModel):
@@ -128,6 +170,35 @@ def create_product(brand: str, body: ProductIn,
              body.commission_pct)).fetchone()
         ledger_append(conn, f"brand:{brand}", "PRODUCT_CREATED",
                       str(p["product_id"]), {"name": p["name"]})
+        return _out(conn, p)
+
+
+class ProductPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    tiktok_product_ref: str | None = Field(default=None, max_length=300)
+    commission_pct: float | None = Field(default=None, ge=0, le=80)
+
+
+@router.patch("/brands/{brand}/products/{product_id}")
+def edit_product(brand: str, product_id: UUID, body: ProductPatch,
+                 authorization: str = Header(default="")) -> dict:
+    """제품명·Shop 상품 ID·기본 수수료 수정. 이미 진행 중인 합의는 합의 스냅샷 기준이라 바뀌지 않는다."""
+    _guard(brand, authorization)
+    with connect() as conn:
+        p = _product(conn, brand, product_id)
+        name = body.name.strip() if body.name is not None else p["name"]
+        if body.name is not None and conn.execute(
+                "SELECT 1 FROM brand_products WHERE brand_id=%s AND name=%s AND product_id<>%s",
+                (brand, name, product_id)).fetchone():
+            raise HTTPException(409, "같은 이름의 제품이 이미 있습니다")
+        p = conn.execute(
+            "UPDATE brand_products SET name=%s, tiktok_product_ref=%s, commission_pct=%s"
+            " WHERE product_id=%s AND brand_id=%s RETURNING *",
+            (name, body.tiktok_product_ref.strip() if body.tiktok_product_ref is not None else p["tiktok_product_ref"],
+             body.commission_pct if body.commission_pct is not None else p["commission_pct"],
+             product_id, brand)).fetchone()
+        ledger_append(conn, f"brand:{brand}", "PRODUCT_EDITED", str(product_id),
+                      {k: v for k, v in body.model_dump().items() if v is not None})
         return _out(conn, p)
 
 
@@ -169,6 +240,7 @@ def save_product_profile(brand: str, product_id: UUID, body: ProductProfileIn,
         fields.update((learned or {}).get("fields") or {})
         answers = {k: v.strip()[:2000] for k, v in body.answers.items()
                    if k in PRODUCT_KEYS}
+        _validate_product_answers(answers)
         if not learned and not any(v for v in answers.values()) and not fields:
             raise HTTPException(400, "분석 결과나 직접 입력한 제품 정보가 필요합니다")
         for k, v in answers.items():
@@ -513,11 +585,19 @@ def set_public_listing(brand: str, product_id: UUID, body: PublicListingIn,
 
 public_router = APIRouter()
 
+# 공개 소개: 운영 검수 소개 우선, 없으면 브랜드가 입력한 상세 설명
+_EFF_SUMMARY = ("COALESCE(NULLIF(btrim(v.summary),''), NULLIF(btrim((SELECT fields->'description'->>'value'"
+                " FROM product_profile_versions pv WHERE pv.product_id=p.product_id ORDER BY version DESC LIMIT 1)),''), '')")
+_MAIN_IMAGE = ("(SELECT pi.image_id FROM product_images pi WHERE pi.product_id=p.product_id"
+               " AND pi.slot='main' AND pi.deleted_at IS NULL)")
 _PUBLIC_WHERE = (
     " p.public_listed AND p.state='active'"
     " AND b.suspended_at IS NULL AND NOT b.is_internal AND NOT b.is_demo"
     # 공개 조건은 읽을 때도 확인한다 — 공개 후 소개·이미지를 지우면 목록에서 빠진다
-    " AND length(btrim(v.summary)) >= 10 AND v.image_url LIKE 'https://%%'")
+    " AND length(" + _EFF_SUMMARY + ") >= 10"
+    " AND (v.image_url LIKE 'https://%%' OR " + _MAIN_IMAGE + " IS NOT NULL)")
+_PUBLIC_FROM = (" FROM brand_products p JOIN brands b USING (brand_id)"
+                " LEFT JOIN product_invitation_profiles v USING (product_id)")
 _OPEN_CAMPAIGN = (
     "c.product_id=p.product_id AND c.brand_id=p.brand_id"   # 같은 브랜드 캠페인만
     " AND c.status='open' AND c.lifecycle='published'"
@@ -562,12 +642,11 @@ def public_products(q: str = "", brand: str = "", category: str = "",
         id_list = [x for x in ids.split(",")[:200] if re.fullmatch(r"[0-9a-f-]{36}", x.strip())]
         where.append("p.product_id::text = ANY(%s)"); args.append(id_list)
     with connect() as conn:
-        base = (" FROM brand_products p JOIN brands b USING (brand_id)"
-                " JOIN product_invitation_profiles v USING (product_id)"
-                " WHERE " + " AND ".join(where))
+        base = _PUBLIC_FROM + " WHERE " + " AND ".join(where)
         rows = conn.execute(
             "SELECT p.product_id, p.brand_id, p.name, p.commission_pct,"
-            " v.summary, v.image_url, b.name AS brand_name, b.logo_url,"
+            " " + _EFF_SUMMARY + " AS summary, v.image_url, " + _MAIN_IMAGE + " AS main_image,"
+            " b.name AS brand_name, b.logo_url,"
             " b.category AS brand_category,"
             " (SELECT fields->'category'->>'value' FROM product_profile_versions pv"
             "   WHERE pv.product_id=p.product_id ORDER BY version DESC LIMIT 1) AS product_category"
@@ -578,11 +657,9 @@ def public_products(q: str = "", brand: str = "", category: str = "",
         cats = conn.execute(
             "SELECT DISTINCT COALESCE(NULLIF((SELECT fields->'category'->>'value' FROM product_profile_versions pv"
             "   WHERE pv.product_id=p.product_id ORDER BY version DESC LIMIT 1),''), b.category) AS cat"
-            " FROM brand_products p JOIN brands b USING (brand_id)"
-            " JOIN product_invitation_profiles v USING (product_id) WHERE " + _PUBLIC_WHERE).fetchall()
+            + _PUBLIC_FROM + " WHERE " + _PUBLIC_WHERE).fetchall()
         brands = conn.execute(
-            "SELECT DISTINCT p.brand_id, b.name FROM brand_products p JOIN brands b USING (brand_id)"
-            " JOIN product_invitation_profiles v USING (product_id) WHERE " + _PUBLIC_WHERE
+            "SELECT DISTINCT p.brand_id, b.name" + _PUBLIC_FROM + " WHERE " + _PUBLIC_WHERE
             + " ORDER BY b.name").fetchall()
         ids_ = [r["product_id"] for r in rows]
         camps = conn.execute(
@@ -590,6 +667,12 @@ def public_products(q: str = "", brand: str = "", category: str = "",
             " c.reward_amount, c.reward_currency, c.platform, c.deadline, c.countries, c.conditions"
             " FROM campaigns c JOIN brand_products p ON " + _OPEN_CAMPAIGN +
             " WHERE p.product_id = ANY(%s) ORDER BY c.deadline NULLS LAST", (ids_,)).fetchall() if ids_ else []
+        extras = conn.execute(
+            "SELECT product_id, image_id FROM product_images WHERE product_id = ANY(%s) AND slot='extra'"
+            " AND deleted_at IS NULL ORDER BY created_at", (ids_,)).fetchall() if ids_ else []
+    ex = {}
+    for x in extras:
+        ex.setdefault(x["product_id"], []).append(f"/public/product-images/{x['image_id']}")
     by = {}
     for c in camps:
         by.setdefault(c["product_id"], []).append(
@@ -608,10 +691,133 @@ def public_products(q: str = "", brand: str = "", category: str = "",
                       "brandName": r["brand_name"],
                       "logoUrl": r["logo_url"] if (r["logo_url"] or "").startswith("https://") else "",
                       "category": cat, "name": r["name"], "summary": r["summary"] or "",
-                      "imageUrl": r["image_url"] if (r["image_url"] or "").startswith("https://") else "",
+                      # 운영 검수 이미지 우선, 없으면 브랜드 업로드 대표 이미지(공개 표시 중인 제품만 익명 열람)
+                      "imageUrl": r["image_url"] if (r["image_url"] or "").startswith("https://")
+                      else (f"/public/product-images/{r['main_image']}" if r["main_image"] else ""),
+                      "images": ex.get(r["product_id"], []),
                       "commissionPct": float(r["commission_pct"]),
                       "campaigns": by.get(r["product_id"], [])})
     return {"items": items, "total": total, "offset": offset, "limit": limit,
             "nextOffset": offset + len(items) if offset + len(items) < total else None,
             "facets": {"categories": sorted({c["cat"] for c in cats if c["cat"]}),
                        "brands": [{"brandId": b["brand_id"], "name": b["name"]} for b in brands]}}
+
+
+
+# ── 제품 이미지 업로드(v8.1 B03) — 외부 스토리지 없이 DB 저장, 서명 URL 로 제공 ─────────
+IMAGE_MAX = 2_000_000
+IMAGE_EXTRA_MAX = 4
+_MAGIC = (("image/jpeg", lambda b: b[:3] == b"\xff\xd8\xff"),
+          ("image/png", lambda b: b[:8] == b"\x89PNG\r\n\x1a\n"),
+          ("image/webp", lambda b: b[:4] == b"RIFF" and b[8:12] == b"WEBP"))
+
+
+def _sniff(data: bytes) -> str | None:
+    return next((ct for ct, ok in _MAGIC if ok(data)), None)
+
+
+def image_url(image_id, ttl: int = 12 * 3600) -> str:
+    """이미지 서명 URL — 소유 브랜드·멤버 크리에이터 응답에만 실어 준다. 만료 시각은 시간 단위로 맞춰 캐시를 살린다."""
+    import hmac as _h
+    import time as _t
+    exp = (int(_t.time()) // 3600 + 1) * 3600 + ttl
+    sig = _h.new(auth._secret().encode(), f"{image_id}.{exp}".encode(), hashlib.sha256).hexdigest()[:32]
+    return f"/public/product-images/{image_id}?e={exp}&s={sig}"
+
+
+def product_images_out(conn, product_id) -> list[dict]:
+    rows = conn.execute(
+        "SELECT image_id, slot, content_type, size_bytes, created_at FROM product_images"
+        " WHERE product_id=%s AND deleted_at IS NULL ORDER BY (slot='main') DESC, created_at",
+        (product_id,)).fetchall()
+    return [{"imageId": str(r["image_id"]), "slot": r["slot"], "contentType": r["content_type"],
+             "size": r["size_bytes"], "url": image_url(r["image_id"]),
+             "at": r["created_at"].isoformat()} for r in rows]
+
+
+def main_image_url(conn, product_id) -> str | None:
+    if not product_id:
+        return None
+    r = conn.execute("SELECT image_id FROM product_images WHERE product_id=%s AND slot='main'"
+                     " AND deleted_at IS NULL", (product_id,)).fetchone()
+    return image_url(r["image_id"]) if r else None
+
+
+@router.post("/brands/{brand}/products/{product_id}/images")
+async def upload_product_image(brand: str, product_id: UUID, request: Request, slot: str = "extra",
+                               authorization: str = Header(default="")) -> dict:
+    u = _guard(brand, authorization)
+    if slot not in ("main", "extra"):
+        raise HTTPException(400, "slot 은 main 또는 extra")
+    declared = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if declared not in ("image/jpeg", "image/png", "image/webp"):
+        raise HTTPException(415, "JPG·PNG·WEBP 이미지만 올릴 수 있어요")
+    try:
+        if int(request.headers.get("content-length") or 0) > IMAGE_MAX:
+            raise HTTPException(413, "이미지는 2MB 이하만 올릴 수 있어요")
+    except ValueError:
+        raise HTTPException(400, "Content-Length 를 확인하세요")
+    data = await request.body()
+    if not data:
+        raise HTTPException(400, "빈 파일입니다")
+    if len(data) > IMAGE_MAX:
+        raise HTTPException(413, "이미지는 2MB 이하만 올릴 수 있어요")
+    if _sniff(data) != declared:
+        raise HTTPException(415, "파일 내용이 이미지 형식과 맞지 않아요 (JPG·PNG·WEBP)")
+    digest = hashlib.sha256(data).hexdigest()
+    with connect() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("product-images:" + str(product_id),))
+        _product(conn, brand, product_id)
+        if slot == "extra" and conn.execute(
+                "SELECT count(*) n FROM product_images WHERE product_id=%s AND slot='extra' AND deleted_at IS NULL",
+                (product_id,)).fetchone()["n"] >= IMAGE_EXTRA_MAX:
+            raise HTTPException(409, f"추가 이미지는 {IMAGE_EXTRA_MAX}장까지예요")
+        # 대표 교체: 같은 트랜잭션에서 이전 대표를 보관 → 새 저장이 실패하면 이전 대표가 그대로 남는다
+        if slot == "main":
+            conn.execute("UPDATE product_images SET deleted_at=now() WHERE product_id=%s AND slot='main'"
+                         " AND deleted_at IS NULL", (product_id,))
+        r = conn.execute(
+            "INSERT INTO product_images (product_id, brand_id, slot, content_type, data, size_bytes, sha256, created_by)"
+            " VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING image_id",
+            (product_id, brand, slot, declared, data, len(data), digest, str(u.get("sub") or ""))).fetchone()
+        ledger_append(conn, f"brand:{brand}", "PRODUCT_IMAGE_UPLOADED", str(product_id),
+                      {"imageId": str(r["image_id"]), "slot": slot, "size": len(data), "sha256": digest[:16]})
+        return {"imageId": str(r["image_id"]), "slot": slot, "images": product_images_out(conn, product_id)}
+
+
+@router.delete("/brands/{brand}/products/{product_id}/images/{image_id}")
+def delete_product_image(brand: str, product_id: UUID, image_id: UUID,
+                         authorization: str = Header(default="")) -> dict:
+    _guard(brand, authorization)
+    with connect() as conn:
+        _product(conn, brand, product_id)
+        r = conn.execute("UPDATE product_images SET deleted_at=now() WHERE image_id=%s AND product_id=%s"
+                         " AND brand_id=%s AND deleted_at IS NULL RETURNING image_id",
+                         (image_id, product_id, brand)).fetchone()
+        if not r:
+            raise HTTPException(404, "이미지를 찾을 수 없습니다")
+        ledger_append(conn, f"brand:{brand}", "PRODUCT_IMAGE_DELETED", str(product_id), {"imageId": str(image_id)})
+        return {"ok": True, "images": product_images_out(conn, product_id)}
+
+
+@public_router.get("/public/product-images/{image_id}")
+def serve_product_image(image_id: UUID, e: int = 0, s: str = "") -> Response:
+    import hmac as _h
+    import time as _t
+    want = _h.new(auth._secret().encode(), f"{image_id}.{e}".encode(), hashlib.sha256).hexdigest()[:32]
+    signed = bool(s) and _h.compare_digest(s, want) and e >= int(_t.time())
+    with connect() as conn:
+        r = conn.execute("SELECT content_type, data, product_id FROM product_images WHERE image_id=%s AND deleted_at IS NULL",
+                         (image_id,)).fetchone()
+        # 서명이 없거나 만료된 주소는 지금 공개 표시 중인(읽을 때 공개 조건 재확인) 제품의 이미지일 때만 연다
+        public = bool(r) and not signed and bool(conn.execute(
+            "SELECT 1" + _PUBLIC_FROM + " WHERE p.product_id=%s AND " + _PUBLIC_WHERE.replace("%%", "%%"),
+            (r["product_id"],)).fetchone())
+    if not r:
+        raise HTTPException(404, "이미지를 찾을 수 없습니다")
+    if not signed and not public:
+        raise HTTPException(403, "만료됐거나 공개되지 않은 이미지 주소입니다 — 목록을 새로고침하세요")
+    return Response(content=bytes(r["data"]), media_type=r["content_type"],
+                    headers={"Cache-Control": ("public, max-age=300" if public else "private, max-age=3600"),
+                             "X-Content-Type-Options": "nosniff",
+                             "Content-Disposition": "inline", "Cross-Origin-Resource-Policy": "cross-origin"})

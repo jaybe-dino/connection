@@ -18,6 +18,13 @@
   function keep() { try { localStorage.setItem('PRODUCTS_SAVED', JSON.stringify(saved)); } catch (e) {} }
   var P = { bag: 'M5 8h14l-1 13H6zM9 8V6a3 3 0 0 1 6 0v2', chat: 'M4 5h16v11H9l-5 4z' };
   function icon(k) { return '<svg class="v5-ic " width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="' + P[k] + '"/></svg>'; }
+  /* 이미지 주소: 운영 검수 https 또는 API 의 공개 표시 제품 업로드 이미지(/public/product-images/<id>) */
+  function img(u) {
+    u = String(u || '');
+    if (/^https:\/\//.test(u)) return u;
+    if (/^\/public\/product-images\/[0-9a-f-]{36}$/.test(u)) return API + u;
+    return '';
+  }
   function mono(name) { var l = h((name || '?').slice(0, 1).toUpperCase()); return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="10" fill="#f3eff6"/><text x="32" y="42" font-size="26" text-anchor="middle" fill="#695177" font-family="sans-serif">' + l + '</text></svg>'); }
   function reward(c) {
     if (c.rewardType === 'affiliate') return '판매 보상(판매금액의 ' + (c.affiliatePct != null ? c.affiliatePct + '%' : '— ') + ')';
@@ -34,7 +41,7 @@
     var cs = p.campaigns, open = cs.length, isApplied = applied(p), member = !!S.member[p.brandId];
     var countries = []; cs.forEach(function (c) { (c.countries || []).forEach(function (k) { if (countries.indexOf(k) < 0) countries.push(k); }); });
     var primary = !open ? '<a class="btn" href="' + h(inviteUrl(p)) + '">브랜드 커뮤니티 참여</a>' : isApplied ? '<button type="button" class="btn" disabled>신청함</button>' : member ? '<a class="btn pri" href="' + h(campUrl(cs[0])) + '">조건 보고 신청</a>' : '<a class="btn pri" href="' + h(inviteUrl(p)) + '">브랜드 참여 후 신청</a>';
-    return '<li class="v6-pcard" data-pid="' + h(p.productId) + '"><div class="v6-ptop"><img class="v6-pimg" width="56" height="56" src="' + h(p.imageUrl || mono(p.name)) + '" data-fb="' + h(mono(p.name)) + '" alt="' + h(p.name) + ' 이미지" loading="lazy" referrerpolicy="no-referrer"><div class="v6-grow"><span class="v6-meta">' + h(p.brandName) + '</span><h3>' + h(p.name) + '</h3><div>' + (open ? '<span class="chip ok">모집 중' + (open > 1 ? ' ' + open + '개' : '') + '</span>' : '<span class="chip ">모집 없음</span>') + (isApplied ? ' <span class="chip info">신청함</span>' : '') + (member ? ' <span class="chip ">참여 중인 브랜드</span>' : '') + '</div></div></div>' +
+    return '<li class="v6-pcard" data-pid="' + h(p.productId) + '"><div class="v6-ptop"><img class="v6-pimg" width="56" height="56" src="' + h(img(p.imageUrl) || mono(p.name)) + '" data-fb="' + h(mono(p.name)) + '" alt="' + h(p.name) + ' 이미지" loading="lazy" referrerpolicy="no-referrer"><div class="v6-grow"><span class="v6-meta">' + h(p.brandName) + '</span><h3>' + h(p.name) + '</h3><div>' + (open ? '<span class="chip ok">모집 중' + (open > 1 ? ' ' + open + '개' : '') + '</span>' : '<span class="chip ">모집 없음</span>') + (isApplied ? ' <span class="chip info">신청함</span>' : '') + (member ? ' <span class="chip ">참여 중인 브랜드</span>' : '') + '</div></div></div>' +
       '<dl class="v6-kv"><dt>신청 국가</dt><dd>' + h(countries.map(function (k) { return CTRY[k] || k; }).join(', ') || (open ? '국가 제한 없음' : '—')) + '</dd><dt>보상</dt><dd>' + h(open ? cs.map(reward).join(' / ') : '모집 조건 없음 · 보상 정보 없음') + '</dd><dt>콘텐츠</dt><dd>' + h(open ? cs.map(function (c) { return (c.conditions || []).join(' · ') || '브랜드 안내 대기'; }).join(' / ') : '—') + '</dd><dt>마감</dt><dd>' + h(open ? cs.map(function (c) { return c.deadline || '별도 안내'; }).join(', ') : '—') + '</dd></dl>' +
       '<div class="v6-actions">' + primary + '<button type="button" class="btn ghost" data-detail="' + h(p.productId) + '">상세</button><button type="button" class="btn ghost" data-save="' + h(p.productId) + '" aria-pressed="' + (saved.indexOf(p.productId) >= 0) + '">' + (saved.indexOf(p.productId) >= 0 ? '저장됨' : '저장') + '</button></div></li>';
   }
@@ -67,7 +74,9 @@
   document.addEventListener('error', function (e) { var t = e.target; if (t && t.tagName === 'IMG' && t.dataset && t.dataset.fb && t.src !== t.dataset.fb) t.src = t.dataset.fb; }, true);
   function sheet(p) {
     var el = document.getElementById('pd-sheet'), sc = document.getElementById('pd-scrim');
-    el.innerHTML = '<h2 id="pd-sheet-title">' + h(p.name) + '</h2><p class="v6-meta">' + h(p.brandName) + (p.category ? ' · ' + h(p.category) : '') + '</p><img class="v6-pimg" width="96" height="96" src="' + h(p.imageUrl || mono(p.name)) + '" data-fb="' + h(mono(p.name)) + '" alt="' + h(p.name) + ' 이미지" referrerpolicy="no-referrer"><p>' + h(p.summary) + '</p>' +
+    el.innerHTML = '<h2 id="pd-sheet-title">' + h(p.name) + '</h2><p class="v6-meta">' + h(p.brandName) + (p.category ? ' · ' + h(p.category) : '') + '</p><img class="v6-pimg" width="96" height="96" src="' + h(img(p.imageUrl) || mono(p.name)) + '" data-fb="' + h(mono(p.name)) + '" alt="' + h(p.name) + ' 이미지" referrerpolicy="no-referrer">' +
+      ((p.images || []).map(img).filter(Boolean).length ? '<div class="v6"><div class="v6-thumbs" aria-label="추가 이미지">' + (p.images || []).map(img).filter(Boolean).map(function (u, i) { return '<div class="v6-thumb"><img src="' + h(u) + '" data-fb="' + h(mono(p.name)) + '" width="72" height="72" alt="' + h(p.name) + ' 추가 이미지 ' + (i + 1) + '" referrerpolicy="no-referrer"></div>'; }).join('') + '</div></div>' : '') +
+      '<p>' + h(p.summary) + '</p>' +
       (p.campaigns.length ? '<h3>모집 중인 캠페인</h3><ul class="v6-list">' + p.campaigns.map(function (c) { return '<li class="v6-row"><div class="v6-grow"><b>' + h(c.name) + '</b><span class="v6-meta">' + h(reward(c)) + ' · ' + h((c.countries || []).map(function (k) { return CTRY[k] || k; }).join(', ') || '국가 제한 없음') + ' · 마감 ' + h(c.deadline || '별도 안내') + '</span></div></li>'; }).join('') + '</ul>' : '<p class="v6-meta">지금 모집 중인 캠페인은 없어요.</p>') +
       '<div class="v6-actions"><button type="button" class="btn" data-act="close">닫기</button></div>';
     el.hidden = false; sc.hidden = false; var b = el.querySelector('[data-act="close"]'); if (b) b.focus();

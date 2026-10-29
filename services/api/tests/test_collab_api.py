@@ -98,6 +98,10 @@ def test_two_new_brands_full_campaign_journey(client, monkeypatch):
         f"/brands/joyone/campaigns/{cid}/terms/{creator_id}/complete",
         headers=_bearer(t1)).status_code == 409
 
+    # 크리에이터: 샘플 받을 주소 입력(주소 없이 발송 처리 불가)
+    assert client.post(f"/brands/joyone/campaigns/{cid}/terms/{creator_id}/sample-shipped",
+                       json={"tracking": "NOADDR1"}, headers=_bearer(t1)).status_code == 409
+    assert client.post(f"/me/campaign-offers/{cid}/shipping", json={"recipient": "QA 수령인", "country": "KR", "address": "서울시 테스트로 1", "phone": "010-0000-0000"}, headers=ch).status_code == 200
     # 브랜드: 샘플 발송 + 어필리에이트 링크 발급(브랜드 권한)
     sh = client.post(
         f"/brands/joyone/campaigns/{cid}/terms/{creator_id}/sample-shipped",

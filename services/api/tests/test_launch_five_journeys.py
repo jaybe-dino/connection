@@ -38,6 +38,7 @@ def test_independent_brand_creator_journey(client,monkeypatch,n,locale):
     assert client.post(f'/brands/{slug}/campaigns/{cid}/terms/{creator}/complete',headers=h).status_code==409
     agreed=post(f'/me/campaign-offers/{cid}/agree',{'accept':True,'tiktok_handle':f'@qa{n}'},ch)
     assert agreed['agreedCommissionPct']==12.5
+    post(f'/me/campaign-offers/{cid}/shipping',{'recipient':'QA 수령인','country':'KR','address':'서울시 테스트로 1','phone':'010-0000-0000'},ch)
     post(f'/brands/{slug}/campaigns/{cid}/terms/{creator}/sample-shipped',{'tracking':f'LOCAL-QA-{n}'})
     post(f'/brands/{slug}/campaigns/{cid}/terms/{creator}/affiliate-link',{'link':f'https://example.com/qa/{n}'})
     post(f'/me/campaign-offers/{cid}/spark-code',{'spark_code':f'LOCAL-QA-CODE-{n}'},ch)

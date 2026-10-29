@@ -45,13 +45,24 @@
     var l = String(label || '?').trim().slice(0, 1).toUpperCase() || '?';
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="10" fill="#f3eff6"/><text x="32" y="42" font-size="26" text-anchor="middle" font-family="sans-serif" fill="#5b4466">' + l.replace(/[<&>"]/g, '') + '</text></svg>');
   }
+  /* 이미지 주소: 공개 https 또는 API 의 서명된 브랜드 업로드 이미지(/public/product-images/…) */
+  function imgSrc(u) {
+    u = String(u || '');
+    if (/^https:\/\//.test(u)) return u;
+    if (/^\/public\/product-images\/[0-9a-f-]{36}(\?e=\d+&s=[0-9a-f]{32})?$/.test(u)) return (window.__API_URL || (typeof API !== 'undefined' ? API : '')) + u;
+    return '';
+  }
   function pimg(c, size) {
     var label = (c && (c.product || c.name)) || '제품', fb = mono(c && (c.product || c.brandName || c.name));
-    var src = c && c.imageUrl && /^https:\/\//.test(c.imageUrl) ? c.imageUrl : fb;
+    var src = imgSrc(c && c.imageUrl) || fb;
     return '<img class="v6-pimg" width="' + size + '" height="' + size + '" src="' + a(src) + '" data-fb="' + a(fb) + '" alt="' + a(label + ' 이미지') + '" loading="lazy" referrerpolicy="no-referrer">';
   }
   document.addEventListener('error', function (e) {
     var t = e.target; if (!t || t.tagName !== 'IMG' || !t.dataset) return;
+    // 서명 URL 이 만료됐을 수 있으면 협업 데이터를 한 번 다시 받아 새 서명 URL 로 다시 그린다(1분에 한 번까지)
+    if (t.dataset.fb && /\/public\/product-images\/.+\?e=/.test(t.src) && Date.now() - (V.imgRetryAt || 0) > 60000 && typeof collabRefresh === 'function') {
+      V.imgRetryAt = Date.now(); Promise.resolve(collabRefresh()).then(function () { render(); });
+    }
     if (t.dataset.fb && t.src !== t.dataset.fb) { t.src = t.dataset.fb; return; }
     if (t.dataset.fbtext != null && t.parentNode) t.parentNode.replaceChild(document.createTextNode(t.dataset.fbtext), t);
   }, true);
@@ -78,7 +89,8 @@
     e.platform = t.platform; e.conditions = t.conditions || []; e.affiliatePct = t.commissionPct;
     // 제품도 합의 대상 — 합의 후 캠페인의 제품이 바뀌어도 합의한 제품명·이미지로 보인다(이전 스냅샷엔 없으면 현재 값)
     if ('product' in t) { e.product = t.product; e.productId = t.productId; }
-    if (e._agreedProductImage = (o.state !== 'selected' && 'productImage' in t)) e.imageUrl = t.productImage || null;
+    // 합의한 제품의 이미지: 운영 소개 이미지(https) 또는 합의 당시 브랜드 대표 이미지(서버가 새 서명 URL 로 제공)
+    if (o.state !== 'selected' && (t.productImage || o.agreedImageUrl)) e.imageUrl = t.productImage || o.agreedImageUrl;
     e._terms = o.state === 'selected' ? 'offer' : 'agreed';
     return e;
   }

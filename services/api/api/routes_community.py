@@ -199,6 +199,49 @@ def messages(cell_id: str, channel: str = "", limit: int = 50,
 
 CREATOR_CHANNELS = ("chat", "tips", "products", "qna")
 BRAND_CHANNELS = ("chat", "tips", "products", "qna", "notice")
+# 기본 채널 — brand_channels 에 행이 없으면 이 값 그대로. 기본 채널은 보관할 수 없다.
+BASE_CHANNELS = [("notice", "공지사항", "브랜드의 새 소식", "readonly"),
+                 ("chat", "자유대화", "멤버 누구나 이야기해요", "public"),
+                 ("products", "제품후기", "사용 후기를 나눠요", "public"),
+                 ("qna", "질문", "협업·배송 질문", "public"),
+                 ("tips", "콘텐츠팁", "촬영·편집 팁을 나눠요", "public")]
+
+
+def channels_of(conn, cell_id: str, include_archived: bool = False) -> list[dict]:
+    """이 셀의 채널 목록(기본 + 브랜드 수정/추가). 크리에이터 메뉴와 콘솔 채널 관리가 같은 목록을 쓴다."""
+    rows = {r["key"]: r for r in conn.execute(
+        "SELECT b.*, c.name AS campaign_name FROM brand_channels b"
+        " LEFT JOIN campaigns c ON c.campaign_id=b.campaign_id"
+        " WHERE b.cell_id=%s", (cell_id,)).fetchall()}
+    out = []
+    for i, (key, name, desc, vis) in enumerate(BASE_CHANNELS):
+        r = rows.pop(key, None)
+        out.append({"key": key, "name": r["name"] if r else name,
+                    "description": r["description"] if r else desc,
+                    "visibility": "readonly" if key == "notice" else (r["visibility"] if r else vis),
+                    "campaignId": r["campaign_id"] if r else None,
+                    "campaignName": r["campaign_name"] if r else None,
+                    "archived": False, "base": True, "position": i})
+    for r in sorted(rows.values(), key=lambda x: (x["position"], x["created_at"])):
+        if r["archived_at"] and not include_archived:
+            continue
+        out.append({"key": r["key"], "name": r["name"], "description": r["description"],
+                    "visibility": r["visibility"], "campaignId": r["campaign_id"],
+                    "campaignName": r["campaign_name"],
+                    "archived": bool(r["archived_at"]), "base": False, "position": r["position"]})
+    return out
+
+
+def _channel_for_post(conn, cell: dict, channel: str, creator: bool, thread: bool) -> None:
+    if cell.get("visibility") == "dm":
+        if channel != "chat":
+            raise HTTPException(400, "DM 은 chat 채널만 씁니다")
+        return
+    ch = next((c for c in channels_of(conn, cell["cell_id"]) if c["key"] == channel), None)
+    if not ch:
+        raise HTTPException(400, "없는 채널이거나 보관된 채널입니다")
+    if creator and ch["visibility"] == "readonly" and not thread:
+        raise HTTPException(403, "이 채널은 브랜드만 글을 쓸 수 있습니다")
 
 
 class PostIn(BaseModel):
@@ -222,16 +265,14 @@ def post_message(cell_id: str, body: PostIn,
         cell = _cell(conn, cell_id)
         who = _member_or_owner(conn, claims, cell)
         if claims.get("kind") == "creator":
-            if body.channel not in CREATOR_CHANNELS:
-                raise HTTPException(403, "공지는 브랜드·운영만 게시할 수 있습니다")
+            _channel_for_post(conn, cell, body.channel, True, bool(body.thread_parent))
             from .routes_service import require_onboarded
             require_onboarded(conn, who, "커뮤니티 글 작성")
             author = conn.execute("SELECT handle FROM creators WHERE creator_id=%s",
                                   (who,)).fetchone()["handle"]
             author_kind = "creator"
         else:
-            if body.channel not in BRAND_CHANNELS:
-                raise HTTPException(400, "channel은 chat/tips/products/qna/notice")
+            _channel_for_post(conn, cell, body.channel, False, bool(body.thread_parent))
             author = cell["brand_id"] if claims.get("kind") == "brand" else "admin"
             author_kind = "brand" if claims.get("kind") == "brand" else "ari"
         # 원문 선저장(pending) — 번역 API 장애에도 메시지는 잃지 않는다.
@@ -497,3 +538,111 @@ def list_dms(authorization: str = Header(default="")) -> list[dict]:
                     "brandName": r["brand_name"], "name": r["name"],
                     "creatorId": counterpart})
     return out
+
+
+# ── 채널 관리 (v8.1 B11/C11) — 브랜드가 추가·이름 변경·공개 범위·캠페인 연결·보관,
+#    크리에이터 메뉴는 GET channels 로 같은 목록을 그린다 ──────────────
+
+class ChannelIn(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    description: str = Field(default="", max_length=120)
+    visibility: str = Field(default="public", pattern="^(public|readonly)$")
+    campaign_id: str | None = Field(default=None, max_length=100)
+
+
+class ChannelPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=40)
+    description: str | None = Field(default=None, max_length=120)
+    visibility: str | None = Field(default=None, pattern="^(public|readonly)$")
+    campaign_id: str | None = Field(default=None, max_length=100)
+    clear_campaign: bool = False
+    archived: bool | None = None
+
+
+def _lounge_owner(conn, claims: dict, cell_id: str) -> dict:
+    cell = _cell(conn, cell_id)
+    if cell.get("visibility") == "dm":
+        raise HTTPException(400, "DM 에는 채널이 없습니다")
+    if _member_or_owner(conn, claims, cell) not in ("brand", "admin"):
+        raise HTTPException(403, "채널 관리는 브랜드·운영만 할 수 있습니다")
+    return cell
+
+
+def _campaign_of_cell(conn, cell: dict, campaign_id: str | None) -> str | None:
+    if not campaign_id:
+        return None
+    if not conn.execute("SELECT 1 FROM campaigns WHERE campaign_id=%s AND brand_id=%s",
+                        (campaign_id, cell["brand_id"])).fetchone():
+        raise HTTPException(404, "이 브랜드의 캠페인이 아닙니다")
+    return campaign_id
+
+
+def _name_taken(conn, cell_id: str, name: str, except_key: str = "") -> bool:
+    return any(c["key"] != except_key and c["name"].strip().lower() == name.strip().lower()
+               for c in channels_of(conn, cell_id))
+
+
+@router.get("/cells/{cell_id}/channels")
+def list_channels(cell_id: str, authorization: str = Header(default="")) -> list[dict]:
+    claims = _actor(authorization)
+    with connect() as conn:
+        cell = _cell(conn, cell_id)
+        who = _member_or_owner(conn, claims, cell)
+        if cell.get("visibility") == "dm":
+            return []
+        return channels_of(conn, cell_id, include_archived=who in ("brand", "admin"))
+
+
+@router.post("/cells/{cell_id}/channels")
+def add_channel(cell_id: str, body: ChannelIn, authorization: str = Header(default="")) -> dict:
+    claims = _actor(authorization)
+    with connect() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("channels:" + cell_id,))
+        cell = _lounge_owner(conn, claims, cell_id)
+        if _name_taken(conn, cell_id, body.name):
+            raise HTTPException(409, "같은 이름의 채널이 이미 있습니다")
+        if conn.execute("SELECT count(*) n FROM brand_channels WHERE cell_id=%s AND archived_at IS NULL"
+                        " AND key NOT IN ('chat','products','qna','tips','notice')", (cell_id,)).fetchone()["n"] >= 20:
+            raise HTTPException(409, "추가 채널은 20개까지 만들 수 있습니다")
+        key = "ch-" + uuid.uuid4().hex[:8]
+        conn.execute("INSERT INTO brand_channels (cell_id, key, name, description, visibility, campaign_id)"
+                     " VALUES (%s,%s,%s,%s,%s,%s)",
+                     (cell_id, key, body.name.strip(), body.description.strip(), body.visibility,
+                      _campaign_of_cell(conn, cell, body.campaign_id)))
+        ledger_append(conn, f"{claims.get('kind')}:{claims.get('brand_id') or claims.get('sub')}",
+                      "CHANNEL_ADDED", cell_id, {"key": key, "name": body.name.strip()})
+        return next(c for c in channels_of(conn, cell_id) if c["key"] == key)
+
+
+@router.patch("/cells/{cell_id}/channels/{key}")
+def edit_channel(cell_id: str, key: str, body: ChannelPatch, authorization: str = Header(default="")) -> dict:
+    claims = _actor(authorization)
+    with connect() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("channels:" + cell_id,))
+        cell = _lounge_owner(conn, claims, cell_id)
+        cur = next((c for c in channels_of(conn, cell_id, include_archived=True) if c["key"] == key), None)
+        if not cur:
+            raise HTTPException(404, "채널을 찾을 수 없습니다")
+        if body.archived is not None and cur["base"]:
+            raise HTTPException(409, "기본 채널은 보관할 수 없습니다")
+        if key == "notice" and body.visibility == "public":
+            raise HTTPException(409, "공지사항 채널은 읽기 전용입니다")
+        name = body.name.strip() if body.name is not None else cur["name"]
+        if body.name is not None and _name_taken(conn, cell_id, name, key):
+            raise HTTPException(409, "같은 이름의 채널이 이미 있습니다")
+        if body.archived is False and _name_taken(conn, cell_id, name, key):
+            raise HTTPException(409, "같은 이름의 사용 중 채널이 있어 다시 사용할 수 없습니다")
+        campaign = None if body.clear_campaign else (
+            _campaign_of_cell(conn, cell, body.campaign_id) if body.campaign_id else cur["campaignId"])
+        vals = (name, body.description.strip() if body.description is not None else cur["description"],
+                body.visibility or cur["visibility"], campaign)
+        archived_sql = ("now()" if body.archived else "NULL") if body.archived is not None else (
+            "now()" if cur["archived"] else "NULL")
+        conn.execute("INSERT INTO brand_channels (cell_id, key, name, description, visibility, campaign_id, position)"
+                     f" VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (cell_id, key) DO UPDATE SET"
+                     f" name=EXCLUDED.name, description=EXCLUDED.description, visibility=EXCLUDED.visibility,"
+                     f" campaign_id=EXCLUDED.campaign_id, archived_at={archived_sql}, updated_at=now()",
+                     (cell_id, key) + vals + (cur["position"],))
+        ledger_append(conn, f"{claims.get('kind')}:{claims.get('brand_id') or claims.get('sub')}",
+                      "CHANNEL_EDITED", cell_id, {"key": key, "archived": body.archived})
+        return next(c for c in channels_of(conn, cell_id, include_archived=True) if c["key"] == key)

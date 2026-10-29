@@ -43,6 +43,10 @@ def slug_check(slug:str):
             return {'available':False,'reason':'pending','slug':slug}
     return {'available':True,'reason':'available','slug':slug}
 
+# 브랜드 프로필 답변 키 — v8.1 브랜드 학습(B02) 추가 키: homepage·countries·usp·faq(JSON 문자열)
+BRAND_KEYS={'brand_one_liner','hero_product','ingredients','price_range','ideal_creator','banned_words','sample_criteria','voice',
+            'homepage','countries','usp','faq'}
+
 class ProfileIn(BaseModel):
     learning_id:UUID|None=None
     answers:dict[str,str]=Field(default_factory=dict)
@@ -60,7 +64,13 @@ def save_profile(brand:str,body:ProfileIn,authorization:str=Header(default='')):
         previous=c.execute('SELECT fields FROM brand_profile_versions WHERE brand_id=%s ORDER BY version DESC LIMIT 1',(brand,)).fetchone()
         fields=dict((previous or {}).get('fields') or {})
         fields.update((row or {}).get('fields') or {})
-        answers={k:v.strip()[:2000] for k,v in body.answers.items() if k in {'brand_one_liner','hero_product','ingredients','price_range','ideal_creator','banned_words','sample_criteria','voice'}}
+        answers={k:v.strip()[:2000] for k,v in body.answers.items() if k in BRAND_KEYS}
+        if answers.get('homepage') and not re.fullmatch(r"https://[^\s\"'<>]{4,480}",answers['homepage']):raise HTTPException(400,'홈페이지는 https:// 주소로 적어 주세요')
+        if answers.get('countries') and not set(x.strip() for x in answers['countries'].split(',') if x.strip())<={'KR','TH','US','VN','JP'}:raise HTTPException(400,'운영 국가를 확인하세요')
+        if answers.get('faq'):
+            try:
+                faq=json.loads(answers['faq']);assert isinstance(faq,list) and len(faq)<=30 and all(isinstance(x,dict) and isinstance(x.get('q',''),str) and isinstance(x.get('a',''),str) for x in faq)
+            except Exception:raise HTTPException(400,'FAQ 형식을 확인하세요')
         if not row and not any(v or k in fields for k,v in answers.items()):raise HTTPException(400,'분석 결과나 직접 입력한 브랜드 정보가 필요합니다')
         for k,v in answers.items():
             if v:

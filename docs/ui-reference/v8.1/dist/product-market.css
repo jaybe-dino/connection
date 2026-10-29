@@ -1,0 +1,38 @@
+/* v4 제품 모아보기 — slack-preserve.css 다음(맨 마지막)에 읽는다. 중앙 본문만 꾸민다. */
+.pm-note{margin:0 0 10px;padding:6px 10px;border-radius:8px;background:#fdf3e1;color:#5c3800}
+.pm-filters{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:flex-end;padding:10px;border:1px solid var(--line);border-radius:10px;background:#faf8fc}
+.pm-f{display:grid;gap:2px;flex:1 1 140px;min-width:0}
+.pm-f label{font-size:.85rem;font-weight:700;color:var(--muted)}
+.pm-f select,.pm-f input{min-height:44px}
+.pm-q{flex:2 1 220px}
+.pm-chk{display:flex;align-items:center;gap:6px;min-height:44px;font-weight:600}
+.pm-chk input{width:20px;height:20px}
+.pm-count{margin:10px 0 6px;font-weight:700;color:var(--plum2)}
+.pm-grid{list-style:none;margin:0;padding:0;display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr))}
+.pm-card{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 12px;min-width:0}
+.pm-top{display:flex;gap:10px;align-items:flex-start;min-width:0}
+.pm-thumb{flex:0 0 56px;width:56px;height:56px}
+.pm-head{min-width:0}
+.pm-brand{display:block;font-size:.82rem;color:var(--muted)}
+.pm-name{font-size:1rem;margin:0 0 4px;overflow-wrap:anywhere}
+.pm-head .chip{white-space:normal}
+.pm-kv{display:grid;grid-template-columns:minmax(72px,auto) minmax(0,1fr);gap:2px 10px;margin:0;font-size:.9rem}
+.pm-kv dt{color:var(--muted)}
+.pm-kv dd{margin:0;overflow-wrap:anywhere}
+.pm-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto}
+.pm-actions .btn{flex:1 1 auto}
+.pm-dtop{display:flex;gap:12px;align-items:flex-start}
+.pm-dtop .pm-thumb{flex-basis:72px;width:72px;height:72px}
+.pm-sub{margin-top:12px}
+.pm-offer{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0}
+.pm-offer h4{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 6px}
+.pm-offer .kv{grid-template-columns:minmax(90px,auto) minmax(0,1fr)}
+.pm-steps{margin:0 0 12px}
+.pm-fs{border:0;padding:0;margin:0 0 10px;min-width:0}
+.pm-fs legend{font-weight:700;margin-bottom:6px;padding:0}
+@media (max-width:719px){
+  .pm-filters{padding:8px}
+  .pm-f{flex:1 1 calc(50% - 10px)}
+  .pm-q{flex:1 1 100%}
+  .pm-f label{font-size:.8rem}
+}

@@ -1,0 +1,452 @@
+{
+  "note": "직접 확인한 운영 화면 캡처. 번호 위치는 해당 화면의 실제 요소 좌표로 지정. 데이터 변경이나 운영 반영 없음.",
+  "roles": {
+    "brand": {
+      "default": "brand-home",
+      "pages": [
+        {
+          "key": "brand-home",
+          "label": "홈",
+          "file": "references/brand-home.png",
+          "url": "https://console.theprlist.net/",
+          "checked": "2026-10-26 00:17 KST",
+          "observed": "FAU 워크스페이스 · 브랜드 학습/메일링 카드 · theprlist에게 물어보세요 입력",
+          "hotspots": {
+            "B01": [
+              63.9,
+              13.5
+            ],
+            "B02": [
+              58.6,
+              27.8
+            ],
+            "B12": [
+              65.3,
+              44.7
+            ]
+          },
+          "width": 807,
+          "height": 917
+        },
+        {
+          "key": "brand-learning",
+          "label": "브랜드 학습",
+          "file": "references/brand-learning.png",
+          "url": "https://console.theprlist.net/",
+          "checked": "2026-10-26 00:17 KST",
+          "width": 807,
+          "height": 917,
+          "hotspots": {
+            "B02": [
+              81,
+              8.2
+            ],
+            "B03": [
+              35.6,
+              64.9
+            ],
+            "B12": [
+              55.7,
+              29.3
+            ]
+          },
+          "observed": "홈페이지 분석·직접 수정·저장된 브랜드 자료가 있음. 분석·저장 버튼은 실행하지 않음."
+        },
+        {
+          "key": "brand-products",
+          "label": "제품·캠페인",
+          "file": "references/brand-products.png",
+          "url": "https://console.theprlist.net/",
+          "checked": "2026-10-26 00:17 KST",
+          "observed": "새 제품(이름/Shop 상품 ID/커미션) · 등록 제품 카드(프로필/캠페인 개설/후보/AI 추천) · 새 캠페인 초안 폼 · 대상 국가 ISO 2자리 직접 입력",
+          "hotspots": {
+            "B03": [
+              92.4,
+              70.5
+            ],
+            "B05": [
+              55.3,
+              91.1
+            ]
+          },
+          "width": 807,
+          "height": 917
+        },
+        {
+          "key": "brand-community",
+          "label": "커뮤니티·DM",
+          "file": "references/brand-community.png",
+          "url": "https://console.theprlist.net/",
+          "checked": "2026-10-26 00:17 KST",
+          "observed": "대화 목록 새로고침 · 표시할 대화 없음",
+          "hotspots": {
+            "B11": [
+              67.5,
+              8.2
+            ],
+            "B07": [
+              59.1,
+              17.3
+            ]
+          },
+          "width": 807,
+          "height": 917
+        },
+        {
+          "key": "brand-outreach",
+          "label": "아웃리치·인박스",
+          "file": "references/brand-outreach.png",
+          "url": "https://console.theprlist.net/",
+          "checked": "2026-10-26 00:17 KST",
+          "observed": "Google 송수신 연결 설명 · AI 메일 초안 · 수신자 200명 사전 검수/초안/내역 · 제품별 매핑+시트 10,000행 검수/배치 승인 · 대화 내역",
+          "hotspots": {
+            "B06": [
+              58.2,
+              8.2
+            ]
+          },
+          "width": 807,
+          "height": 917
+        },
+        {
+          "key": "brand-team",
+          "label": "팀",
+          "file": "references/brand-team.png",
+          "url": "https://console.theprlist.net/",
+          "checked": "2026-10-26 00:17 KST",
+          "width": 807,
+          "height": 917,
+          "hotspots": {
+            "B14": [
+              44.9,
+              8.2
+            ]
+          },
+          "observed": "소유자 계정·역할 변경·팀원 초대 운영 안내가 실제로 있음. 권한 변경은 실행하지 않음."
+        },
+        {
+          "key": "brand-billing",
+          "label": "월별 청구",
+          "file": "references/brand-billing.png",
+          "url": "https://console.theprlist.net/",
+          "checked": "2026-10-26 00:17 KST",
+          "width": 807,
+          "height": 917,
+          "hotspots": {
+            "B13": [
+              53.1,
+              8.2
+            ]
+          },
+          "observed": "월별 청구·수기 청구 안내·카드 자동청구 준비 중·청구서 없음 표시를 확인. 결제는 실행하지 않음."
+        },
+        {
+          "key": "brand-campaign-draft",
+          "label": "제품·캠페인 · 새 캠페인 초안(아래 구간)",
+          "file": "references/brand-campaign-draft.png",
+          "url": "https://console.theprlist.net/",
+          "checked": "2026-10-26 00:19 KST",
+          "width": 807,
+          "height": 917,
+          "hotspots": {
+            "B04": [
+              57.6,
+              40.1
+            ]
+          },
+          "observed": "실제 제품·캠페인 메뉴 아래 구간의 새 캠페인 초안 폼. 보상 유형·마감일·ISO 국가 코드 입력과 초안 저장이 있음."
+        }
+      ]
+    },
+    "creator": {
+      "default": "creator-community",
+      "pages": [
+        {
+          "key": "creator-community",
+          "label": "자유 대화",
+          "file": "references/creator-community.png",
+          "url": "https://app.theprlist.net/?brand=goryeo1392#community",
+          "checked": "2026-10-26 00:18 KST",
+          "observed": "고려공작1392 실제 채널: 브랜드 레일·채널 목록·메시지/캠페인 정보/내 협업·제출·번역·입력창. 앱 내부 세션에서 빈 대화 상태를 확인.",
+          "hotspots": {
+            "C11": [
+              87,
+              20.8
+            ],
+            "C10": [
+              80.2,
+              7.3
+            ],
+            "X03": [
+              94,
+              3.2
+            ],
+            "C05": [
+              59.5,
+              12.6
+            ],
+            "C08": [
+              72.1,
+              12.6
+            ],
+            "C12": [
+              37.8,
+              61
+            ]
+          },
+          "width": 807,
+          "height": 917
+        },
+        {
+          "key": "creator-campaigns",
+          "label": "캠페인 둘러보기",
+          "file": "references/creator-campaigns.png",
+          "url": "https://app.theprlist.net/?brand=goryeo1392#community",
+          "checked": "2026-10-26 00:18 KST",
+          "observed": "모든 캠페인/저장/신청 탭 · 빈 화면",
+          "hotspots": {
+            "C03": [
+              60,
+              15
+            ],
+            "C04": [
+              81.5,
+              25.1
+            ]
+          },
+          "width": 807,
+          "height": 917
+        },
+        {
+          "key": "creator-work",
+          "label": "내 할 일·협업",
+          "file": "references/creator-work.png",
+          "url": "https://app.theprlist.net/?brand=goryeo1392#community",
+          "checked": "2026-10-26 00:18 KST",
+          "observed": "내 할 일 · 선정된 나의 협업",
+          "hotspots": {
+            "C06": [
+              51.2,
+              15
+            ],
+            "C04": [
+              55.9,
+              39
+            ],
+            "C09": [
+              88,
+              82.1
+            ]
+          },
+          "width": 807,
+          "height": 917
+        },
+        {
+          "key": "creator-ranking",
+          "label": "브랜드 랭킹",
+          "file": "references/creator-ranking.png",
+          "url": "https://app.theprlist.net/?brand=goryeo1392#community",
+          "checked": "2026-10-26 00:18 KST",
+          "observed": "랭킹 표와 내 레벨 데이터 표시를 확인. 주간 활동 XP와 누적 레벨 XP가 구분되는 화면. 기능은 이미 존재함.",
+          "hotspots": {
+            "C11": [
+              70.2,
+              15
+            ]
+          },
+          "width": 807,
+          "height": 917
+        },
+        {
+          "key": "creator-missions",
+          "label": "미션·배지",
+          "file": "references/creator-missions.png",
+          "url": "https://app.theprlist.net/?brand=goryeo1392#community",
+          "checked": "2026-10-26 00:18 KST",
+          "observed": "완료 미션·진행 미션·배지 데이터 표시를 확인. 기능은 이미 존재하며 가능한 다음 행동 구분을 개선 제안.",
+          "hotspots": {
+            "C11": [
+              71.7,
+              15
+            ]
+          },
+          "width": 807,
+          "height": 917
+        },
+        {
+          "key": "creator-announcements",
+          "label": "공지사항",
+          "file": "references/creator-announcements.png",
+          "url": "https://app.theprlist.net/?brand=goryeo1392#community",
+          "checked": "2026-10-26 00:18 KST",
+          "observed": "공지 채널은 읽기 전용이며 현재 공지 없음 상태를 확인.",
+          "hotspots": {
+            "C11": [
+              87,
+              20.8
+            ]
+          },
+          "width": 807,
+          "height": 917
+        }
+      ]
+    },
+    "admin": {
+      "default": "admin-dashboard",
+      "pages": [
+        {
+          "key": "admin-dashboard",
+          "label": "대시보드",
+          "file": "references/admin-dashboard.png",
+          "url": "https://admin.theprlist.net/dashboard",
+          "checked": "2026-10-26 00:18 KST",
+          "observed": "신청/신고/분쟁/검수 · 브랜드/creator/게이트/원장 이벤트 카드 (저장값·테스트 포함 가능)",
+          "hotspots": {
+            "A01": [
+              24.9,
+              9.4
+            ],
+            "A08": [
+              87,
+              25.5
+            ]
+          },
+          "width": 1280,
+          "height": 720
+        },
+        {
+          "key": "admin-applications",
+          "label": "브랜드 신청",
+          "file": "references/admin-applications.png",
+          "url": "https://admin.theprlist.net/applications",
+          "checked": "2026-10-26 00:18 KST",
+          "observed": "브랜드 신청 목록",
+          "hotspots": {
+            "A02": [
+              26.6,
+              9.4
+            ]
+          },
+          "width": 1280,
+          "height": 720
+        },
+        {
+          "key": "admin-reports",
+          "label": "신고 처리함",
+          "file": "references/admin-reports.png",
+          "url": "https://admin.theprlist.net/reports",
+          "checked": "2026-10-26 00:18 KST",
+          "observed": "신고 처리함",
+          "hotspots": {
+            "A04": [
+              26.6,
+              9.4
+            ]
+          },
+          "width": 1280,
+          "height": 720
+        },
+        {
+          "key": "admin-disputes",
+          "label": "분쟁 심판",
+          "file": "references/admin-disputes.png",
+          "url": "https://admin.theprlist.net/disputes",
+          "checked": "2026-10-26 00:18 KST",
+          "observed": "분쟁 심판",
+          "hotspots": {
+            "A05": [
+              25.3,
+              9.4
+            ]
+          },
+          "width": 1280,
+          "height": 720
+        },
+        {
+          "key": "admin-submissions",
+          "label": "검수 현황",
+          "file": "references/admin-submissions.png",
+          "url": "https://admin.theprlist.net/submissions",
+          "checked": "2026-10-26 00:18 KST",
+          "observed": "빈 검수 화면 · ‘자동 체크가 이미 돌렸습니다’ 고정 문구",
+          "hotspots": {
+            "A03": [
+              25.3,
+              9.4
+            ],
+            "X04": [
+              80.4,
+              24.5
+            ]
+          },
+          "width": 1280,
+          "height": 720
+        },
+        {
+          "key": "admin-recruitment",
+          "label": "디노 공용 모집",
+          "file": "references/admin-recruitment.png",
+          "url": "https://admin.theprlist.net/recruitment",
+          "checked": "2026-10-26 00:18 KST",
+          "observed": "5단계 + 보조 탭(모집 시작/반복 모집/발송 내역/크리에이터·메일/회신·성과/테스트 발송/브랜드 승인·커뮤니티/브랜드·메일 설정)",
+          "hotspots": {
+            "X06": [
+              27.8,
+              14.6
+            ]
+          },
+          "width": 1280,
+          "height": 720
+        },
+        {
+          "key": "admin-brands",
+          "label": "브랜드 운영",
+          "file": "references/admin-brands.png",
+          "url": "https://admin.theprlist.net/brands",
+          "checked": "2026-10-26 00:18 KST",
+          "observed": "브랜드 목록 · 운영 상태 · 멤버·팀 수 · 정지 사유 · 정지 · 감사 로그",
+          "hotspots": {
+            "A07": [
+              26.6,
+              9.4
+            ]
+          },
+          "width": 1280,
+          "height": 720
+        },
+        {
+          "key": "admin-gmail",
+          "label": "Gmail 운영",
+          "file": "references/admin-gmail.png",
+          "url": "https://admin.theprlist.net/gmail",
+          "checked": "2026-10-26 00:19 KST",
+          "width": 1280,
+          "height": 720,
+          "hotspots": {
+            "A06": [
+              26.5,
+              9.4
+            ]
+          },
+          "observed": "실행기·수신 동기화·승인 발송 재개·계정별 한도·최근 동기화·재연결 오류가 실제로 표시됨."
+        },
+        {
+          "key": "admin-pool",
+          "label": "후보 풀",
+          "file": "references/admin-pool.png",
+          "url": "https://admin.theprlist.net/pool",
+          "checked": "2026-10-26 00:19 KST",
+          "width": 1280,
+          "height": 720,
+          "hotspots": {
+            "B05": [
+              23.9,
+              9.4
+            ]
+          },
+          "observed": "현황·대량 DB 반입/재개·CSV 미리보기 진입을 확인. 실제 데이터 반입은 실행하지 않음."
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,169 @@
+/* v7 디자인 품질 — 모든 CSS 다음, 맨 마지막에 읽는다.
+   v5 토큰(--s1~s6, --r1~r3, --c-*)을 그대로 쓰고 위계·폭·밀도만 정돈한다. 그림자·그라데이션은 추가하지 않는다. */
+:root{--v7-ctl:40px;--v7-btn:38px;--v7-title:24px}
+@media (pointer:coarse){:root{--v7-ctl:44px;--v7-btn:44px}}
+@media (max-width:719px){:root{--v7-title:21px}}
+
+/* ---------- 한글 줄바꿈 · 숫자 ---------- */
+.v6,.v6 p,.v6 li,.v6 dd,.v6 b,.v6 h1,.v6 h2,.v6 h3,.catalog-main{word-break:keep-all;overflow-wrap:anywhere}
+.v6 .v6-wrap,.v6 a,.v6 code{word-break:break-all}
+.v6 .v6-kv dd,.v6 .v6-tr [role="cell"],.v6 .v6-stat b{font-variant-numeric:tabular-nums}
+
+/* ---------- 내용 유형별 최대 폭 (폼 < 표 < 대화) ---------- */
+body.v5 .v2-main > .v6{max-width:1200px}
+body.v5 .v2-main > .v6:has(.v6-table),body.v5 .v2-main > .v6:has(.v6-inbox){max-width:1440px}
+body.v5 .v2-main > .v6.v6-learn{max-width:1180px}
+
+/* ---------- 제목 · 설명 · 행동 위계 ---------- */
+.v6 .v6-head{margin-bottom:var(--s5,24px);align-items:flex-start}
+.v6 .v6-head h1{font-size:var(--v7-title);line-height:1.3;letter-spacing:-.01em;font-weight:700}
+.v6 .v6-head .v6-sub{font-size:14px;line-height:1.55;max-width:68ch;margin-top:var(--s1,4px)}
+.v6 h2{font-size:16px;line-height:1.4;font-weight:700;margin:0 0 var(--s1,4px)}
+.v6 h3{font-size:14px;font-weight:700}
+.v6 .v6-sec-sub{margin:0 0 var(--s4,16px);font-size:13px;color:var(--c-muted,#616061)}
+.v6 .v6-meta{font-size:13px;line-height:1.5}
+.v2-brand .v6 .v6-ctx{display:none}                       /* 브랜드명은 상단 바·레일에 이미 보임 */
+body.v5 .v2-main > .demo-note{font-size:12px;padding:0 6px;margin-bottom:var(--s3,12px)}
+.v6 .v6-count-inline{font-size:13px;font-weight:600;color:var(--c-muted,#616061);margin-left:4px}
+
+/* ---------- 컨트롤 (입력 40, 버튼 38, 터치 44) ---------- */
+.v6 input[type=text],.v6 input[type=url],.v6 input[type=number],.v6 select{min-height:var(--v7-ctl)}
+.v6 textarea{min-height:88px;line-height:1.55}
+.v6 .btn{min-height:var(--v7-btn);padding:0 14px;font-size:14px}
+.v6 .btn.ghost{color:var(--c-accent-2,#695177)}
+.v6 .btn.ghost.danger,.v6 .btn.danger{color:#b42318;border-color:transparent;background:transparent}
+.v6 .btn.ghost.danger:hover,.v6 .btn.danger:hover{background:#fdecea}
+.v6 .v6-field > label,.v6 .v6-fs legend{font-size:13px;font-weight:700;color:var(--c-text,#1d1c1f)}
+.v6 .hint{font-size:12px;color:var(--c-muted,#616061)}
+.v6 .ferr{font-size:13px;font-weight:600;color:#b42318;margin:2px 0 0}
+.v6 [aria-invalid="true"]{border-color:#b42318!important;box-shadow:0 0 0 1px #b42318}
+.v6 input:focus-visible,.v6 select:focus-visible,.v6 textarea:focus-visible{outline:2px solid var(--c-accent-2,#695177);outline-offset:1px;border-color:var(--c-accent-2,#695177)}
+.v6 .v6-actions{gap:var(--s2,8px)}
+
+/* ---------- 브랜드 학습: 입력 메인 + 준비 현황 사이드 ---------- */
+.v6-learn{container-type:inline-size}
+.v6-learn .v6-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s5,24px)}
+@container (min-width:860px){.v6-learn .v6-layout{grid-template-columns:minmax(0,1fr) 280px;gap:var(--s6,32px)}.v6-learn .v6-aside{position:sticky;top:var(--s4,16px);border-left:1px solid var(--c-line,#e6e3e9);border-top:0;padding:0 0 0 var(--s5,24px)}}
+.v6-learn .v6-main{max-width:760px}
+.v6-learn .v6-block{padding-bottom:var(--s5,24px);margin-bottom:var(--s5,24px);border-bottom:1px solid var(--c-line,#e6e3e9)}
+.v6-learn .v6-form{grid-template-columns:minmax(0,1fr)!important}
+.v6-learn .v6-faq{flex-direction:column;align-items:stretch;gap:var(--s3,12px);padding:var(--s3,12px) var(--s4,16px)}
+.v6-learn .v6-faq .v6-actions{margin:0;justify-content:flex-end}
+.v6-learn .v6-savebar{display:flex;flex-wrap:wrap;gap:var(--s3,12px);align-items:center;justify-content:space-between}
+.v6-learn .v6-savebar p{margin:0;flex:1 1 260px}
+.v6-learn .v6-aside{align-self:start;border-top:1px solid var(--c-line,#e6e3e9);padding-top:var(--s4,16px)}
+.v6-learn .v6-summary{margin:var(--s2,8px) 0;font-size:14px}
+.v6-learn .v6-summary b{font-size:15px}
+.v6 .v6-progress{height:6px;border-radius:3px;background:#ece8f0;overflow:hidden;margin-bottom:var(--s3,12px)}
+.v6 .v6-progress span{display:block;height:100%;background:var(--c-accent-2,#695177)}
+.v6 .v6-checklist{list-style:none;margin:0 0 var(--s5,24px);padding:0;display:grid;gap:6px;font-size:14px}
+.v6 .v6-checklist li{display:flex;align-items:center;gap:var(--s2,8px)}
+.v6 .v6-mark{flex:0 0 20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}
+.v6 .is-ok .v6-mark{background:#e8f4ee;color:#1d6f47}
+.v6 .is-todo .v6-mark{background:#fdf3e1;color:#8a5300}
+.v6 .is-todo{font-weight:600}
+.v6 .v6-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.v6 .v6-mini{list-style:none;margin:0;padding:0;display:grid;gap:var(--s3,12px)}
+.v6 .v6-mini li{display:flex;flex-wrap:wrap;gap:var(--s2,8px);align-items:center}
+.v6 .v6-mini .btn{min-height:34px;padding:0 10px;font-size:13px}
+
+/* ---------- 목록·표: 이름 우선, 경계 줄이기 ---------- */
+.v6 .v6-list{border-color:var(--c-line,#e6e3e9)}
+.v6 .v6-row{min-height:56px;padding:10px var(--s4,16px)}
+.v6 .v6-row .v6-grow > b{font-size:15px;font-weight:700}
+.v6 .v6-tr{padding:10px var(--s4,16px);min-height:56px}
+.v6 .v6-th{min-height:36px;padding-top:6px;padding-bottom:6px;font-size:12px;letter-spacing:.01em}
+.v6 .v6-cellmain b{font-size:15px}
+.v6 .v6-pimg{aspect-ratio:1/1;object-fit:cover;flex:0 0 auto}
+.v6 .v6-tr .chip,.v6 .v6-row .chip{font-size:12px}
+.v6 .v6-empty{text-align:left;font-size:14px}
+
+/* 단계 표시 */
+.v6 .v6-steps{gap:6px;counter-reset:none}
+.v6 .v6-steps button{min-height:34px;background:#fff;border-color:var(--c-line-2,#d6d1db)}
+.v6 .v6-steps button[aria-current="step"],.v6 .v6-steps button.on{background:var(--c-accent,#4a2c5a);border-color:var(--c-accent,#4a2c5a);color:#fff}
+.v6 .v6-bar{border-top:1px solid var(--c-line,#e6e3e9);padding-top:var(--s4,16px);margin-top:var(--s5,24px)}
+
+/* 제품 편집: 이미지 고정 비율, 미리보기 패널 */
+.v6 .v6-imgbox img{aspect-ratio:1/1;object-fit:cover;border-radius:var(--r2,8px)}
+.v6 .v6-thumb img{aspect-ratio:1/1;object-fit:cover}
+.v6 .v6-preview{border-color:var(--c-line,#e6e3e9);background:#fff}
+.v6 .v6-preview .v6-kicker{margin-top:0}
+
+/* ---------- 대화(브랜드 DM·회신함) ---------- */
+.v6 .v6-ithread{gap:3px;padding:10px var(--s4,16px)}
+.v6 .v6-ithread b{font-size:14px}
+.v6 .v6-ithread:has(.chip.warn) b::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:#c2410c;margin-right:6px;vertical-align:1px}
+.v6 .v6-ithread.on{background:var(--c-accent-bg,#f1ebf5)}
+.v6 .v6-ihead b{font-size:15px}
+.v6 .v6-compose .v6-actions{justify-content:flex-end}
+.v6 .v6-iinfo dl{font-size:13px}
+.v6 .v6-iinfo .v6-kv{grid-template-columns:minmax(64px,auto) minmax(0,1fr)}
+
+/* ---------- 관리자: 발신 계정 표 ---------- */
+.v6 .v6-senders .v6-tr{grid-template-columns:minmax(0,1.6fr);font-size:14px}
+.v6 .v6-senders b{font-weight:600;font-size:14px}
+.v6 .v6-pager{gap:6px}
+
+/* ---------- 검토 툴바: 제품보다 덜 튀는 압축형 ---------- */
+body.v5 .rv-bar{padding:6px var(--s4,16px)}
+body.v5 .rv-row{gap:6px 8px}
+body.v5 .rv-tag{font-size:11px;padding:2px 6px}
+body.v5 .rv-seg{font-size:13px}
+.v7-rv-toggle{min-height:36px;padding:0 12px;border:1px solid var(--c-line-2,#d6d1db);border-radius:var(--r1,6px);background:#fff;color:var(--c-text,#1d1c1f);font-size:13px;font-weight:600;white-space:nowrap}
+.v7-rv-toggle:focus-visible{outline:2px solid var(--c-accent-2,#695177);outline-offset:2px}
+.v7-rv-more{display:none;flex:1 1 100%;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:6px 0 2px}
+.v7-rv-more.is-open{display:flex}
+.v7-rv-more .rv-notice{flex:1 1 100%;margin:0;font-size:12px}
+@media (min-width:1100px){
+  .v7-rv-toggle{display:none}
+  .v7-rv-more{display:contents}
+}
+@media (max-width:719px){
+  body.v5 .rv-bar{padding:6px var(--s3,12px)}
+  body.v5 .rv-seg{padding:0 8px;min-height:40px;height:40px}
+  body.v5 .rv-group{flex-wrap:nowrap}
+  .v7-rv-toggle{min-height:40px}
+}
+@media (pointer:coarse){.v7-rv-toggle{min-height:44px}}
+
+/* ---------- 독립 제품 페이지 ---------- */
+.v6-market .v6-head h1{font-size:var(--v7-title)}
+.v6-pcard h3{font-size:15px;line-height:1.4}
+.v6-pcard .v6-kv{font-size:13px}
+.v6-pcard .v6-pimg{aspect-ratio:1/1;object-fit:cover}
+.v6-market .v6-filters .v6-field > label{font-size:12px;color:var(--c-muted,#616061)}
+
+/* 제목 오른쪽에 페이지 행동 정렬 (넓은 화면) */
+@media (min-width:900px){
+  .v6:has(> .v6-head + .v6-actions){position:relative}
+  .v6 > .v6-head:has(+ .v6-actions){padding-right:min(40%,380px)}
+  .v6 > .v6-head + .v6-actions{position:absolute;top:0;right:0;margin:0;max-width:40%;justify-content:flex-end}
+}
+/* 캠페인 목록 열 폭 */
+.v6 .v6-table .v6-tr{grid-template-columns:minmax(0,2.4fr);grid-auto-columns:minmax(0,1fr)}
+/* 모바일 툴바: 1행 역할 + 도구, 2행 보기 전환 */
+@media (max-width:1099px){
+  body.v5 .rv-row > .rv-group:has([data-role]){order:1}
+  .v7-rv-toggle{order:2}
+  body.v5 .rv-row > .rv-group:has([data-mode]){order:3}
+  .v7-rv-more{order:4}
+}
+.v6 .v6-mini .v6-grow{flex:1 1 120px}
+.v6 .v6-mini .v6-grow b{font-size:14px}
+
+/* 세로 FAQ에서 기존 가로 행의 flex-basis가 큰 빈 공간을 만들지 않게 한다. */
+.v6-learn .v6-faq .v6-field{flex:0 0 auto}
+@container (min-width:860px){.v6-learn .v6-aside{border-top:0;padding-top:0}}
+.v6-learn .v7-ready-mobile{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 16px;margin:0 0 24px;padding:0 0 16px;border-bottom:1px solid var(--c-line);font-size:13px;line-height:1.5}
+.v6-learn .v7-ready-mobile a{word-break:keep-all;color:var(--c-accent);text-underline-offset:3px}
+@container (min-width:860px){.v6-learn .v7-ready-mobile{display:none}}
+@media (max-width:359px){
+  body.v5 .rv-seg{padding:0 6px;font-size:12px;min-height:44px;height:44px}
+  .v7-rv-toggle{padding:0 8px;font-size:12px;min-height:44px}
+}
+.v7-cell-label{display:none}
+@media (max-width:719px){
+  .v6 .v6-tr .v7-cell-label{display:block;margin-bottom:2px;color:var(--c-muted);font-size:12px;font-weight:500}
+  .v6 .v6-tr > [role="cell"]:has(> .v7-cell-label){display:block}
+}

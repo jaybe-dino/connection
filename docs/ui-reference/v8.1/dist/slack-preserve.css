@@ -1,0 +1,159 @@
+/* v3 Slack형 구조 보존 — live-reference.css 다음(맨 마지막)에 읽는다. */
+:root{--sp-rv:140px}
+[hidden]{display:none!important}
+
+/* ---------- 검토 번호: 보이는 크기 24px, 누르는 영역 44px, 레이아웃을 밀지 않음 ---------- */
+.hs{width:44px;min-width:44px;height:44px;min-height:44px;padding:0;margin:-10px -8px;border:0;background:transparent;box-shadow:none;justify-content:center;vertical-align:middle}
+.hs span{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;padding:0 5px;border-radius:12px;background:var(--mark);color:#fff;font-size:.75rem;font-weight:800;box-shadow:0 0 0 2px #fff}
+.hs small{display:none}
+.hs.is-sel{background:transparent}
+.hs.is-sel::after{content:none}
+.hs.is-sel span{background:#7c2d12}
+.hs.is-sel span::after{content:"✓";margin-left:2px;font-size:.7rem}
+.cap .hs{margin:0}
+
+/* ---------- 검토 도구 접기 ---------- */
+.sp-rv-toggle{border:1px solid #4b4f57}
+.sp-rv-min .rv-bar .rv-notice{display:none}
+.sp-rv-min .rv-bar{padding-bottom:6px}
+@media (min-width:720px){.rv-bar{position:sticky;top:0}}
+
+/* ---------- 앱을 뷰포트에 맞추고 영역별 스크롤 (개선 후 시안 모드에서만) ---------- */
+@media (min-width:720px){
+  .sp-proposal .v2{height:calc(100dvh - var(--sp-rv));min-height:420px;display:flex;flex-direction:column;overflow:hidden}
+  .sp-proposal .v2-top{flex:0 0 36px}
+  .sp-proposal .v2-body{flex:1 1 auto;min-height:0;height:auto}
+  .sp-proposal .v2-rail,.sp-proposal .v2-side,.sp-proposal .v2-main{min-height:0;overflow-y:auto}
+}
+
+/* ---------- 720px 이상: 레일 + 채널 사이드바 + 중앙 항상 유지 ---------- */
+@media (min-width:720px) and (max-width:1099px){
+  .v2 .v2-body{grid-template-columns:56px 208px minmax(0,1fr)}
+  .v2.v2-admin .v2-body{grid-template-columns:200px minmax(0,1fr)}
+  .v2 .v2-rail{display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:8px}
+  .v2 .v2-rail button{width:40px;height:40px;min-height:40px;border-radius:10px;font-size:.85rem}
+  .v2 .v2-side{display:flex;flex-direction:column;border-right:1px solid #e4dceb;border-bottom:0}
+  .v2.v2-admin .v2-side{border-right:0}
+  .v2 .v2-mobilebar{display:none}
+  .v2-top .hide-m{display:block}
+  .v2-search{flex:1 1 160px;max-width:360px}
+  .v2-main{padding:12px 16px 20px}
+}
+@media (min-width:900px) and (max-width:1099px){
+  .v2 .v2-body{grid-template-columns:60px 220px minmax(0,1fr)}
+}
+@media (min-width:720px) and (max-width:899px){
+  .v2-navbtn{min-height:40px;font-size:.95rem;padding:0 10px}
+}
+
+/* ---------- 719px 이하: 드로어 (v2의 버튼 사용) ---------- */
+@media (max-width:719px){
+  .sp-proposal .v2{display:flex;flex-direction:column;height:calc(100dvh - var(--sp-rv));min-height:0;overflow:hidden}
+  .sp-proposal .v2-top,.sp-proposal .v2-mobilebar{flex:0 0 auto}
+  .sp-proposal .v2-body{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow:hidden}
+  .sp-proposal .v2.rail-open .v2-rail{flex:0 0 auto}
+  .sp-proposal .v2.nav-open .v2-side{flex:0 0 auto;max-height:50dvh;overflow-y:auto}
+  .sp-proposal .v2-main{flex:1 1 auto;min-height:0;overflow-y:auto}
+}
+
+/* ---------- 밀도 보정 (다른 화면은 구조 유지) ---------- */
+.v2-main .page-head{margin-bottom:10px}
+.v2-main .page-head h1{font-size:1.15rem}
+.v2-main .card{padding:12px 14px}
+.v2-main .rowi{padding:8px 10px}
+.v2-main .grid{gap:10px}
+.v2-main .demo-note{margin-bottom:8px}
+.v2-exist{padding:8px 10px;margin-bottom:10px}
+
+/* ---------- 크리에이터 채널: 제목·탭 고정, 메시지 내부 스크롤, 입력창 하단 고정 ---------- */
+.v2-main.sp-chat{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);padding:0;overflow:hidden}
+.v2-main.sp-chat.sp-has-thread{grid-template-columns:minmax(0,1fr) 300px}
+.sp-chat .v2-ch{min-height:0;height:100%;display:flex;flex-direction:column;overflow:hidden}
+.sp-chat .v2-chhead{flex:0 0 auto;padding:6px 16px;margin:0;border-bottom:1px solid var(--line);gap:6px 12px}
+.sp-chat .v2-chhead h1{font-size:1.02rem;font-weight:800}
+.sp-chat .v2-chhead .btn{min-height:36px;padding:0 10px;font-weight:600}
+.sp-chat .v2-chhead .demo-note{margin:0;font-size:.72rem}
+.sp-chat .v2-ch > .tabs{flex:0 0 auto;margin:0;padding:0 12px}
+.sp-chat .v2-ch > .tabs button{min-height:40px}
+.sp-chat [data-group="ch"][data-panel]{flex:1 1 auto;min-height:0;overflow-y:auto;padding:12px 16px}
+.sp-chat .sp-msgpanel{display:flex;flex-direction:column;overflow:hidden;padding:0}
+.sp-chat .sp-msgpanel > .alert{flex:0 0 auto;margin:6px 16px 0;padding:4px 10px;font-size:.85rem}
+.sp-welcome{flex:0 0 auto;display:flex;align-items:center;gap:6px;margin:6px 16px 0;padding:2px 4px 2px 10px;border:1px solid #e4dceb;border-radius:8px;background:#f8f5fa;font-size:.9rem;min-width:0}
+.sp-welcome-t{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp-welcome-btn{flex:0 0 auto;min-height:36px;padding:0 8px;white-space:nowrap}
+.sp-welcome-card{flex:0 0 auto;margin:4px 16px 0;padding:8px 12px;border:1px solid #e4dceb;border-radius:8px;background:#fff;box-shadow:none}
+.sp-chat .v2-feed{flex:1 1 auto;min-height:0;overflow-y:auto;margin:0;padding:6px 0;gap:0}
+.sp-chat .v2-compose{position:static;flex:0 0 auto;margin:0 16px 12px;padding:6px;border-radius:8px}
+.sp-chat .v2-compose textarea{min-height:44px;max-height:120px;resize:vertical}
+.sp-chat .v2-compose .btn{min-height:40px}
+
+/* 평평한 메시지 행 */
+.sp-msg{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;align-items:start;padding:6px 16px;margin:0;background:transparent;border-radius:0}
+.v2-feed .msg.sp-msg{background:transparent;border-radius:0;margin:0}
+.sp-msg:hover,.sp-msg.sp-active{background:#f6f2f9}
+.sp-msg.me{background:transparent}
+.sp-av{width:32px;height:32px;border-radius:6px;background:#695177;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem}
+.sp-body{min-width:0}
+.sp-body p{margin:0 0 2px}
+.sp-body > p.small.muted:first-child{font-weight:700;color:#3b3342}
+.sp-body .btn{min-height:36px;margin-top:4px}
+.sp-reply{min-height:32px;margin-top:2px;padding:0 8px;border:1px solid transparent;border-radius:6px;background:none;color:var(--plum2);font-size:.85rem;font-weight:600}
+.sp-reply:hover,.sp-reply[aria-expanded="true"]{border-color:#d9cde2;background:#fff}
+@media (pointer:coarse){.sp-reply{min-height:44px}}
+
+/* 스레드·정보 패널 (우측, 모바일은 아래 시트) */
+.sp-thread{min-height:0;display:flex;flex-direction:column;border-left:1px solid var(--line);background:#fff;overflow:hidden}
+.sp-thead{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px 6px 14px;border-bottom:1px solid var(--line);min-height:48px}
+.sp-tbody{flex:1 1 auto;min-height:0;overflow-y:auto;padding:8px 0}
+.sp-tbody > p{padding:0 14px}
+.sp-root{border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:6px}
+.sp-tcompose{flex:0 0 auto;display:flex;gap:6px;align-items:flex-end;padding:8px;border-top:1px solid var(--line)}
+.sp-tcompose textarea{flex:1 1 auto;min-height:44px;max-height:100px}
+.sp-tcompose textarea{min-width:0}
+.sp-tcompose .btn{flex:0 0 auto;white-space:nowrap;padding:0 12px}
+@media (max-width:719px){
+  .v2-main.sp-chat.sp-has-thread{grid-template-columns:minmax(0,1fr)}
+  .sp-thread{position:fixed;left:0;right:0;bottom:0;max-height:75dvh;z-index:45;border-left:0;border-top:4px solid var(--plum2);border-radius:14px 14px 0 0;box-shadow:0 -10px 30px rgba(0,0,0,.25)}
+  .sp-chat .v2-chhead{padding:6px 12px}
+  .sp-chat .v2-compose{margin:0 8px 8px}
+  .sp-msg{padding:6px 12px}
+}
+
+/* ---------- 브랜드 커뮤니티·DM 대화 탭: inbox ---------- */
+.sp-inbox{display:grid;grid-template-columns:minmax(200px,260px) minmax(0,1fr) minmax(170px,220px);border:1px solid var(--line);border-radius:8px;background:#fff;min-height:360px;overflow:hidden}
+.sp-inbox-list{border-right:1px solid var(--line);overflow-y:auto}
+.sp-inbox-list .rows{gap:0}
+.sp-inbox-list .rowi{border:0;border-bottom:1px solid var(--line);border-radius:0;padding:8px 10px}
+.sp-inbox-list .rowi.sp-active{background:#f3eff6;box-shadow:inset 3px 0 0 #695177}
+.sp-inbox-list .rowi .btn{min-height:36px}
+.sp-inbox-convo{display:flex;flex-direction:column;min-width:0}
+.sp-inbox-convo .sp-thead{justify-content:flex-start}
+.sp-convo-feed{flex:1 1 auto;overflow-y:auto;padding:6px 0;min-height:160px}
+.sp-inbox-info{border-left:1px solid var(--line);padding:10px 12px;background:#faf8fc}
+.sp-inbox-info .kv{grid-template-columns:auto minmax(0,1fr);margin-top:6px}
+@media (max-width:1099px){.sp-inbox{grid-template-columns:minmax(180px,220px) minmax(0,1fr)}.sp-inbox-info{grid-column:1/-1;border-left:0;border-top:1px solid var(--line)}}
+@media (max-width:719px){.sp-inbox{grid-template-columns:minmax(0,1fr)}.sp-inbox-list{border-right:0;border-bottom:1px solid var(--line)}}
+
+/* 실제 화면의 좁은 상단 바와 채널 목록 밀도를 유지 */
+.v2-top{min-height:36px;padding:0 12px;font-size:14px}
+.v2-topbtn,.v2-search input{height:28px;min-height:28px;font-size:14px}
+@media(min-width:720px){
+  .v2-side{padding:10px 8px;font-size:14px}
+  .v2 .v2-navbtn{min-height:32px;font-size:14px;padding:0 10px;border-radius:5px}
+  .v2-grp{margin:14px 10px 4px;font-size:12px}
+  .v2-ws{padding:4px 10px 12px}
+  .v2-ws b{font-size:18px}
+}
+.v2-creator .v2-navbtn[aria-current="page"],.v2-brand .v2-navbtn[aria-current="page"]{background:#695177;color:#fff;box-shadow:none}
+.v2-creator .v2-navbtn:not(.v2-moretoggle)::before{content:'·';display:inline-block;flex:0 0 16px;margin-right:7px;color:inherit;opacity:.75;text-align:center}
+.v2-creator .v2-navbtn[data-nav="c-community"]::before{content:none}
+.v2-creator .v2-navbtn[data-nav="c-recruit"]::before{content:'#';font-weight:700}
+.v2-creator .v2-navbtn[data-nav="c-tasks"]::before,.v2-creator .v2-navbtn[data-nav="c-work"]::before{content:'▣'}
+.v2-creator .v2-navbtn[data-nav="c-campaigns"]::before{content:'▦'}
+.v2-creator .v2-navbtn[data-nav="c-announcements"]::before{content:'◉'}
+.v2-creator .v2-navbtn[data-nav="c-missions"]::before{content:'✦'}
+@media(min-width:720px) and (max-width:1099px){
+  .v2-main.sp-chat{position:relative}
+  .v2-main.sp-chat.sp-has-thread{grid-template-columns:minmax(0,1fr)}
+  .sp-thread{position:absolute;right:0;top:0;bottom:0;width:320px;max-width:calc(100% - 32px);z-index:10;box-shadow:-10px 0 25px #30213722}
+}

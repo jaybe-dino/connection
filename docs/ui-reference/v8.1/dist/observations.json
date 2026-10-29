@@ -1,0 +1,435 @@
+[
+  {
+    "id": "B01",
+    "number": "01",
+    "type": "UI 개선",
+    "observed": "홈에 브랜드 학습·메일링·AI 질문이 있다. 오늘 처리할 업무의 우선순위를 같은 홈에 더한다.",
+    "references": [
+      "brand-home"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "B02",
+    "number": "02",
+    "type": "확장 제안",
+    "observed": "브랜드 학습은 홈페이지 분석과 수동 정보 저장을 제공한다. 국가·판매 준비 체크를 별도 단계로 제안한다.",
+    "references": [
+      "brand-learning",
+      "brand-home"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "B03",
+    "number": "03",
+    "type": "UI 개선",
+    "observed": "제품 등록·프로필 편집·후보 보기가 있다. 공개 소개와 내부 자료를 쉽게 구분하고 미리보기를 연결한다.",
+    "references": [
+      "brand-products",
+      "brand-learning"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "B04",
+    "number": "04",
+    "type": "UI 개선",
+    "observed": "제품별 캠페인 개설과 새 캠페인 초안 폼이 함께 보인다. 이 메뉴 안에서 한 단계씩 만들도록 정리한다.",
+    "references": [
+      "brand-products"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "B05",
+    "number": "05",
+    "type": "UI 개선",
+    "observed": "후보 보기·AI 추천·관리자 후보 풀은 있다. 추천 근거와 연락 이력을 함께 비교하는 작업대로 확장한다.",
+    "references": [
+      "brand-products",
+      "admin-pool"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "B06",
+    "number": "06",
+    "type": "UI 개선",
+    "observed": "수신자 사전 검수·최대 200명·시트 10,000행 매핑·배치 승인이 이미 있다. 기존 기능을 단계로 나누고 결과를 쉽게 보여준다.",
+    "references": [
+      "brand-outreach",
+      "admin-recruitment"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "B07",
+    "number": "07",
+    "type": "확장 제안",
+    "observed": "브랜드 DM·메일 대화와 관리자 계정별 메일함은 있다. 대화에 협업·담당자·다음 행동을 연결하는 제안이다.",
+    "references": [
+      "brand-community",
+      "brand-outreach",
+      "admin-mail"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "B08",
+    "number": "08",
+    "type": "확장 제안",
+    "observed": "캠페인 등록 화면은 확인했다. 신청자 있는 캠페인의 선정 상세는 이번에 확인하지 못해, 비교·결과 통보 흐름을 제안으로 둔다.",
+    "references": [
+      "brand-products"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "B09",
+    "number": "09",
+    "type": "확장 제안",
+    "observed": "현재 확인한 전역 메뉴에 독립 배송 화면은 없다. 실제 배송 건은 미확인이며 제품·캠페인 안의 샘플 보드를 제안한다.",
+    "references": [
+      "brand-products"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "B10",
+    "number": "10",
+    "type": "확장 제안",
+    "observed": "관리자 검수 메뉴는 있고 현재 대기 0건이다. 제출물이 있는 브랜드 검수 상세는 미확인이며 수정 버전·조건·권리를 함께 보여주는 제안이다.",
+    "references": [
+      "admin-submissions",
+      "brand-products"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "B11",
+    "number": "11",
+    "type": "확장 제안",
+    "observed": "브랜드에는 커뮤니티·DM, 크리에이터에는 채널·랭킹·미션이 있다. 같은 메뉴에 멤버·질문·공지 운영 탭을 추가한다.",
+    "references": [
+      "brand-community",
+      "creator-community",
+      "creator-ranking",
+      "creator-missions"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "B12",
+    "number": "12",
+    "type": "확장 제안",
+    "observed": "홈의 브랜드 정보 답변과 메일 AI 초안은 이미 있다. 질문·공지 초안도 근거 확인과 사람 검토를 거치게 확장한다.",
+    "references": [
+      "brand-home",
+      "brand-outreach",
+      "brand-learning"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "B13",
+    "number": "13",
+    "type": "확장 제안",
+    "observed": "월별 청구와 관리자 저장 지표는 있다. 청구·입금과 실제 협업 성과·운영 비용을 같은 근거로 비교하는 화면을 제안한다.",
+    "references": [
+      "brand-billing",
+      "admin-dashboard"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "B14",
+    "number": "14",
+    "type": "확장 제안",
+    "observed": "팀 목록·소유자 역할 변경이 있다. 대행사·여러 브랜드·고객 승인 업무를 추가로 제안하며 기존 권한을 바꾸지 않는다.",
+    "references": [
+      "brand-team"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "C01",
+    "number": "15",
+    "type": "확장 제안",
+    "observed": "고려공작1392의 로그인된 커뮤니티·캠페인 화면을 확인했다. 로그인 전 초대와 실제 모집이 있는 상세는 이번 확인 범위 밖이다.",
+    "references": [
+      "creator-campaigns"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "C02",
+    "number": "16",
+    "type": "확장 제안",
+    "observed": "로그인한 멤버의 내 공간·설정 진입 메뉴를 확인했다. 새 계정의 플랫폼별 자격 검증은 이번에 수행하지 않았다.",
+    "references": [
+      "creator-community"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "C03",
+    "number": "17",
+    "type": "UI 개선",
+    "observed": "모든·저장·신청 캠페인 탭이 있고 고려공작1392는 현재 열린 모집이 없다. 범위·필터·비용·기한을 쉽게 비교하도록 개선한다.",
+    "references": [
+      "creator-campaigns"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "C04",
+    "number": "18",
+    "type": "UI 개선",
+    "observed": "캠페인의 신청 탭과 내 협업의 신청 내역이 있다. 마감·미선정 상세 실데이터는 미확인으로 두고 접수·예정일·이력을 제안한다.",
+    "references": [
+      "creator-campaigns",
+      "creator-work"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "C05",
+    "number": "19",
+    "type": "확장 제안",
+    "observed": "현재 진행 협업은 0건이라 실제 조건 합의 상세를 확인하지 못했다. 보상·광고 권리·수정·기한을 먼저 읽는 예시를 제안한다.",
+    "references": [
+      "creator-work"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "C06",
+    "number": "20",
+    "type": "UI 개선",
+    "observed": "내 할 일 진입과 내 협업 요약·진행/신청/완료 탭이 있다. 내 행동과 브랜드 대기·배송 대기를 구분한다.",
+    "references": [
+      "creator-work",
+      "creator-community"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "C07",
+    "number": "21",
+    "type": "확장 제안",
+    "observed": "진행 협업 0건으로 실제 수령 정보·배송 변경은 미확인이다. 국가별 주소와 출고 전후 요청을 예시로 제안한다.",
+    "references": [
+      "creator-work"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "C08",
+    "number": "22",
+    "type": "확장 제안",
+    "observed": "채널에 내 협업·제출 탭과 선정된 나의 협업 메뉴가 있다. 제출물 있는 실제 버전 흐름은 미확인으로 남긴다.",
+    "references": [
+      "creator-community",
+      "creator-work"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "C09",
+    "number": "23",
+    "type": "확장 제안",
+    "observed": "내 협업 안내가 대금 지급 화면을 공개 준비 중이라고 명시한다. 실제 송금 기능과 분리한 보상 내역·예정일 안내를 제안한다.",
+    "references": [
+      "creator-work"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "C10",
+    "number": "24",
+    "type": "UI 개선",
+    "observed": "언어 선택·메시지 번역 안내·브랜드 전환·채널 메뉴가 있다. 기존 구조 안에서 문구·모바일·설정 선택을 쉽게 정리한다.",
+    "references": [
+      "creator-community",
+      "creator-announcements"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "C11",
+    "number": "25",
+    "type": "UI 개선",
+    "observed": "공지·자유대화·브랜드 랭킹·미션·배지가 실제로 있다. 앱 내부 세션에서 랭킹과 미션 데이터 표시까지 확인했다. 주간/누적 점수와 지금 가능한 미션을 더 명확히 한다.",
+    "references": [
+      "creator-community",
+      "creator-ranking",
+      "creator-missions",
+      "creator-announcements"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "C12",
+    "number": "26",
+    "type": "확장 제안",
+    "observed": "브랜드 담당자 DM·커뮤니티 이용 안내 진입이 있다. 문제별 접수번호·응답 예정·처리 상태를 연결하는 제안이다.",
+    "references": [
+      "creator-community"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "A01",
+    "number": "27",
+    "type": "UI 개선",
+    "observed": "대시보드에 저장된 대기·브랜드·크리에이터·게이트·원장 수가 있다. 실제 할 일과 책임자·해결 경로를 연결한다.",
+    "references": [
+      "admin-dashboard",
+      "admin-recruitment"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "A02",
+    "number": "28",
+    "type": "UI 개선",
+    "observed": "브랜드 신청 승인·초대 링크 안내와 브랜드 운영 목록이 있다. 승인 이후 설정·첫 모집까지 이어지는 상태를 추가한다.",
+    "references": [
+      "admin-applications",
+      "admin-brands"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "A03",
+    "number": "29",
+    "type": "UI 개선",
+    "observed": "검수 현황 메뉴가 있고 대기 0건이다. 고정 자동 체크 문구가 보이며 실제 제출물·버전·자동 실행 근거는 이번에 확인하지 못했다.",
+    "references": [
+      "admin-submissions"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "A04",
+    "number": "30",
+    "type": "확장 제안",
+    "observed": "신고 처리함·조치 원장·되돌림 안내가 있다. 대기 0건이므로 실제 제재 실행은 미확인이다. 기록·실적용·통보를 구분하는 UI를 제안한다.",
+    "references": [
+      "admin-reports"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "A05",
+    "number": "31",
+    "type": "확장 제안",
+    "observed": "분쟁 심판·원 조건·원장 근거·이의 1회 안내가 있다. 대기 0건이어서 판정·이의 실행은 미확인이다. 근거와 다음 절차를 화면으로 정리한다.",
+    "references": [
+      "admin-disputes"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "A06",
+    "number": "32",
+    "type": "UI 개선",
+    "observed": "Gmail 운영에는 실행기 상태·송수신 동기화·계정별 한도·재연결 오류가 이미 표시된다. 기존 상태를 브랜드별 복구 할 일과 책임자에 연결하는 UI 개선이다.",
+    "references": [
+      "admin-gmail",
+      "admin-mail",
+      "brand-outreach"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "A07",
+    "number": "33",
+    "type": "확장 제안",
+    "observed": "관리자 브랜드 운영·정지·감사 로그와 브랜드 소유자 팀 역할이 있다. 고객별 사람·권한·인계 화면을 연결한다.",
+    "references": [
+      "admin-brands",
+      "brand-team"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "A08",
+    "number": "34",
+    "type": "UI 개선",
+    "observed": "대시보드가 저장·테스트 포함 지표임을 표시한다. 청구/입금·가입/활동/게시 단계를 구분하는 성과 탭을 제안한다.",
+    "references": [
+      "admin-dashboard",
+      "brand-billing"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "X01",
+    "number": "35",
+    "type": "공통 설계",
+    "observed": "세 역할의 실제 메뉴 구조를 확인했다. 동일 협업의 역할 간 상태 일치 검증은 실데이터가 필요하므로 아직 완료라 하지 않는다.",
+    "references": [
+      "brand-products",
+      "creator-work",
+      "admin-submissions"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "X02",
+    "number": "36",
+    "type": "공통 설계",
+    "observed": "현재 빈 협업·검수 화면으로 합의 버전 원장은 확인하지 못했다. 같은 조건·금액·권리 버전 표시를 제안한다.",
+    "references": [
+      "brand-products",
+      "creator-work",
+      "admin-disputes"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "X03",
+    "number": "37",
+    "type": "UI 개선",
+    "observed": "크리에이터 알림과 커뮤니티·업무 진입이 있다. 실제 알림 발송·정확한 복귀는 이번 확인 범위 밖이며 번호 시안에서 예시로 보여준다.",
+    "references": [
+      "creator-community"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "X04",
+    "number": "38",
+    "type": "UI 개선",
+    "observed": "브라우저의 기존 세션에서는 서명 불일치가 관찰됐고 앱 내부 세션은 정상 데이터를 표시했다. 오류를 0건·미구현으로 오해하지 않도록 복구 상태를 제안한다.",
+    "references": [
+      "creator-ranking",
+      "creator-community",
+      "admin-submissions"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "X05",
+    "number": "39",
+    "type": "검증 제안",
+    "observed": "이번 작업은 현재 화면 참조와 정적 시안 검수이다. 실제 발송·권한·배송·지급 통합 검증은 별도로 진행해야 한다.",
+    "references": [
+      "admin-recruitment"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  },
+  {
+    "id": "X06",
+    "number": "40",
+    "type": "운영 제안",
+    "observed": "현재 모집 준비/가입 인증 대기 안내와 브랜드·멤버 수가 있다. 반복 협업·첫 게시·재방문을 확인하는 운영 실험을 제안한다.",
+    "references": [
+      "admin-recruitment",
+      "creator-missions"
+    ],
+    "acceptance": "화면 구조 확인 · 상세 실데이터 흐름은 본문에 구분"
+  }
+]

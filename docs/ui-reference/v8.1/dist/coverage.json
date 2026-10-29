@@ -1,0 +1,662 @@
+{
+  "note": "2026-10-25 QA 실제 캡처 위 위치를 확인해 지정. 개선 후 데이터와 동작은 가상 시안.",
+  "captures": {
+    "brand": {
+      "file": "assets/current-brand.png",
+      "label": "브랜드 홈 (현재)",
+      "width": 633,
+      "height": 917,
+      "hotspots": {
+        "B01": [
+          84,
+          14
+        ],
+        "B02": [
+          84,
+          28
+        ],
+        "B06": [
+          84,
+          47
+        ],
+        "B12": [
+          84,
+          62
+        ]
+      }
+    },
+    "creator": {
+      "file": "assets/current-creator.png",
+      "label": "크리에이터 내 협업 (현재)",
+      "width": 390,
+      "height": 844,
+      "hotspots": {
+        "C10": [
+          18,
+          8
+        ],
+        "C06": [
+          82,
+          25
+        ],
+        "C04": [
+          28,
+          40
+        ],
+        "C03": [
+          80,
+          70
+        ],
+        "C09": [
+          82,
+          87
+        ]
+      }
+    },
+    "admin": {
+      "file": "assets/current-admin.png",
+      "label": "관리자 검수 현황 (현재)",
+      "width": 633,
+      "height": 917,
+      "hotspots": {
+        "A01": [
+          25,
+          6.5
+        ],
+        "A03": [
+          84,
+          15
+        ],
+        "X04": [
+          84,
+          29
+        ]
+      }
+    }
+  },
+  "screens": {
+    "brand": [
+      [
+        "b-today",
+        "오늘 할 일"
+      ],
+      [
+        "b-create",
+        "협업 만들기"
+      ],
+      [
+        "b-invite",
+        "초대할 사람"
+      ],
+      [
+        "b-reply",
+        "답장하기"
+      ],
+      [
+        "b-samples",
+        "샘플·영상"
+      ],
+      [
+        "b-community",
+        "우리 커뮤니티"
+      ],
+      [
+        "b-results",
+        "결과 보기"
+      ],
+      [
+        "b-team",
+        "팀·설정"
+      ]
+    ],
+    "creator": [
+      [
+        "c-campaigns",
+        "참여할 협업"
+      ],
+      [
+        "c-tasks",
+        "내 할 일"
+      ],
+      [
+        "c-products",
+        "제품 모아보기"
+      ],
+      [
+        "c-messages",
+        "메시지"
+      ],
+      [
+        "c-community",
+        "커뮤니티"
+      ],
+      [
+        "c-rewards",
+        "받을 보상"
+      ],
+      [
+        "c-profile",
+        "내 정보"
+      ]
+    ],
+    "admin": [
+      [
+        "a-today",
+        "오늘 처리할 일"
+      ],
+      [
+        "a-onboard",
+        "브랜드 시작 돕기"
+      ],
+      [
+        "a-review",
+        "영상 확인"
+      ],
+      [
+        "a-reports",
+        "신고·분쟁"
+      ],
+      [
+        "a-connections",
+        "연결 상태"
+      ],
+      [
+        "a-finance",
+        "비용·성과"
+      ],
+      [
+        "a-people",
+        "사람·권한"
+      ]
+    ]
+  },
+  "items": [
+    {
+      "id": "B01",
+      "number": "01",
+      "role": "brand",
+      "proposalRole": "brand",
+      "screen": "b-today",
+      "screenLabel": "오늘 할 일",
+      "hotspot": "hs-B01",
+      "currentCapture": "brand",
+      "currentHotspot": [
+        84,
+        14
+      ]
+    },
+    {
+      "id": "B02",
+      "number": "02",
+      "role": "brand",
+      "proposalRole": "brand",
+      "screen": "b-learning",
+      "screenLabel": "브랜드 학습",
+      "hotspot": "hs-B02",
+      "currentCapture": "brand",
+      "currentHotspot": [
+        84,
+        28
+      ]
+    },
+    {
+      "id": "B03",
+      "number": "03",
+      "role": "brand",
+      "proposalRole": "brand",
+      "screen": "b-create",
+      "screenLabel": "캠페인 관리 › 새 캠페인",
+      "hotspot": "hs-B03",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "B04",
+      "number": "04",
+      "role": "brand",
+      "proposalRole": "brand",
+      "screen": "b-create",
+      "screenLabel": "캠페인 관리 › 새 캠페인",
+      "hotspot": "hs-B04",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "B05",
+      "number": "05",
+      "role": "brand",
+      "proposalRole": "brand",
+      "screen": "b-invite",
+      "screenLabel": "아웃리치·인박스 › 받는 사람 찾기",
+      "hotspot": "hs-B05",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "B06",
+      "number": "06",
+      "role": "brand",
+      "proposalRole": "brand",
+      "screen": "b-mailprep",
+      "screenLabel": "아웃리치·인박스 › 메일 작성·검수",
+      "hotspot": "hs-B06",
+      "currentCapture": "brand",
+      "currentHotspot": [
+        84,
+        47
+      ]
+    },
+    {
+      "id": "B07",
+      "number": "07",
+      "role": "brand",
+      "proposalRole": "brand",
+      "screen": "b-reply",
+      "screenLabel": "아웃리치·인박스 › 회신함",
+      "hotspot": "hs-B07",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "B08",
+      "number": "08",
+      "role": "brand",
+      "proposalRole": "brand",
+      "screen": "b-invite",
+      "screenLabel": "아웃리치·인박스 › 받는 사람 찾기",
+      "hotspot": "hs-B08",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "B09",
+      "number": "09",
+      "role": "brand",
+      "proposalRole": "brand",
+      "screen": "b-samples",
+      "screenLabel": "캠페인 관리 › 샘플·영상",
+      "hotspot": "hs-B09",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "B10",
+      "number": "10",
+      "role": "brand",
+      "proposalRole": "brand",
+      "screen": "b-samples",
+      "screenLabel": "캠페인 관리 › 샘플·영상",
+      "hotspot": "hs-B10",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "B11",
+      "number": "11",
+      "role": "brand",
+      "proposalRole": "brand",
+      "screen": "b-community",
+      "screenLabel": "우리 커뮤니티",
+      "hotspot": "hs-B11",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "B12",
+      "number": "12",
+      "role": "brand",
+      "proposalRole": "brand",
+      "screen": "b-reply",
+      "screenLabel": "아웃리치·인박스 › 회신함",
+      "hotspot": "hs-B12",
+      "currentCapture": "brand",
+      "currentHotspot": [
+        84,
+        62
+      ]
+    },
+    {
+      "id": "B13",
+      "number": "13",
+      "role": "brand",
+      "proposalRole": "brand",
+      "screen": "b-results",
+      "screenLabel": "결과 보기",
+      "hotspot": "hs-B13",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "B14",
+      "number": "14",
+      "role": "brand",
+      "proposalRole": "brand",
+      "screen": "b-team",
+      "screenLabel": "팀·설정",
+      "hotspot": "hs-B14",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "C01",
+      "number": "15",
+      "role": "creator",
+      "proposalRole": "creator",
+      "screen": "c-campaigns",
+      "screenLabel": "참여할 협업",
+      "hotspot": "hs-C01",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "C02",
+      "number": "16",
+      "role": "creator",
+      "proposalRole": "creator",
+      "screen": "c-profile",
+      "screenLabel": "내 정보",
+      "hotspot": "hs-C02",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "C03",
+      "number": "17",
+      "role": "creator",
+      "proposalRole": "creator",
+      "screen": "c-campaigns",
+      "screenLabel": "참여할 협업",
+      "hotspot": "hs-C03",
+      "currentCapture": "creator",
+      "currentHotspot": [
+        80,
+        70
+      ]
+    },
+    {
+      "id": "C04",
+      "number": "18",
+      "role": "creator",
+      "proposalRole": "creator",
+      "screen": "c-tasks",
+      "screenLabel": "내 할 일",
+      "hotspot": "hs-C04",
+      "currentCapture": "creator",
+      "currentHotspot": [
+        28,
+        40
+      ]
+    },
+    {
+      "id": "C05",
+      "number": "19",
+      "role": "creator",
+      "proposalRole": "creator",
+      "screen": "c-tasks",
+      "screenLabel": "내 할 일",
+      "hotspot": "hs-C05",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "C06",
+      "number": "20",
+      "role": "creator",
+      "proposalRole": "creator",
+      "screen": "c-tasks",
+      "screenLabel": "내 할 일",
+      "hotspot": "hs-C06",
+      "currentCapture": "creator",
+      "currentHotspot": [
+        82,
+        25
+      ]
+    },
+    {
+      "id": "C07",
+      "number": "21",
+      "role": "creator",
+      "proposalRole": "creator",
+      "screen": "c-tasks",
+      "screenLabel": "내 할 일",
+      "hotspot": "hs-C07",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "C08",
+      "number": "22",
+      "role": "creator",
+      "proposalRole": "creator",
+      "screen": "c-tasks",
+      "screenLabel": "내 할 일",
+      "hotspot": "hs-C08",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "C09",
+      "number": "23",
+      "role": "creator",
+      "proposalRole": "creator",
+      "screen": "c-rewards",
+      "screenLabel": "받을 보상",
+      "hotspot": "hs-C09",
+      "currentCapture": "creator",
+      "currentHotspot": [
+        82,
+        87
+      ]
+    },
+    {
+      "id": "C10",
+      "number": "24",
+      "role": "creator",
+      "proposalRole": "creator",
+      "screen": "c-profile",
+      "screenLabel": "내 정보",
+      "hotspot": "hs-C10",
+      "currentCapture": "creator",
+      "currentHotspot": [
+        18,
+        8
+      ]
+    },
+    {
+      "id": "C11",
+      "number": "25",
+      "role": "creator",
+      "proposalRole": "creator",
+      "screen": "c-community",
+      "screenLabel": "커뮤니티",
+      "hotspot": "hs-C11",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "C12",
+      "number": "26",
+      "role": "creator",
+      "proposalRole": "creator",
+      "screen": "c-messages",
+      "screenLabel": "메시지",
+      "hotspot": "hs-C12",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "A01",
+      "number": "27",
+      "role": "admin",
+      "proposalRole": "admin",
+      "screen": "a-today",
+      "screenLabel": "오늘 처리할 일",
+      "hotspot": "hs-A01",
+      "currentCapture": "admin",
+      "currentHotspot": [
+        25,
+        6.5
+      ]
+    },
+    {
+      "id": "A02",
+      "number": "28",
+      "role": "admin",
+      "proposalRole": "admin",
+      "screen": "a-onboard",
+      "screenLabel": "브랜드 시작 돕기",
+      "hotspot": "hs-A02",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "A03",
+      "number": "29",
+      "role": "admin",
+      "proposalRole": "admin",
+      "screen": "a-review",
+      "screenLabel": "영상 확인",
+      "hotspot": "hs-A03",
+      "currentCapture": "admin",
+      "currentHotspot": [
+        84,
+        15
+      ]
+    },
+    {
+      "id": "A04",
+      "number": "30",
+      "role": "admin",
+      "proposalRole": "admin",
+      "screen": "a-reports",
+      "screenLabel": "신고·분쟁",
+      "hotspot": "hs-A04",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "A05",
+      "number": "31",
+      "role": "admin",
+      "proposalRole": "admin",
+      "screen": "a-reports",
+      "screenLabel": "신고·분쟁",
+      "hotspot": "hs-A05",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "A06",
+      "number": "32",
+      "role": "admin",
+      "proposalRole": "admin",
+      "screen": "a-connections",
+      "screenLabel": "연결 상태",
+      "hotspot": "hs-A06",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "A07",
+      "number": "33",
+      "role": "admin",
+      "proposalRole": "admin",
+      "screen": "a-people",
+      "screenLabel": "사람·권한",
+      "hotspot": "hs-A07",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "A08",
+      "number": "34",
+      "role": "admin",
+      "proposalRole": "admin",
+      "screen": "a-finance",
+      "screenLabel": "비용·성과",
+      "hotspot": "hs-A08",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "X01",
+      "number": "35",
+      "role": "common",
+      "proposalRole": "brand",
+      "screen": "b-today",
+      "screenLabel": "오늘 할 일",
+      "hotspot": "hs-X01",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "X02",
+      "number": "36",
+      "role": "common",
+      "proposalRole": "brand",
+      "screen": "b-create",
+      "screenLabel": "캠페인 관리 › 새 캠페인",
+      "hotspot": "hs-X02",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "X03",
+      "number": "37",
+      "role": "common",
+      "proposalRole": "creator",
+      "screen": "c-tasks",
+      "screenLabel": "내 할 일",
+      "hotspot": "hs-X03",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "X04",
+      "number": "38",
+      "role": "common",
+      "proposalRole": "admin",
+      "screen": "a-today",
+      "screenLabel": "오늘 처리할 일",
+      "hotspot": "hs-X04",
+      "currentCapture": "admin",
+      "currentHotspot": [
+        84,
+        29
+      ]
+    },
+    {
+      "id": "X05",
+      "number": "39",
+      "role": "common",
+      "proposalRole": "admin",
+      "screen": "a-today",
+      "screenLabel": "오늘 처리할 일",
+      "hotspot": "hs-X05",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "X06",
+      "number": "40",
+      "role": "common",
+      "proposalRole": "brand",
+      "screen": "b-today",
+      "screenLabel": "오늘 할 일",
+      "hotspot": "hs-X06",
+      "currentCapture": null,
+      "currentHotspot": null
+    },
+    {
+      "id": "C13",
+      "number": "41",
+      "role": "creator",
+      "proposalRole": "creator",
+      "screen": "c-products",
+      "screenLabel": "제품 모아보기",
+      "hotspot": "hs-C13",
+      "currentCapture": null,
+      "currentHotspot": null
+    }
+  ]
+}

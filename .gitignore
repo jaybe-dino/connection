@@ -9,6 +9,8 @@ venv/
 # Node
 node_modules/
 dist/
+# 승인 v8.1 시안 원본은 추적한다(CSS kit 생성·SHA256SUMS 검증의 원본)
+!docs/ui-reference/v8.1/dist/
 .next/
 
 # 환경 · 비밀

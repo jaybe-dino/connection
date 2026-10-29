@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<script>history.replaceState(null,"","products.html?role=creator&mode=proposal&screen=c-products");</script>
+<title>THEPRLIST · 전체 브랜드 제품 모아보기 v8</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="live-reference.css">
+<link rel="stylesheet" href="slack-preserve.css">
+<link rel="stylesheet" href="product-market.css">
+<link rel="stylesheet" href="design-v5.css">
+<link rel="stylesheet" href="campaign-v6.css?v=fdfdf2cd69">
+<link rel="stylesheet" href="quality-v7.css?v=88f8908e63">
+<link rel="stylesheet" href="visual-v8.css?v=20d3cd55bc">
+</head>
+<body>
+<a class="skip" href="#stage">본문으로 건너뛰기</a>
+
+<!-- 검토용 바: 제품 UI가 아님 -->
+<header class="rv-bar" aria-label="검토용 도구 (제품 화면 아님)">
+  <div class="rv-row">
+    <a class="rv-tag" href="guide.html" style="text-decoration:none">검토 안내 ↗</a>
+    <div class="rv-group" role="group" aria-label="역할 전환">
+      <button type="button" class="rv-seg" data-role="brand">브랜드</button>
+      <button type="button" class="rv-seg" data-role="creator">크리에이터</button>
+      <button type="button" class="rv-seg" data-role="admin">관리자</button>
+    </div>
+    <div class="rv-group" role="group" aria-label="보기 전환">
+      <button type="button" class="rv-seg" data-mode="current">현재 UI + 개선번호</button>
+      <button type="button" class="rv-seg" data-mode="proposal">개선 후 시안</button>
+    </div>
+    <label class="rv-toggle"><input type="checkbox" id="rv-show-badges" checked> 번호 보이기</label>
+    <button type="button" class="rv-sel" id="rv-open-sel">선택한 개선(<span id="rv-count">0</span>)</button>
+  </div>
+  <p class="rv-notice" role="note">체크는 <strong>검토 메모</strong>입니다. 반영은 선택한 번호를 채팅으로 요청해 주세요.</p>
+</header>
+
+<main id="stage" tabindex="-1"></main>
+
+<!-- 개선 설명 레이어 (검토용) -->
+<div class="rv-scrim" id="rv-scrim" hidden></div>
+<aside class="rv-layer" id="rv-layer" role="dialog" aria-modal="true" aria-labelledby="rv-layer-title" hidden></aside>
+
+<!-- 선택 목록 (검토용) -->
+<aside class="rv-layer rv-wide" id="rv-sel" role="dialog" aria-modal="true" aria-labelledby="rv-sel-title" hidden></aside>
+
+<!-- 제품 시안 안의 레이어 -->
+<div class="pd-scrim" id="pd-scrim" hidden></div>
+<div class="pd-sheet" id="pd-sheet" role="dialog" aria-modal="true" aria-labelledby="pd-sheet-title" hidden></div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+<script src="live-reference.js"></script>
+<script src="slack-preserve.js?v=36a0e16cbb"></script>
+<script src="product-market.js"></script>
+<script src="design-v5.js?v=1fc470584a"></script>
+<script src="campaign-v6.js?v=6d21a71849"></script>
+<script src="quality-v7.js?v=f69a0b8997"></script>
+</body>
+</html>

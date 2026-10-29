@@ -6,10 +6,13 @@
 - 검토용 UI 규칙(검토 툴바 .rv-*, 개선 번호 .hs, 캡처/현재 화면 비교, '디자인 예시' 표시,
   v7 검토 도구 접기)은 운영에 싣지 않으므로 뺀다.
 - 결과: packages/demo-core/src/v8/v8-kit.css → scripts/sync-demo.sh 가 각 앱 public/v8/ 로 복사.
-사용: python3 scripts/build-v8-kit.py
+사용: python3 scripts/build-v8-kit.py          # 생성
+      python3 scripts/build-v8-kit.py --check  # 원본 SHA256SUMS 확인 + 생성 결과가 커밋본과 같은지 확인(clean checkout 검증)
 """
 import hashlib
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,14 +65,27 @@ def filt(css: str) -> str:
     return '\n'.join(out)
 
 
-def main() -> None:
+def build() -> str:
     parts = []
     for name in ORDER:
         raw = (SRC / name).read_text(encoding='utf-8')
         parts.append(f'/* ---- {name} (sha256 {hashlib.sha256(raw.encode()).hexdigest()[:12]}) ---- */\n' + filt(strip_comments(raw)))
-    OUT.parent.mkdir(parents=True, exist_ok=True)
     head = '/* 생성 파일 — scripts/build-v8-kit.py 로 docs/ui-reference/v8.1 에서 만든다. 직접 고치지 말 것. */\n'
-    OUT.write_text(head + '\n'.join(parts) + '\n', encoding='utf-8')
+    return head + '\n'.join(parts) + '\n'
+
+
+def main() -> None:
+    if '--check' in sys.argv:
+        ref = SRC.parent
+        r = subprocess.run(['sha256sum', '-c', '--quiet', 'SHA256SUMS'], cwd=ref, capture_output=True, text=True)
+        if r.returncode:
+            raise SystemExit('v8.1 원본 SHA256SUMS 불일치/누락:\n' + (r.stdout + r.stderr)[-2000:])
+        if not OUT.exists() or OUT.read_text(encoding='utf-8') != build():
+            raise SystemExit(f'{OUT.relative_to(ROOT)} 가 원본에서 다시 만든 결과와 다릅니다 — python3 scripts/build-v8-kit.py')
+        print('v8.1 원본 SHA256SUMS OK · CSS kit 재생성 일치')
+        return
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(build(), encoding='utf-8')
     print(f'{OUT.relative_to(ROOT)} {OUT.stat().st_size} bytes')
 
 

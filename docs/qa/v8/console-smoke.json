@@ -1,0 +1,177 @@
+{
+  "note": "tests_e2e/.smoke-console.mjs 1회 실행 결과(재촬영 없음): 16개 브랜드 화면 × 1280/390, 페이지 오류 0, 가로 넘침 0. 요청 실패는 샌드박스 프록시가 막은 외부 이미지/폰트(cdn.example.com, cdn.jsdelivr.net Pretendard)와 기존 engine-live 의 localhost:8000/locale/detect 기본값뿐.",
+  "runs": [
+    {
+      "width": 1280,
+      "pageErrors": 0,
+      "screens": [
+        {
+          "screen": "b-today",
+          "h1": "고려공작1392 오늘 할 일",
+          "overflowX": false
+        },
+        {
+          "screen": "b-learning",
+          "h1": "브랜드 학습",
+          "overflowX": false
+        },
+        {
+          "screen": "b-campaigns",
+          "h1": "캠페인 관리",
+          "overflowX": false
+        },
+        {
+          "screen": "b-create",
+          "h1": "새 캠페인",
+          "overflowX": false
+        },
+        {
+          "screen": "b-products",
+          "h1": "제품 라이브러리",
+          "overflowX": false
+        },
+        {
+          "screen": "b-applicants",
+          "h1": "지원자",
+          "overflowX": false
+        },
+        {
+          "screen": "b-samples",
+          "h1": "샘플·영상",
+          "overflowX": false
+        },
+        {
+          "screen": "b-community",
+          "h1": "커뮤니티·DM",
+          "overflowX": false
+        },
+        {
+          "screen": "b-mailconnect",
+          "h1": "이메일 연결",
+          "overflowX": false
+        },
+        {
+          "screen": "b-invite",
+          "h1": "받는 사람 찾기",
+          "overflowX": false
+        },
+        {
+          "screen": "b-mailprep",
+          "h1": "메일 작성·검수",
+          "overflowX": false
+        },
+        {
+          "screen": "b-reply",
+          "h1": "회신함",
+          "overflowX": false
+        },
+        {
+          "screen": "b-sendlog",
+          "h1": "발송 로그",
+          "overflowX": false
+        },
+        {
+          "screen": "b-team",
+          "h1": "팀",
+          "overflowX": false
+        },
+        {
+          "screen": "b-billing",
+          "h1": "월별 청구",
+          "overflowX": false
+        },
+        {
+          "screen": "b-results",
+          "h1": "결과·보상",
+          "overflowX": false
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "pageErrors": 0,
+      "screens": [
+        {
+          "screen": "b-today",
+          "h1": "고려공작1392 오늘 할 일",
+          "overflowX": false
+        },
+        {
+          "screen": "b-learning",
+          "h1": "브랜드 학습",
+          "overflowX": false
+        },
+        {
+          "screen": "b-campaigns",
+          "h1": "캠페인 관리",
+          "overflowX": false
+        },
+        {
+          "screen": "b-create",
+          "h1": "새 캠페인",
+          "overflowX": false
+        },
+        {
+          "screen": "b-products",
+          "h1": "제품 라이브러리",
+          "overflowX": false
+        },
+        {
+          "screen": "b-applicants",
+          "h1": "지원자",
+          "overflowX": false
+        },
+        {
+          "screen": "b-samples",
+          "h1": "샘플·영상",
+          "overflowX": false
+        },
+        {
+          "screen": "b-community",
+          "h1": "커뮤니티·DM",
+          "overflowX": false
+        },
+        {
+          "screen": "b-mailconnect",
+          "h1": "이메일 연결",
+          "overflowX": false
+        },
+        {
+          "screen": "b-invite",
+          "h1": "받는 사람 찾기",
+          "overflowX": false
+        },
+        {
+          "screen": "b-mailprep",
+          "h1": "메일 작성·검수",
+          "overflowX": false
+        },
+        {
+          "screen": "b-reply",
+          "h1": "회신함",
+          "overflowX": false
+        },
+        {
+          "screen": "b-sendlog",
+          "h1": "발송 로그",
+          "overflowX": false
+        },
+        {
+          "screen": "b-team",
+          "h1": "팀",
+          "overflowX": false
+        },
+        {
+          "screen": "b-billing",
+          "h1": "월별 청구",
+          "overflowX": false
+        },
+        {
+          "screen": "b-results",
+          "h1": "결과·보상",
+          "overflowX": false
+        }
+      ]
+    }
+  ]
+}

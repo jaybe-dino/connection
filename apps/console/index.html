@@ -6,7 +6,10 @@
     <link rel="stylesheet" href="/demo.css?v=e3498f40" />
     <link rel="stylesheet" href="/product.css?v=dc70343c" />
     <title>theprlist 콘솔</title>
-  <link rel="stylesheet" href="/legacy-compat.css?v=47251d2a" /></head>
+  <link rel="stylesheet" href="/legacy-compat.css?v=47251d2a" />
+    <!-- v8.1 승인 시안 CSS(생성본) — 로그인한 브랜드 콘솔에서만 console-v8.js 가 켠다 -->
+    <link rel="stylesheet" href="/v8/v8-kit.css?v=20261031a" data-v8-css disabled />
+    <link rel="stylesheet" href="/v8/console-v8.css?v=20261031a" data-v8-css disabled /></head>
   <body>
     <!-- 화면·스텝의 정본 = 프로토타입 클릭데모 엔진 (packages/demo-core) -->
     <div class="svcbar">
@@ -21,6 +24,7 @@
     <div id="toastWrap"></div>
     <script>window.__SURFACE = "brand";</script>
     <script src="/engine.js?v=db3ee9df"></script>
-    <script src="/engine-live.js?v=2777a55f"></script>
+    <script src="/engine-live.js?v=468f689c"></script>
+    <script src="/v8/console-v8.js?v=20261031a"></script>
   </body>
 </html>

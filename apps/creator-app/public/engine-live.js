@@ -94,6 +94,8 @@
   };
   var billingVersion = 0;
   window.__billing = null;
+  // 청구 화면이 보이는지 — 기존 화면(livePage/ST) 또는 v8 콘솔(console-v8.js)
+  function billingView(){return (typeof livePage!=='undefined'&&livePage==='billing')||(typeof ST!=='undefined'&&ST.b==='settle')||!!(window.__C8&&window.__C8.active());}
   function loadBilling() {
     if (!BRAND()) return;
     var version = ++billingVersion;
@@ -110,13 +112,13 @@
         billingStatus="";
         billingInvoices = result.invoices;
         billingConfigured = result.configured;
-        if ((typeof ST !== 'undefined' && ST.b === 'settle') || (typeof livePage !== 'undefined' && livePage === 'billing')) { if (window.render) render(); }
+        if (billingView()) { if (window.render) render(); }
       }).catch(function(e){if(version===billingVersion){billingStatus="청구 조회 실패: "+e.message;if(window.render)render();}});
       loadBillingCard();
-      if (typeof ST !== "undefined" && ST.b === "settle" && window.render) render();
+      if (billingView() && window.render) render();
     }).catch(function (e) {
       if(version===billingVersion)billingStatus="청구 조회 실패: "+e.message;
-      if (version === billingVersion && typeof ST !== "undefined" && ST.b === "settle" && window.render) render();
+      if (version === billingVersion && billingView() && window.render) render();
     });
   }
   window.refreshBilling = loadBilling;
@@ -130,8 +132,8 @@
     req("GET", "/brands/" + owner + "/billing/card").then(function (c) {
       if (version !== billingVersion || owner !== BRAND()) return;
       billingCardInfo = c;
-      if (livePage === 'billing' && window.render) render();
-    }).catch(function () { if (version === billingVersion) { billingCardInfo = null; billingCardMsg = "카드 상태 조회에 실패했습니다. 새로고침해 주세요."; if(livePage === "billing" && window.render) render(); } });
+      if (billingView() && window.render) render();
+    }).catch(function () { if (version === billingVersion) { billingCardInfo = null; billingCardMsg = "카드 상태 조회에 실패했습니다. 새로고침해 주세요."; if(billingView() && window.render) render(); } });
   }
   window.billingCardRegister = function () {
     if (billingCardBusy || !billingCardInfo) return;
@@ -1798,6 +1800,8 @@
     }
     function brandNotifSig(n){return n?JSON.stringify([n.unreadCount,(n.items||[]).map(function(i){return [i.id,i.read];})]):'';}
     function brandPollTick(){
+      // v8 콘솔(console-v8.js)이 화면을 맡는 동안은 그쪽 폴러가 같은 데이터를 갱신한다 — 중복 요청 방지
+      if(window.__C8&&window.__C8.active())return brandPollSchedule();
       if(brandPollBusy)return brandPollSchedule();
       if(typeof document!=='undefined'&&document.hidden)return;
       if(!window.__ME||window.__ME.kind==='creator'||!jwtGet()||!BRAND())return; // 로그아웃·브랜드 미선택 시 중단

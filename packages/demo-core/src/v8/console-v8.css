@@ -1,0 +1,17 @@
+/* 콘솔 운영 셸 보정 — v8-kit.css(시안 생성본) 다음에 로드. 시안 검토 툴바 높이 변수 0, 실서비스 요소 최소 스타일. */
+:root, body.c8 { --sp-rv: 0px; }
+body.c8 { margin: 0; }
+body.c8 .svcbar { display: none !important; }
+.c8 .badge-n { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: var(--c-accent, #4a2c5a); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; vertical-align: 1px; }
+.c8 .v2-navbtn[aria-current="page"] .badge-n { background: #fff; color: var(--c-accent, #4a2c5a); }
+.c8 .v2-top { position: relative; }
+.c8 .c8-acct { position: absolute; right: 12px; top: 100%; z-index: 30; min-width: 220px; }
+.c8 a.btn, .c8 a.btn:hover { text-decoration: none; }
+.c8 .v6-file input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.c8 .v6-file { position: relative; cursor: pointer; }
+.c8 .v6-file:focus-within { outline: 3px solid #9e8aab; outline-offset: 2px; }
+.c8 .c8-legacy-billing { font-size: 14px; }
+.c8 .c8-legacy-billing h3 { font-size: 16px; margin: 16px 0 8px; }
+.c8 .c8-legacy-billing .btn { margin-left: 6px; }
+body.c8 #toastWrap { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); }
+body.c8 #toastWrap .toast { position: static; transform: none; opacity: 1; background: #2b1f33; color: #fff; padding: 10px 14px; border-radius: 10px; font-size: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }

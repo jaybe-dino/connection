@@ -21,6 +21,7 @@ if v8.is_dir():
     for app in ('console','creator-app'):
         dst=Path('apps')/app/'public'/'v8'; dst.mkdir(parents=True,exist_ok=True)
         for f in v8.iterdir():
-            if f.is_file():shutil.copyfile(f,dst/f.name)
+            # 콘솔 전용 셸(console-v8.*)은 콘솔에만
+            if f.is_file() and not (f.name.startswith('console-') and app!='console'):shutil.copyfile(f,dst/f.name)
 print('synced and cache-busted')
 PY

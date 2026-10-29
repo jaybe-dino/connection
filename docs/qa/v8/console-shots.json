@@ -1,0 +1,146 @@
+{
+  "capturedAt": "2026-10-29T19:06:07.562Z",
+  "data": "로컬 실 API·DB(seed + E2E 생성 데이터)",
+  "shots": [
+    {
+      "file": "console-learning-error-1280.png",
+      "width": 1280,
+      "note": "브랜드 학습 — 홈페이지 형식 오류 상태",
+      "overflowX": false
+    },
+    {
+      "file": "console-product-photo-1280.png",
+      "width": 1280,
+      "note": "제품 편집 — 업로드한 대표 이미지·공개 상태",
+      "overflowX": false
+    },
+    {
+      "file": "console-create-step3-error-1280.png",
+      "width": 1280,
+      "note": "새 캠페인 3단계 — 필수 조건 오류",
+      "overflowX": false
+    },
+    {
+      "file": "console-applicants-1280.png",
+      "width": 1280,
+      "note": "지원자 — 선택 캠페인·참여 상세",
+      "overflowX": false
+    },
+    {
+      "file": "console-samples-video-1280.png",
+      "width": 1280,
+      "note": "샘플·영상 — 영상 검수(제출 영상 보기·검수 완료≠지급)",
+      "overflowX": false
+    },
+    {
+      "file": "console-dm-1280.png",
+      "width": 1280,
+      "note": "커뮤니티·DM — 대화 상세",
+      "overflowX": false
+    },
+    {
+      "file": "console-reply-1280.png",
+      "width": 1280,
+      "note": "회신함 — 회신 상세·후속 처리",
+      "overflowX": false
+    },
+    {
+      "file": "console-mailconnect-1280.png",
+      "width": 1280,
+      "note": "이메일 연결 — 연결 계정·일일 잔량",
+      "overflowX": false
+    },
+    {
+      "file": "console-mailprep-error-1280.png",
+      "width": 1280,
+      "note": "메일 작성·검수 — 1단계 필수 오류",
+      "overflowX": false
+    },
+    {
+      "file": "console-team-1280.png",
+      "width": 1280,
+      "note": "팀 — 실제 역할·권한",
+      "overflowX": false
+    },
+    {
+      "file": "console-billing-1280.png",
+      "width": 1280,
+      "note": "월별 청구 — 현행 기준·청구서",
+      "overflowX": false
+    },
+    {
+      "width": 1280,
+      "pageErrors": []
+    },
+    {
+      "file": "console-learning-error-390.png",
+      "width": 390,
+      "note": "브랜드 학습 — 홈페이지 형식 오류 상태",
+      "overflowX": false
+    },
+    {
+      "file": "console-product-photo-390.png",
+      "width": 390,
+      "note": "제품 편집 — 업로드한 대표 이미지·공개 상태",
+      "overflowX": false
+    },
+    {
+      "file": "console-create-step3-error-390.png",
+      "width": 390,
+      "note": "새 캠페인 3단계 — 필수 조건 오류",
+      "overflowX": false
+    },
+    {
+      "file": "console-applicants-390.png",
+      "width": 390,
+      "note": "지원자 — 선택 캠페인·참여 상세",
+      "overflowX": false
+    },
+    {
+      "file": "console-samples-video-390.png",
+      "width": 390,
+      "note": "샘플·영상 — 영상 검수(제출 영상 보기·검수 완료≠지급)",
+      "overflowX": false
+    },
+    {
+      "file": "console-dm-390.png",
+      "width": 390,
+      "note": "커뮤니티·DM — 대화 상세",
+      "overflowX": false
+    },
+    {
+      "file": "console-reply-390.png",
+      "width": 390,
+      "note": "회신함 — 회신 상세·후속 처리",
+      "overflowX": false
+    },
+    {
+      "file": "console-mailconnect-390.png",
+      "width": 390,
+      "note": "이메일 연결 — 연결 계정·일일 잔량",
+      "overflowX": false
+    },
+    {
+      "file": "console-mailprep-error-390.png",
+      "width": 390,
+      "note": "메일 작성·검수 — 1단계 필수 오류",
+      "overflowX": false
+    },
+    {
+      "file": "console-team-390.png",
+      "width": 390,
+      "note": "팀 — 실제 역할·권한",
+      "overflowX": false
+    },
+    {
+      "file": "console-billing-390.png",
+      "width": 390,
+      "note": "월별 청구 — 현행 기준·청구서",
+      "overflowX": false
+    },
+    {
+      "width": 390,
+      "pageErrors": []
+    }
+  ]
+}

@@ -15,5 +15,12 @@ for app in ('console','signup','creator-app'):
             digest=hashlib.sha256((public/name).read_bytes()).hexdigest()[:8]
             text=re.sub(r'"/'+re.escape(name)+r'(?:\?v=[a-f0-9]+)?"','"/'+name+'?v='+digest+'"',text)
         html.write_text(text)
+# v8.1 운영 키트(생성 CSS·셸 JS)는 public/v8/ 로 복사
+v8=source/'v8'
+if v8.is_dir():
+    for app in ('console','creator-app'):
+        dst=Path('apps')/app/'public'/'v8'; dst.mkdir(parents=True,exist_ok=True)
+        for f in v8.iterdir():
+            if f.is_file():shutil.copyfile(f,dst/f.name)
 print('synced and cache-busted')
 PY

@@ -29,8 +29,17 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
     },
     ...init,
   });
+  // 현재 세션의 401 만 로그아웃 — 요청 뒤 다른 계정으로 바뀌었다면(늦은 이전 세션 응답) 건드리지 않는다
+  if (res.status === 401 && t && t === jwt() && !path.startsWith("/auth/")) { clearJwt(); window.dispatchEvent(new Event("admin-auth-lost")); }
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
   return res.json() as Promise<T>;
+}
+/** 서버 오류 메시지만 사람이 읽을 수 있게 — "409 {"detail":"…"}" → "…" */
+export function errText(e: unknown): string {
+  const m = String((e as Error)?.message || e || "");
+  const i = m.indexOf("{");
+  if (i >= 0) { try { const d = JSON.parse(m.slice(i)).detail; if (typeof d === "string") return d; if (d && typeof d.message === "string") return d.message; } catch { /* 원문 */ } }
+  return m || "요청을 처리하지 못했어요";
 }
 
 /* ── 실인증 ── */
@@ -103,6 +112,12 @@ export interface Submission {
   submissionId: string; campaignId: string; campaignName: string; handle: string;
   url: string; caption: string; status: string;
   autoChecks: { label: string; pass: boolean; fix?: string | null }[]; at: string;
+  source?: "collab" | "direct"; version?: number; brandId?: string; termsState?: string | null; reviewedBy?: string | null;
+}
+export interface ReportEffect { hiddenMsgId?: number; creatorId?: string; sanctionId?: number; until?: string | null }
+export interface HandledReport {
+  reportId: string; cellId: string; msgText: string | null; reason: string; action: string; status: string;
+  effect: ReportEffect; hidden: boolean; until: string | null; lifted: boolean; restoredAt: string | null; at: string;
 }
 
 export const adminApi = {
@@ -175,6 +190,8 @@ export const adminApi = {
   communitySetup: () => req<any>("/admin/recruitment/setup/communities"),
   saveCommunity: (id:string,name:string) => req<any>(`/admin/recruitment/setup/brands/${encodeURIComponent(id)}/community`,{method:"PUT",body:JSON.stringify({name})}),
   gmailStatus: () => req<any>("/admin/gmail/status"),
+  gmailMetaPreview: (csv: string) => req<{ rows: { row: number; email: string; brandId: string | null; owner: string; reason: string }[] }>("/admin/gmail/meta/preview", { method: "POST", body: JSON.stringify({ csv }) }),
+  gmailMetaRegister: (csv: string) => req<{ registered: number; skipped: unknown[] }>("/admin/gmail/meta", { method: "POST", body: JSON.stringify({ csv }) }),
   brands: () => req<AdminBrand[]>("/admin/brands"),
   suspendBrand: (id: string, reason: string) =>
     req<{ ok: boolean; suspended: boolean; already?: boolean }>(
@@ -224,8 +241,11 @@ export const adminApi = {
       method: "POST", body: JSON.stringify({ reason }),
     }),
   reports: (status = "open") => req<Report[]>(`/admin/reports?status=${status}`),
+  reportsHandled: () => req<HandledReport[]>("/admin/reports/handled"),
+  restoreReport: (id: string) => req<{ ok: boolean }>(`/admin/reports/${id}/restore`, { method: "POST" }),
+  consoleHandoff: (brandId: string) => req<{ url: string; expiresMin: number }>("/auth/console-handoff", { method: "POST", body: JSON.stringify({ brand_id: brandId }) }),
   actionReport: (id: string, action: string) =>
-    req(`/admin/reports/${id}/action`, {
+    req<{ ok: boolean; status: string; effect: ReportEffect }>(`/admin/reports/${id}/action`, {
       method: "POST", body: JSON.stringify({ action }),
     }),
   disputes: () => req<Dispute[]>("/admin/disputes"),

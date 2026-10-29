@@ -2645,7 +2645,17 @@
         if (typeof loadCreatorData === "function") try { loadCreatorData(); } catch (e) {}
       }).catch(function () { toast(sp.get("lang")==="en"?"Sign-in failed":"로그인 실패", sp.get("lang")==="en"?"This link has expired. Please request a new sign-in link.":"링크가 만료됐어요 — 다시 요청해 주세요."); });
     }
-    if (jwtGet()) {
+    var handoffTok = sp.get("handoff"), handoffBrand = (sp.get("brand") || "").toLowerCase();
+    if (handoffTok && window.__SURFACE === "brand") {
+      // 관리자 앱 '브랜드 콘솔 열기' — 1회용 코드를 즉시 교환(주소에서 바로 지움). JWT 는 URL 에 실리지 않는다.
+      history.replaceState(null, "", location.pathname);
+      req("POST", "/auth/console-handoff/redeem", { token: handoffTok }).then(function (r) {
+        jwtSet(r.token);
+        try { if (/^[a-z0-9][a-z0-9-]{2,39}$/.test(handoffBrand)) localStorage.setItem("CONNECTION_ADMIN_BRAND", handoffBrand); } catch (e) {}
+        window.__ME = r.user; authChip(); reloadBrand();
+        if (window.render) try { render(); } catch (e) {}
+      }).catch(function () { authChip(); toast("전환 실패", "링크가 만료됐거나 이미 사용됐어요 — 관리자 화면에서 다시 여세요."); });
+    } else if (jwtGet()) {
       req("GET", "/auth/me").then(function (u) { window.__ME = u; authChip(); reloadBrand();
         if (window.render) try { render(); } catch (e) {}
         if (typeof loadCreatorData === "function") try { loadCreatorData(); } catch (e) {}

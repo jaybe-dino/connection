@@ -1,0 +1,30 @@
+/* 관리자 운영 셸 보정 — v8-kit.css(시안 생성본) 다음에 로드. 시안 검토 툴바 높이 변수 0, 실서비스 요소 최소 스타일. */
+:root, body.a8 { --sp-rv: 0px; }
+body.a8 { margin: 0; }
+body.a8 #root { min-height: 100dvh; }
+.v2-admin .v2-top { position: relative; }
+.v2-admin .a8-live { cursor: default; }
+.v2-admin .a8-live.is-off { color: #ffd2cc; }
+.v2-admin .a8-acct { position: absolute; right: 12px; top: 100%; z-index: 30; min-width: 240px; padding: 10px; }
+.v2-admin .a8-acct button[role=menuitem] { display: block; width: 100%; text-align: left; }
+.v2-admin .badge-n { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: #fff; color: var(--c-rail, #3a2843); font-size: 11px; font-weight: 700; line-height: 1; vertical-align: 1px; }
+.v2-admin .v2-navbtn[aria-current="page"] .badge-n { background: var(--c-rail, #3a2843); color: #fff; }
+/* 기존 카드 컴포넌트(@connection/ui)를 시안 섹션처럼 */
+.v2-admin .v2-main [class*="card"]:not(.v6-stat):not(.chip) { border-radius: var(--r2, 8px); }
+.v2-admin .v6 .alert { margin: 8px 0; }
+.v2-admin .v8-senders .v6-table { margin-top: 8px; }
+.v2-admin .v6-senders .v6-tr { grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 1.6fr) minmax(0, .8fr) minmax(0, 1fr); }
+.v2-admin .v8-senders .v6-senders .v6-tr { grid-template-columns: 56px minmax(0, 2.4fr) minmax(0, 1.2fr) minmax(0, 1fr); }
+@media (max-width: 719px) {
+  .v2-admin .v6-senders .v6-tr, .v2-admin .v8-senders .v6-senders .v6-tr { grid-template-columns: minmax(0, 1fr); }
+}
+/* 계정별 메일함은 전체 높이 레이아웃 유지 */
+.v2-admin.admin-mail-layout .v2-main { padding: 0; }
+/* 디노 공용 모집: 기존 작업 화면 버튼 스타일보다 시안 탭·단계 표시가 우선 */
+.recruitment-workspace .v6-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; margin: 0; min-height: var(--ctl, 36px); padding: 0 var(--s3, 12px); font-weight: 600; color: var(--c-muted, #616061); white-space: nowrap; }
+.recruitment-workspace .v6-tabs button[aria-selected="true"] { color: var(--c-accent, #4a2c5a); border-bottom-color: var(--c-accent, #4a2c5a); background: none; }
+.recruitment-workspace .v6-tabs button:hover:not(:disabled) { background: var(--c-hover, #f6f3f8); }
+.recruitment-workspace .v6-steps button { margin: 0; min-height: var(--ctl, 36px); border-radius: var(--r2, 8px); }
+.recruitment-workspace .v6-steps button.on { background: var(--c-accent, #4a2c5a); color: #fff; border-color: var(--c-accent, #4a2c5a); }
+.recruitment-workspace .v6-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+.recruitment-workspace .v8-senders .v6-tr button, .recruitment-workspace .v6-pager button { margin: 0; }

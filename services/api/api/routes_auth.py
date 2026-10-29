@@ -442,3 +442,44 @@ def reset_confirm(body: ResetConfirmIn) -> dict:
                       str(u["user_id"]), {"email": u["email"]})
     return {"ok": True, "kind": u["kind"],
             "message": "비밀번호가 변경되었습니다 — 새 비밀번호로 다시 로그인하세요."}
+
+
+# ── 브랜드 대리운영: 관리자 → 브랜드 콘솔 1회용 전환 ─────────────────
+# 관리자 앱과 콘솔은 다른 도메인이라 저장소를 공유하지 않는다. JWT 를 URL 에 싣지 않고
+# 2분짜리 1회용 코드(해시만 저장)를 콘솔이 즉시 교환한다. 같은 관리자 계정·세션 세대로 발급되고
+# 서버의 관리자·브랜드 권한 검사는 그대로다.
+
+class HandoffIn(BaseModel):
+    brand_id: str
+
+
+@router.post("/console-handoff")
+def console_handoff(body: HandoffIn, authorization: str = Header(default="")) -> dict:
+    import os as _os
+    u = auth.require_admin_jwt(authorization)
+    brand = body.brand_id.strip().lower()
+    with connect() as conn:
+        b = conn.execute("SELECT brand_id FROM brands WHERE brand_id=%s", (brand,)).fetchone()
+        if not b:
+            raise HTTPException(404, "브랜드를 찾을 수 없습니다")
+        raw = auth.one_time_token(conn, u["sub"], "console_handoff", 2)
+        ledger_append(conn, f"admin:{u['sub']}", "ADMIN_CONSOLE_HANDOFF", brand, {"ttlMin": 2})
+    site = _os.environ.get("BRAND_CONSOLE_URL", "https://console.theprlist.net").rstrip("/")
+    return {"url": f"{site}/?handoff={raw}&brand={brand}", "expiresMin": 2}
+
+
+class HandoffRedeemIn(BaseModel):
+    token: str
+
+
+@router.post("/console-handoff/redeem")
+def console_handoff_redeem(body: HandoffRedeemIn) -> dict:
+    with connect() as conn:
+        try:
+            u = auth.consume_token(conn, body.token.strip(), "console_handoff")
+        except HTTPException:
+            raise HTTPException(401, "전환 링크가 만료됐거나 이미 사용됐어요 — 관리자 화면에서 다시 여세요")
+        if u["kind"] != "admin":
+            raise HTTPException(401, "관리자 계정이 아닙니다")
+        _touch_login(conn, u["user_id"])
+    return _issue(u)

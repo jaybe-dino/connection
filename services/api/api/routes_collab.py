@@ -74,6 +74,31 @@ def _sample_required(t: dict, camp: dict | None = None) -> bool:
     return (camp or {}).get("sample_required") is not False
 
 
+def _collab_submission(conn, campaign_id: str, creator_id: str, url: str) -> None:
+    """D03 — 크리에이터 협업 제출을 전사 검수 대기열(submissions)과 같은 기록으로 남긴다.
+    제출마다 새 버전 행, 아직 검수 전인 이전 버전은 superseded 로 보존(덮어쓰지 않음)."""
+    import json as _json
+    conn.execute("UPDATE submissions SET status='superseded' WHERE campaign_id=%s AND creator_id=%s"
+                 " AND source='collab' AND status='in_review'", (campaign_id, creator_id))
+    v = conn.execute("SELECT COALESCE(max(version),0)+1 AS v FROM submissions WHERE campaign_id=%s"
+                     " AND creator_id=%s AND source='collab'", (campaign_id, creator_id)).fetchone()["v"]
+    conn.execute("INSERT INTO submissions (campaign_id, creator_id, url, caption, auto_checks, status, source, version)"
+                 " VALUES (%s,%s,%s,'',%s,'in_review','collab',%s)",
+                 (campaign_id, creator_id, url,
+                  _json.dumps([{"label": "링크 형식", "pass": url.startswith("https://")}], ensure_ascii=False), v))
+
+
+def _collab_review(conn, campaign_id: str, creator_id: str, status: str, by: str, note: str = "") -> None:
+    """브랜드 수정 요청/완료를 같은 제출 행에 기록 — 관리자 검수 화면에서 같은 건으로 보인다."""
+    import json as _json
+    extra = _json.dumps([{"label": "브랜드 수정 요청", "pass": False, "fix": note}], ensure_ascii=False) if note else "[]"
+    conn.execute(
+        "UPDATE submissions SET status=%s, reviewed_by=%s, reviewed_at=now(), auto_checks=auto_checks || %s::jsonb"
+        " WHERE submission_id=(SELECT submission_id FROM submissions WHERE campaign_id=%s AND creator_id=%s"
+        "   AND source='collab' AND status='in_review' ORDER BY version DESC LIMIT 1)",
+        (status, by, extra, campaign_id, creator_id))
+
+
 def _agreed_platform(t: dict, camp: dict | None = None) -> str:
     """합의 스냅샷의 플랫폼 우선 — 합의 후 캠페인 플랫폼을 바꿔도 합의한 조건대로 진행.
     스냅샷이 없는 기존 기록만 캠페인 값으로 대체한다."""
@@ -514,6 +539,7 @@ def request_revision(brand: str, campaign_id: str, creator_id: str,
             " revision_note=%s, revision_requested_at=now()"
             " WHERE campaign_id=%s AND creator_id=%s RETURNING *",
             (body.note.strip(), campaign_id, creator_id)).fetchone()
+        _collab_review(conn, campaign_id, creator_id, "needs_fix", f"brand:{brand}", body.note.strip())
         camp = conn.execute("SELECT name FROM campaigns WHERE campaign_id=%s",
                             (campaign_id,)).fetchone()
         # 해당 크리에이터에게만 알림(배지+카드, 강제 이동 없음)
@@ -540,6 +566,7 @@ def complete_terms(brand: str, campaign_id: str, creator_id: str,
         t = _terms(conn, campaign_id, creator_id)
         if t["state"] != "content_submitted":
             raise HTTPException(409, f"콘텐츠 제출 후에만 완료 가능 (현재 {t['state']})")
+        _collab_review(conn, campaign_id, creator_id, "passed", f"brand:{brand}")
         t = conn.execute(
             "UPDATE campaign_terms SET state='completed'"
             " WHERE campaign_id=%s AND creator_id=%s RETURNING *",
@@ -816,6 +843,7 @@ def submit_content(campaign_id: str, body: ContentIn,
         conn.execute(
             "UPDATE campaign_applications SET status='submitted'"
             " WHERE campaign_id=%s AND creator_id=%s", (campaign_id, cid))
+        _collab_submission(conn, campaign_id, cid, body.content_url)
         from .routes_service import award_xp
         _b = conn.execute("SELECT brand_id FROM campaigns WHERE"
                           " campaign_id=%s", (campaign_id,)).fetchone()

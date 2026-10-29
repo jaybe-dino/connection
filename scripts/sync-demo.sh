@@ -23,5 +23,9 @@ if v8.is_dir():
         for f in v8.iterdir():
             # 콘솔 전용 셸(console-v8.*)은 콘솔에만
             if f.is_file() and not (f.name.startswith('console-') and app!='console'):shutil.copyfile(f,dst/f.name)
+    # 관리자 앱도 같은 v8.1 키트 CSS(생성본)를 쓴다
+    adm=Path('apps/admin/public/v8'); adm.mkdir(parents=True,exist_ok=True); shutil.copyfile(v8/'v8-kit.css',adm/'v8-kit.css')
+    html=Path('apps/admin/index.html'); t=html.read_text(); d=hashlib.sha256((adm/'v8-kit.css').read_bytes()).hexdigest()[:8]
+    t=re.sub(r'"/v8/v8-kit\.css(?:\?v=[a-f0-9]+)?"','"/v8/v8-kit.css?v='+d+'"',t); html.write_text(t)
 print('synced and cache-busted')
 PY

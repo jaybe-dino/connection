@@ -516,7 +516,7 @@ def my_unread(authorization: str = Header(default="")) -> list[dict]:
             "SELECT m.cell_id, count(*) AS unread, max(m.msg_id) AS last_id"
             " FROM cell_messages m LEFT JOIN cell_reads r ON"
             " r.cell_id=m.cell_id AND r.user_id=%s"
-            " WHERE m.cell_id = ANY(%s) AND m.thread_parent IS NULL"
+            " WHERE m.cell_id = ANY(%s) AND m.thread_parent IS NULL AND m.hidden_at IS NULL"
             "   AND m.msg_id > COALESCE(r.last_read_msg, 0)"
             " GROUP BY m.cell_id", (uid, ids)).fetchall()
     return [{"cellId": r["cell_id"], "unread": r["unread"],
@@ -537,7 +537,7 @@ def thread(cell_id: str, msg_id: int,
             "  WHERE rr.msg_id=m.msg_id) AS reaction_count,"
             " EXISTS(SELECT 1 FROM message_reactions rr"
             "  WHERE rr.msg_id=m.msg_id AND rr.actor=%s) AS my_reaction"
-            " FROM cell_messages m WHERE m.cell_id=%s AND"
+            " FROM cell_messages m WHERE m.cell_id=%s AND m.hidden_at IS NULL AND"
             " (m.msg_id=%s OR m.thread_parent=%s) ORDER BY m.msg_id",
             (actor, cell_id, msg_id, msg_id)).fetchall()
     if not rows:
@@ -610,7 +610,7 @@ def search_messages(cell_id: str, q: str = "",
         _member_or_owner(conn, claims, cell)
         rows = conn.execute(
             "SELECT msg_id, author, author_kind, original, original_locale,"
-            " at, thread_parent FROM cell_messages WHERE cell_id=%s AND"
+            " at, thread_parent FROM cell_messages WHERE cell_id=%s AND hidden_at IS NULL AND"
             " (original ILIKE %s OR translations::text ILIKE %s)"
             " ORDER BY msg_id DESC LIMIT 30",
             (cell_id, f"%{q}%", f"%{q}%")).fetchall()

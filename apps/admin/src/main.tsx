@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import "@connection/ui/tokens.css";
 import App from "./App";
 import "./plum.css";
+import "./v8/admin-v8.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

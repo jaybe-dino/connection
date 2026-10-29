@@ -1,3 +1,4 @@
+import { Head } from "../v8/kit";
 import { useEffect, useState } from "react";
 import { Card, SectionTitle } from "@connection/ui";
 import { adminApi } from "../adminApi";
@@ -41,12 +42,8 @@ export default function Pool() {
 
   const ex = status?.exclusions || {};
   return (
-    <div style={{ maxWidth: 820 }}>
-      <h1 style={{ fontSize: 20, fontWeight: 900, margin: "0 0 4px" }}>후보 풀</h1>
-      <div style={{ fontSize: 12, color: "var(--n500)" }}>
-        공개 비즈니스 연락처 기반 후보만 등록하세요. 등록 이메일은 전부 <b>미검증</b>으로
-        저장되며(형식 검사 ≠ 검증), 발송 전 확인이 필요합니다. 수신거부 이력은 보존됩니다.
-      </div>
+    <div className="v6" style={{ maxWidth: 960 }}>
+      <Head title="후보 풀" sub={<>공개 비즈니스 연락처 기반 후보만 등록하세요. 등록 이메일은 전부 <b>미검증</b>으로 저장되며(형식 검사 ≠ 검증), 발송 전 확인이 필요합니다. 수신거부 이력은 보존됩니다.</>} />
       {err && <div role="alert" style={{ color: "var(--c500)", marginTop: 8 }}>{err}</div>}
 
       <SectionTitle>현황</SectionTitle>

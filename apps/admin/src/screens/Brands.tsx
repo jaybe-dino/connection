@@ -1,6 +1,7 @@
+import { Head } from "../v8/kit";
 import { useEffect, useRef, useState } from "react";
 import { Badge, Card, EmptyState, SectionTitle } from "@connection/ui";
-import { adminApi, type AdminBrand, type AuditRow, type BrandAccount } from "../adminApi";
+import { adminApi, errText, type AdminBrand, type AuditRow, type BrandAccount } from "../adminApi";
 
 /** 브랜드 관리 — 처음 보는 운영자도 설명 없이 쓸 수 있게 구성한다.
  *  흐름: ① 브랜드 추가 → ② 담당자에게 비밀번호 설정 링크 전달 → ③ 운영 시작.
@@ -81,6 +82,16 @@ export default function Brands() {
     adminApi.audit(auditActor, auditEvent).then(setAudit)
       .catch((e) => { setAudit([]); setErr(friendlyError(e)); });
   useEffect(() => { void load(); }, []);
+  // 사람·권한에서 넘어온 브랜드(?brand=) — 담당자 관리를 바로 연다
+  useEffect(() => { const b = new URLSearchParams(location.search).get("brand"); if (b && rows.some((r) => r.brandId === b) && selected !== b) pick(b); }, [rows]);
+  // 브랜드 대리운영: 1회용 전환 코드(2분)로 브랜드 콘솔을 이 관리자 권한으로 연다 — JWT 는 주소에 싣지 않는다
+  const [handoffErr, setHandoffErr] = useState("");
+  const openConsole = async (brandId: string) => {
+    setHandoffErr("");
+    const w = window.open("about:blank", "_blank");
+    try { const r = await adminApi.consoleHandoff(brandId); if (w) { w.opener = null; w.location.href = r.url; } else location.href = r.url; }
+    catch (e) { if (w) w.close(); setHandoffErr(errText(e)); }
+  };
 
   const loadAccounts = async (brand: string, gen: number) => {
     try {
@@ -246,12 +257,9 @@ export default function Brands() {
   };
 
   return (
-    <div style={{ maxWidth: 860 }}>
-      <h1 style={{ fontSize: 20, fontWeight: 900, margin: "0 0 4px" }}>브랜드 관리</h1>
-      <div style={{ fontSize: 12, color: "var(--n500)" }}>
-        고객 브랜드를 등록하고, 브랜드 담당자의 로그인 계정을 관리하는 곳이에요.
-        모든 변경은 아래 '변경 기록'에 남습니다.
-      </div>
+    <div className="v6" style={{ maxWidth: 960 }}>
+      <Head title="브랜드 목록·콘솔" sub="브랜드를 등록하고 담당자 계정을 관리해요. ‘브랜드 콘솔 열기’는 그 브랜드 데이터만 다루는 콘솔을 이 관리자 권한으로 열어요. 모든 변경은 아래 ‘변경 기록’에 남아요." />
+      {handoffErr && <div className="alert err" role="alert">브랜드 콘솔을 열지 못했어요: {handoffErr}</div>}
       <Card style={{ marginTop: 8 }}>
         <div style={{ fontSize: 12, lineHeight: 1.8 }}>
           <b>이렇게 진행해요</b><br />
@@ -375,6 +383,8 @@ export default function Brands() {
                 크리에이터 멤버 {b.members} · 팀 계정 {b.team}
               </div>
             </div>
+            <button className="wkb-btn wkb-primary" onClick={() => void openConsole(b.brandId)} disabled={busy !== "" || !!b.suspendedAt}
+              title={b.suspendedAt ? "이용 중지된 브랜드는 콘솔을 열 수 없어요" : undefined}>브랜드 콘솔 열기</button>
             <button className="wkb-btn" onClick={() => pick(b.brandId)} disabled={busy !== ""}>
               {selected === b.brandId ? "담당자 관리 닫기" : "담당자 관리"}
             </button>

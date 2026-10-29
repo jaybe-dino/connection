@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { adminApi, authApi, setJwt, clearJwt, type Summary } from "./adminApi";
 import Dashboard from "./screens/Dashboard";
 import Applications from "./screens/Applications";
@@ -11,19 +11,11 @@ import Recruitment from "./screens/RecruitmentWorkspace";
 import AccountMailboxes from "./screens/AccountMailboxes";
 import Pool from "./screens/Pool";
 import Brands from "./screens/Brands";
+import People from "./screens/People";
+import Finance from "./screens/Finance";
+import { Icon } from "./v8/kit";
 
-const RAIL = [
-  { to: "/dashboard", label: "대시보드", icon: "◐" },
-  { to: "/applications", label: "브랜드 신청", icon: "▣", badge: "pendingApplications" },
-  { to: "/reports", label: "신고 처리함", icon: "⚑", badge: "openReports" },
-  { to: "/disputes", label: "분쟁 심판", icon: "⚖", badge: "openDisputes" },
-  { to: "/submissions", label: "검수 현황", icon: "◑", badge: "inReviewSubmissions" },
-  { to: "/recruitment", label: "디노 공용 모집", icon: "◈" },
-  { to: "/brands", label: "브랜드 관리", icon: "◆" },
-  { to: "/mail", label: "계정별 메일함", icon: "✉" },
-  { to: "/gmail", label: "Gmail 운영", icon: "✉" },
-  { to: "/pool", label: "후보 풀", icon: "◎" },
-] as const;
+
 
 /** 실인증 게이트 — 최초 1회 부트스트랩 → 이후 이메일+비밀번호(+OTP) 로그인.
  *  AUTH_REQUIRED 전이면 "키 모드로 계속" 우회가 남는다 (전환기 호환). */
@@ -186,20 +178,27 @@ function TwoFA() {
   );
 }
 
+const MENU: { label: string; ic: string; badge?: keyof Summary; screens: [string, string][] }[] = [
+  { label: "대시보드", ic: "grid", screens: [["/dashboard", "오늘 처리할 일"], ["/finance", "비용·성과"]] },
+  { label: "브랜드 신청", ic: "inbox", badge: "pendingApplications", screens: [["/applications", "브랜드 신청"]] },
+  { label: "신고 처리함", ic: "flag", badge: "openReports", screens: [["/reports", "신고 처리함"]] },
+  { label: "분쟁 심판", ic: "scale", badge: "openDisputes", screens: [["/disputes", "분쟁 심판"]] },
+  { label: "검수 현황", ic: "eye", badge: "inReviewSubmissions", screens: [["/submissions", "검수 현황"]] },
+  { label: "디노 공용 모집", ic: "megaphone", screens: [["/recruitment", "디노 공용 모집"]] },
+  { label: "브랜드 운영", ic: "gear", screens: [["/brands", "브랜드 목록"], ["/people", "사람·권한"]] },
+  { label: "계정별 메일함", ic: "mail", screens: [["/mail", "계정별 메일함"]] },
+  { label: "Gmail 운영", ic: "plug", screens: [["/gmail", "Gmail 운영"]] },
+  { label: "후보 풀", ic: "users", screens: [["/pool", "후보 풀"]] },
+];
+
 export default function App() {
-  const mailLayout=useLocation().pathname==='/mail';
+  const path = useLocation().pathname;
+  const navigate = useNavigate();
+  const mailLayout = path === "/mail";
   const [summary, setSummary] = useState<Summary | null>(null);
   const [live, setLive] = useState(true);
   const [authed, setAuthed] = useState<boolean | null>(null);
-  // 모바일(≤760px) 감지 — 좌측 고정 레일을 상단 메뉴로 전환
-  const [narrow, setNarrow] = useState(() =>
-    typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches);
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 760px)");
-    const on = () => setNarrow(mq.matches);
-    mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
-  }, []);
+  const [navOpen, setNavOpen] = useState(false), [acct, setAcct] = useState(false);
 
   useEffect(() => {
     const t = localStorage.getItem("CONNECTION_JWT");
@@ -207,6 +206,16 @@ export default function App() {
     authApi.me().then(() => setAuthed(true))
       .catch(() => { clearJwt(); setAuthed(false); });
   }, []);
+  // 다른 탭에서 로그아웃(JWT 삭제)·계정 교체 → 이 탭도 즉시 동기화
+  useEffect(() => {
+    const on = (e: StorageEvent) => { if (e.key !== "CONNECTION_JWT" && e.key !== null) return; if (!localStorage.getItem("CONNECTION_JWT")) setAuthed(false); else if (e.newValue !== e.oldValue) location.reload(); };
+    window.addEventListener("storage", on);
+    return () => window.removeEventListener("storage", on);
+  }, []);
+  useEffect(() => { setNavOpen(false); setAcct(false); }, [path]);
+  useEffect(() => { const on = () => setAuthed(false); window.addEventListener("admin-auth-lost", on); return () => window.removeEventListener("admin-auth-lost", on); }, []);
+  // v8.1 시안 CSS 의 본문 글꼴·배경(body.v5)
+  useEffect(() => { document.body.classList.add("v5", "v5-root", "sp-proposal", "a8"); }, []);
 
   const refresh = () =>
     adminApi.summary().then((s) => { setSummary(s); setLive(true); })
@@ -222,83 +231,45 @@ export default function App() {
   if (authed === null) return null;
   if (authed === false) return <AuthGate onDone={() => setAuthed(true)} />;
 
+  const cur = MENU.find((m) => m.screens.some(([to]) => path === to || path.startsWith(to + "/"))) || MENU[0];
   return (
-    <div className={mailLayout?"admin-mail-layout":undefined} style={{ display: "flex", flexDirection: "column", minHeight: "100dvh",
-      height: narrow ? "auto" : "100dvh", background: "var(--n50)" }}>
-    <header className="wk-admin-top">
-      theprlist <small>ADMIN · 전사 운영</small>
-      <span className="live" style={{ color: live ? "var(--t300)" : "var(--c300)" }}>
-        {live ? "● 서버 연결됨" : "● 서버 연결 확인 필요"}
-      </span>
-    </header>
-    <div style={{ display: "flex", flexDirection: narrow ? "column" : "row",
-      flex: 1, minHeight: 0 }}>
-      <nav className="admin-app-nav" style={narrow ? {
-        /* 모바일(≤760px): 좌측 고정 레일 대신 상단 랩 메뉴 — 본문 폭 확보 */
-        width: "100%", boxSizing: "border-box", background: "var(--d800)",
-        color: "var(--d400)", display: "flex", flexDirection: "row",
-        flexWrap: "wrap", alignItems: "center", gap: 2, padding: "10px 8px",
-      } : {
-        width: 200, background: "var(--d800)", color: "var(--d400)",
-        display: "flex", flexDirection: "column", padding: "16px 10px", flexShrink: 0,
-      }}>
-        <div style={{ padding: narrow ? "0 8px" : "0 10px 4px", color: "var(--n0)", fontWeight: 900, fontSize: narrow ? 13 : 15 }}>
-          theprlist 어드민
+    <div className={"v2 v2-admin" + (navOpen ? " nav-open" : "") + (mailLayout ? " admin-mail-layout" : "")} data-role-app="admin">
+      <div className="v2-top">
+        <span className="v2-logo">theprlist <b>ADMIN</b> · 전사운영</span><span className="v2-sp" />
+        <span className={"v2-topbtn a8-live" + (live ? "" : " is-off")} role="status">{live ? "서버 연결됨" : "서버 연결 확인 필요"}</span>
+        <button type="button" className="v2-topbtn" aria-expanded={acct} onClick={() => setAcct(!acct)}>계정</button>
+        {acct && <div className="v6-pop a8-acct" role="menu"><TwoFA /><button type="button" role="menuitem" onClick={() => { clearJwt(); setAuthed(false); }}>로그아웃</button><p className="v6-meta">모든 조치는 원장에 기록돼요.</p></div>}
+      </div>
+      <div className="v2-mobilebar"><button type="button" className="btn pri" aria-expanded={navOpen} onClick={() => setNavOpen(!navOpen)}>메뉴 {navOpen ? "닫기" : "열기"}</button><span className="small">지금: <b>{cur.label}</b></span></div>
+      <div className="v2-body">
+        <nav className="v2-side" aria-label="관리자 메뉴">
+          {MENU.map((m) => {
+            const n = m.badge && summary ? Number(summary[m.badge] || 0) : 0;
+            return <button key={m.label} type="button" className="v2-navbtn" aria-current={m === cur ? "page" : undefined} onClick={() => navigate(m.screens[0][0])}>
+              <Icon k={m.ic} /><span className="v5-lab">{m.label}{n > 0 && <span className="badge-n" aria-label={`대기 ${n}건`}>{n}</span>}</span></button>;
+          })}
+        </nav>
+        <div className="v2-main" role="region" aria-label={cur.label}>
+          {cur.screens.length > 1 && <nav className="tabs v2-subtabs" aria-label={cur.label + " 하위 메뉴"}>{cur.screens.map(([to, l]) =>
+            <button key={to} type="button" aria-current={path === to ? "page" : undefined} aria-selected={path === to} onClick={() => navigate(to)}>{l}</button>)}</nav>}
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard summary={summary} />} />
+            <Route path="/finance" element={<Finance />} />
+            <Route path="/applications" element={<Applications onChange={refresh} />} />
+            <Route path="/reports" element={<Reports onChange={refresh} />} />
+            <Route path="/disputes" element={<Disputes onChange={refresh} />} />
+            <Route path="/submissions" element={<Submissions onChange={refresh} />} />
+            <Route path="/recruitment" element={<Recruitment />} />
+            <Route path="/brands" element={<Brands />} />
+            <Route path="/people" element={<People />} />
+            <Route path="/mail" element={<AccountMailboxes />} />
+            <Route path="/gmail" element={<GmailOps />} />
+            <Route path="/pool" element={<Pool />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
         </div>
-        {!narrow && (
-        <div style={{ padding: "0 10px 14px", fontSize: 10, color: live ? "var(--s300)" : "var(--c300)" }}>
-          {live ? "● 서버 연결됨 · 관리자" : "● 서버 연결 확인 필요"}
-        </div>
-        )}
-        {RAIL.map((r) => {
-          const n = summary && "badge" in r ? summary[r.badge as keyof Summary] : 0;
-          return (
-            <NavLink key={r.to} to={r.to}
-              style={({ isActive }) => ({
-                display: "flex", alignItems: "center", gap: narrow ? 4 : 9,
-                padding: narrow ? "6px 8px" : "9px 10px",
-                borderRadius: 9, textDecoration: "none", fontSize: narrow ? 12 : 13, fontWeight: 700,
-                color: isActive ? "var(--n0)" : "var(--d400)",
-                background: isActive ? "var(--d600)" : "transparent", marginBottom: 2,
-              })}>
-              <span style={{ width: 16, textAlign: "center" }}>{r.icon}</span>
-              {r.label}
-              {n > 0 && (
-                <span style={{ marginLeft: "auto", background: "var(--t500)", color: "#fff", borderRadius: 999, fontSize: 10, fontWeight: 800, padding: "1px 7px" }}>
-                  {n}
-                </span>
-              )}
-            </NavLink>
-          );
-        })}
-        <div style={narrow
-          ? { marginLeft: "auto", padding: "0 8px", fontSize: 11, color: "var(--d400)" }
-          : { marginTop: "auto", padding: "10px", fontSize: 10, color: "var(--d400)", lineHeight: 1.6 }}>
-          {!narrow && <TwoFA />}
-          <div onClick={() => { clearJwt(); location.reload(); }}
-            style={{ cursor: "pointer", textDecoration: "underline", marginBottom: narrow ? 0 : 8 }}>
-            로그아웃
-          </div>
-          {!narrow && <>모든 조치는 원장에 기록됩니다.<br />기획: docs/ADMIN_PLAN.md</>}
-        </div>
-      </nav>
-      <main className="admin-app-main" style={{ flex: 1, overflowY: "auto", minWidth: 0,
-        padding: narrow ? "14px 12px" : "20px 24px" }}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<Dashboard summary={summary} />} />
-          <Route path="/applications" element={<Applications onChange={refresh} />} />
-          <Route path="/reports" element={<Reports onChange={refresh} />} />
-          <Route path="/disputes" element={<Disputes onChange={refresh} />} />
-          <Route path="/submissions" element={<Submissions onChange={refresh} />} />
-          <Route path="/recruitment" element={<Recruitment />} />
-          <Route path="/brands" element={<Brands />} />
-          <Route path="/mail" element={<AccountMailboxes />} />
-          <Route path="/gmail" element={<GmailOps />} />
-          <Route path="/pool" element={<Pool />} />
-        </Routes>
-      </main>
-    </div>
+      </div>
     </div>
   );
 }

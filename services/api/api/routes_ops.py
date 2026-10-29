@@ -272,23 +272,90 @@ def list_reports(status: str = "open",
 
 
 class ReportAction(BaseModel):
-    action: str    # dismiss | warn | hide | suspend_7d | suspend
+    action: str = Field(pattern="^(dismiss|warn|hide|suspend_7d|suspend)$")
+
+
+def _report_target(conn, r: dict) -> tuple[dict | None, str | None]:
+    """신고된 메시지와 작성 크리에이터 — author_id(신규 글) 우선, 이전 글은 같은 셀 멤버 중 핸들이 하나뿐일 때만."""
+    m = conn.execute("SELECT * FROM cell_messages WHERE msg_id::text=%s AND cell_id=%s",
+                     (r["msg_id"], r["cell_id"])).fetchone() if r["msg_id"] else None
+    if not m or m["author_kind"] != "creator":
+        return m, None
+    if m["author_id"]:
+        return m, m["author_id"]
+    rows = conn.execute("SELECT c.creator_id FROM creators c JOIN cells k ON k.cell_id=%s"
+                        " JOIN memberships ms ON ms.creator_id=c.creator_id AND ms.brand_id=k.brand_id"
+                        " WHERE c.handle=%s", (r["cell_id"], m["author"])).fetchall()
+    return m, (rows[0]["creator_id"] if len(rows) == 1 else None)
 
 
 @admin.post("/reports/{report_id}/action")
 def action_report(report_id: str, body: ReportAction,
                   admin_user: dict = Depends(require_admin)) -> dict:
+    """D05 — 조치가 실제로 적용된다: hide=메시지 숨김, suspend_7d/suspend=작성자 커뮤니티 쓰기 제한(7일/해제 전까지).
+    대상이 확인되지 않으면 기록만 남기지 않고 409 로 알린다."""
     status = "dismissed" if body.action == "dismiss" else "actioned"
+    actor = str(admin_user.get("admin_id") or admin_user.get("sub") or "admin")
     with connect() as conn:
-        row = conn.execute(
-            "UPDATE reports SET status=%s, action=%s, handled_by=%s"
-            " WHERE report_id=%s AND status='open' RETURNING report_id",
-            (status, body.action, admin_user["admin_id"], report_id)).fetchone()
-        if not row:
+        r = conn.execute("SELECT * FROM reports WHERE report_id=%s FOR UPDATE", (report_id,)).fetchone()
+        if not r or r["status"] != "open":
             raise HTTPException(409, "이미 처리됐거나 없는 신고")
-        ledger_append(conn, f"admin:{admin_user['admin_id']}", "REPORT_ACTIONED",
-                      report_id, {"action": body.action})
-    return {"ok": True, "status": status}
+        effect: dict = {}
+        if body.action in ("hide", "suspend_7d", "suspend"):
+            m, creator = _report_target(conn, r)
+            if not m:
+                raise HTTPException(409, "신고된 메시지를 찾지 못해 조치를 적용할 수 없어요")
+            conn.execute("UPDATE cell_messages SET hidden_at=COALESCE(hidden_at, now()), hidden_by=%s WHERE msg_id=%s",
+                         (f"admin:{actor}", m["msg_id"]))
+            effect["hiddenMsgId"] = m["msg_id"]
+            if body.action != "hide":
+                if not creator:
+                    raise HTTPException(409, "작성자를 특정하지 못해 쓰기 제한을 적용할 수 없어요 — 숨김만 적용하세요")
+                s_ = conn.execute(
+                    "INSERT INTO creator_sanctions (creator_id, kind, until, report_id, created_by)"
+                    " VALUES (%s,'write_block', CASE WHEN %s THEN now() + interval '7 days' END, %s, %s)"
+                    " RETURNING sanction_id, until", (creator, body.action == "suspend_7d", report_id, f"admin:{actor}")).fetchone()
+                effect.update({"creatorId": creator, "sanctionId": s_["sanction_id"],
+                               "until": s_["until"].isoformat() if s_["until"] else None})
+        conn.execute("UPDATE reports SET status=%s, action=%s, handled_by=%s, effect=%s WHERE report_id=%s",
+                     (status, body.action, actor, _j(effect), report_id))
+        ledger_append(conn, f"admin:{actor}", "REPORT_ACTIONED", report_id, {"action": body.action, "effect": effect})
+    return {"ok": True, "status": status, "effect": effect}
+
+
+@admin.post("/reports/{report_id}/restore")
+def restore_report(report_id: str, admin_user: dict = Depends(require_admin)) -> dict:
+    """조치 복구 — 숨김 해제·쓰기 제한 해제(오판·이의 인용)."""
+    actor = str(admin_user.get("admin_id") or admin_user.get("sub") or "admin")
+    with connect() as conn:
+        r = conn.execute("SELECT * FROM reports WHERE report_id=%s FOR UPDATE", (report_id,)).fetchone()
+        if not r or r["status"] != "actioned" or r["restored_at"]:
+            raise HTTPException(409, "복구할 조치가 없어요")
+        eff = r["effect"] or {}
+        if eff.get("hiddenMsgId"):
+            conn.execute("UPDATE cell_messages SET hidden_at=NULL, hidden_by=NULL WHERE msg_id=%s", (eff["hiddenMsgId"],))
+        if eff.get("sanctionId"):
+            conn.execute("UPDATE creator_sanctions SET lifted_at=now(), lifted_by=%s WHERE sanction_id=%s AND lifted_at IS NULL",
+                         (f"admin:{actor}", eff["sanctionId"]))
+        conn.execute("UPDATE reports SET restored_at=now() WHERE report_id=%s", (report_id,))
+        ledger_append(conn, f"admin:{actor}", "REPORT_RESTORED", report_id, eff)
+    return {"ok": True, "restored": eff}
+
+
+@admin.get("/reports/handled")
+def handled_reports(_admin: dict = Depends(require_admin)) -> list[dict]:
+    """처리한 신고와 실제 효과(숨김·제한 기간·복구 여부)."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT r.*, m.original AS msg_text, m.hidden_at, s.until, s.lifted_at FROM reports r"
+            " LEFT JOIN cell_messages m ON m.msg_id::text = r.msg_id"
+            " LEFT JOIN creator_sanctions s ON s.sanction_id = (r.effect->>'sanctionId')::bigint"
+            " WHERE r.status <> 'open' ORDER BY r.created_at DESC LIMIT 100").fetchall()
+    return [{"reportId": str(r["report_id"]), "cellId": r["cell_id"], "msgText": r["msg_text"], "reason": r["reason"],
+             "action": r["action"], "status": r["status"], "effect": r["effect"] or {},
+             "hidden": bool(r["hidden_at"]), "until": r["until"].isoformat() if r["until"] else None,
+             "lifted": bool(r["lifted_at"]), "restoredAt": r["restored_at"].isoformat() if r["restored_at"] else None,
+             "at": r["created_at"].isoformat()} for r in rows]
 
 
 # ════════════════ 분쟁 ════════════════
@@ -425,10 +492,11 @@ def create_submission(body: SubmissionIn) -> dict:
 @public.get("/submissions")
 def list_submissions(creator: str | None = None, brand: str | None = None,
                      status: str | None = None) -> list[dict]:
-    q = ("SELECT s.*, c.brand_id, c.name AS campaign_name, cr.handle"
+    q = ("SELECT s.*, c.brand_id, c.name AS campaign_name, cr.handle, t.state AS terms_state"
          " FROM submissions s"
          " JOIN campaigns c ON c.campaign_id = s.campaign_id"
-         " JOIN creators cr ON cr.creator_id = s.creator_id WHERE true")
+         " JOIN creators cr ON cr.creator_id = s.creator_id"
+         " LEFT JOIN campaign_terms t ON t.campaign_id=s.campaign_id AND t.creator_id=s.creator_id WHERE true")
     params: list = []
     if creator:
         q += " AND s.creator_id=%s"
@@ -445,7 +513,10 @@ def list_submissions(creator: str | None = None, brand: str | None = None,
         {"submissionId": str(r["submission_id"]), "campaignId": r["campaign_id"],
          "campaignName": r["campaign_name"], "handle": r["handle"],
          "url": r["url"], "caption": r["caption"], "autoChecks": r["auto_checks"],
-         "status": r["status"], "at": r["created_at"].isoformat()}
+         "status": r["status"], "at": r["created_at"].isoformat(),
+         # D03: 협업 제출(source=collab)은 브랜드 확인 상태와 같은 건, 버전별 행
+         "source": r["source"], "version": r["version"], "brandId": r["brand_id"],
+         "termsState": r["terms_state"], "reviewedBy": r["reviewed_by"]}
         for r in rows
     ]
 
@@ -464,7 +535,7 @@ def review_submission(submission_id: str, body: ReviewIn) -> dict:
         row = conn.execute(
             "UPDATE submissions SET status=%s, reviewed_by=%s, reviewed_at=now()"
             " WHERE submission_id=%s AND status='in_review'"
-            " RETURNING creator_id, campaign_id",
+            " RETURNING creator_id, campaign_id, source",
             (body.result, body.reviewer, submission_id)).fetchone()
         if not row:
             raise HTTPException(409, "검수 대기 상태가 아님")
@@ -472,7 +543,10 @@ def review_submission(submission_id: str, body: ReviewIn) -> dict:
                       "REVIEW_PASSED" if body.result == "passed" else "REVIEW_FIX",
                       submission_id, {"campaign": row["campaign_id"],
                                       "note": body.note})
-        if body.result == "passed":
+        if row["source"] == "collab":
+            # 협업 제출의 전사 검수는 기록만 — 브랜드 확인·지급 상태를 대신 바꾸지 않는다(검수 통과≠지급)
+            pass
+        elif body.result == "passed":
             conn.execute(
                 "UPDATE campaign_applications SET status='passed'"
                 " WHERE campaign_id=%s AND creator_id=%s",

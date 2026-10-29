@@ -1,3 +1,4 @@
+import { Head } from "../v8/kit";
 import { useEffect, useState } from "react";
 import { Badge, Card, EmptyState, SectionTitle } from "@connection/ui";
 import { adminApi, type Application } from "../adminApi";
@@ -38,12 +39,8 @@ export default function Applications({ onChange }: { onChange: () => void }) {
   };
 
   return (
-    <div style={{ maxWidth: 780 }}>
-      <h1 style={{ fontSize: 20, fontWeight: 900, margin: "0 0 4px" }}>브랜드 신청</h1>
-      <div style={{ fontSize: 12, color: "var(--n500)" }}>
-        가입 위저드를 마친 브랜드가 여기서 대기합니다. 승인하면 브랜드가 생성되고,
-        theprlist 학습 답변이 브랜드 프로필로 저장됩니다. 승인 후 표시되는 초대 링크를 담당자에게 전달하세요.
-      </div>
+    <div className="v6" style={{ maxWidth: 900 }}>
+      <Head title="브랜드 신청" sub={<>가입 위저드를 마친 브랜드가 여기서 대기합니다. 승인하면 브랜드가 생성되고, theprlist 학습 답변이 브랜드 프로필로 저장됩니다. 승인 후 표시되는 초대 링크를 담당자에게 전달하세요.</>} />
       {invitation && <Card><b>승인 완료 · 계정 초대 링크</b><p>메일은 자동 발송되지 않습니다. 담당자에게 이 링크를 전달하세요 (72시간 유효).</p><input aria-label="계정 초대 링크" readOnly value={invitation} style={{width:"100%"}} onFocus={(e)=>e.target.select()} /></Card>}
       {error && (
         <Card style={{ marginTop: 12, borderColor: "var(--c300)", background: "var(--c50)" }}>

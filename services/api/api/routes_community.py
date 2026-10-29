@@ -177,6 +177,8 @@ def messages(cell_id: str, channel: str = "", limit: int = 50,
              "  WHERE rr.msg_id=m.msg_id AND rr.actor=%s) AS my_reaction"
              " FROM cell_messages m WHERE m.cell_id=%s"
              " AND m.thread_parent IS NULL"
+             # 신고 조치로 숨긴 메시지는 운영(어드민)만 본다
+             + ("" if claims.get("kind") == "admin" else " AND m.hidden_at IS NULL")
              + (" AND m.channel=%s" if channel else "")
              + (" AND m.campaign_id IS NOT NULL" if campaign_posts else "")
              + " ORDER BY m.pinned_at DESC NULLS LAST, m.at DESC LIMIT %s")
@@ -189,6 +191,7 @@ def messages(cell_id: str, channel: str = "", limit: int = 50,
              "translations": r["translations"],
              "translationState": r["translation_state"],
              "campaignId": r["campaign_id"],
+             "hidden": bool(r.get("hidden_at")),
              "imageUrl": r["image_url"] or "",
              "reactionCount": r["reaction_count"],
              "myReaction": bool(r["my_reaction"]),
@@ -285,6 +288,13 @@ def post_message(cell_id: str, body: PostIn,
             _channel_for_post(conn, cell, body.channel, True, bool(body.thread_parent))
             from .routes_service import require_onboarded
             require_onboarded(conn, who, "커뮤니티 글 작성")
+            # D05 — 신고 조치로 쓰기가 제한된 크리에이터(기간 만료 시 자동 해제)
+            block = conn.execute("SELECT until FROM creator_sanctions WHERE creator_id=%s AND kind='write_block'"
+                                 " AND lifted_at IS NULL AND (until IS NULL OR until > now())"
+                                 " ORDER BY until DESC NULLS FIRST LIMIT 1", (who,)).fetchone()
+            if block:
+                raise HTTPException(403, "운영 정책 위반 신고 처리로 커뮤니티 글쓰기가 제한됐어요"
+                                         + (f" ({block['until'].astimezone().strftime('%Y-%m-%d %H:%M')}까지)" if block["until"] else " (운영팀 해제 전까지)"))
             author = conn.execute("SELECT handle FROM creators WHERE creator_id=%s",
                                   (who,)).fetchone()["handle"]
             author_kind = "creator"
@@ -310,11 +320,12 @@ def post_message(cell_id: str, body: PostIn,
         m = conn.execute(
             "INSERT INTO cell_messages (cell_id, channel, author, author_kind,"
             " original, original_locale, translations, translation_state,"
-            " thread_parent, image_url, campaign_id)"
-            " VALUES (%s,%s,%s,%s,%s,%s,'{}','pending',%s,%s,%s)"
+            " thread_parent, image_url, campaign_id, author_id)"
+            " VALUES (%s,%s,%s,%s,%s,%s,'{}','pending',%s,%s,%s,%s)"
             " RETURNING msg_id, at",
             (cell_id, body.channel, author, author_kind, body.text,
-             body.locale, body.thread_parent, image, dm_campaign)).fetchone()
+             body.locale, body.thread_parent, image, dm_campaign,
+             who if author_kind == "creator" else None)).fetchone()
         if author_kind == "creator":
             from .routes_service import award_xp
             award_xp(conn, who, cell["brand_id"], "first_message",

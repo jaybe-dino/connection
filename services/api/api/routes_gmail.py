@@ -755,8 +755,78 @@ def admin_gmail_status(authorization: str = Header(default=''),
             'isDemo': r['is_demo'], 'accounts': [],
             'pendingApprovedSends': queue.get(r['brand_id'], 0)})
         b['accounts'].append(acct)
+    with connect() as mconn:
+        meta = {r['email']: r for r in mconn.execute("SELECT * FROM gmail_account_meta").fetchall()}
+    connected_emails = set()
+    for b in brands.values():
+        for acct in b['accounts']:
+            m = meta.get((acct['email'] or '').lower())
+            acct['owner'] = m['owner'] if m else ''
+            connected_emails.add((acct['email'] or '').lower())
+    # 메타데이터만 등록되고 아직 연결(OAuth)되지 않은 계정 — '연결 전'
+    pending_meta = [{'email': e, 'brandId': m['brand_id'], 'owner': m['owner'], 'registeredAt': m['created_at'].isoformat()}
+                    for e, m in sorted(meta.items()) if e not in connected_emails]
     return {'demoMode': _demo_mode(),
+            'pendingMeta': pending_meta,
             'brands': sorted(brands.values(), key=lambda x: x['brandId']),
             'runner': runner_daemon.status(),
             'note': ('읽기 전용 상태 화면입니다. 발송은 승인된 배치만 러너가 '
                      '재개하며, 여기서 발송·동의 변경을 실행하지 않습니다.')}
+
+
+# ── Gmail 운영: 계정 메타데이터 CSV(이메일,브랜드ID,담당자) — 검수 → 통과분만 등록. 연결 상태는 바꾸지 않는다 ──
+_META_EMAIL = re.compile(r"^[^@\s,]+@[^@\s,]+\.[^@\s,]+$")
+
+
+class MetaCsvIn(BaseModel):
+    csv: str = Field(max_length=200_000)
+
+
+def _meta_review(conn, csv_text: str) -> list[dict]:
+    lines = [x.strip() for x in csv_text.splitlines() if x.strip()]
+    if len(lines) > 1000:
+        raise HTTPException(400, "한 번에 1,000줄까지 등록할 수 있어요")
+    known = {r['email'] for r in conn.execute("SELECT email FROM gmail_account_meta").fetchall()}
+    known |= {(r['email'] or '').lower() for r in conn.execute("SELECT email FROM gmail_accounts").fetchall()}
+    brands = {r['brand_id'] for r in conn.execute("SELECT brand_id FROM brands").fetchall()}
+    seen, out = set(), []
+    for i, line in enumerate(lines, 1):
+        parts = [p.strip() for p in line.split(',')]
+        email, brand, owner = (parts + ['', '', ''])[:3]
+        email = email.lower()
+        reason = ''
+        if i == 1 and email in ('email', '이메일'):
+            continue
+        if not _META_EMAIL.fullmatch(email): reason = '이메일 형식 오류'
+        elif email in known or email in seen: reason = '이미 등록됨'
+        elif brand and brand not in brands: reason = '없는 브랜드 ID'
+        elif len(owner) > 60: reason = '담당자 이름이 너무 길어요'
+        seen.add(email)
+        out.append({'row': i, 'email': email, 'brandId': brand or None, 'owner': owner, 'reason': reason})
+    return out
+
+
+@router.post('/admin/gmail/meta/preview')
+def gmail_meta_preview(body: MetaCsvIn, authorization: str = Header(default=''),
+                       x_admin_id: str = Header(default=''), x_admin_key: str = Header(default='')):
+    from .routes_ops import require_admin
+    require_admin(x_admin_id, x_admin_key, authorization)
+    with connect() as conn:
+        return {'rows': _meta_review(conn, body.csv)}
+
+
+@router.post('/admin/gmail/meta')
+def gmail_meta_register(body: MetaCsvIn, authorization: str = Header(default=''),
+                        x_admin_id: str = Header(default=''), x_admin_key: str = Header(default='')):
+    from .routes_ops import require_admin
+    adm = require_admin(x_admin_id, x_admin_key, authorization)
+    actor = f"admin:{adm.get('admin_id') or 'admin'}"
+    with connect() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('gmail-meta',0))")
+        rows = _meta_review(conn, body.csv)   # 등록 시점에 다시 검수 — 미리보기 이후 바뀐 중복을 막는다
+        ok = [r for r in rows if not r['reason']]
+        for r in ok:
+            conn.execute("INSERT INTO gmail_account_meta(email, brand_id, owner, created_by) VALUES(%s,%s,%s,%s)",
+                         (r['email'], r['brandId'], r['owner'], actor))
+        ledger_append(conn, actor, "GMAIL_META_REGISTERED", "gmail-meta", {"count": len(ok)})
+    return {'registered': len(ok), 'skipped': [r for r in rows if r['reason']]}

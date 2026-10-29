@@ -66,6 +66,8 @@ def _terms_out(t: dict, extra: dict | None = None) -> dict:
            "affiliateLink": t["affiliate_link"],
            "shipping": t.get("shipping"),
            "revisionNote": t.get("revision_note") or "",
+           "platformHandle": t.get("platform_handle") or "",
+           "agreedTerms": t.get("agreed_terms"),
            "revisionRequestedAt": (t["revision_requested_at"].isoformat()
                                    if t.get("revision_requested_at") else None)}
     if extra:
@@ -83,6 +85,8 @@ def brand_campaigns(brand: str,
         rows = conn.execute(
             "SELECT c.campaign_id, c.name, c.product, c.status,"
             " c.affiliate_pct, c.lifecycle, c.countries, c.deadline,"
+            " c.usp, c.reward_type, c.reward_amount, c.reward_currency,"
+            " c.platform, c.conditions, c.capacity, c.product_id,"
             " (SELECT count(*) FROM campaign_applications a"
             "   WHERE a.campaign_id=c.campaign_id) AS applicants,"
             " (SELECT count(*) FROM campaign_terms t"
@@ -96,7 +100,14 @@ def brand_campaigns(brand: str,
              "deadline": r["deadline"].isoformat() if r["deadline"] else None,
              "affiliatePct": (float(r["affiliate_pct"])
                               if r["affiliate_pct"] is not None else None),
-             "applicants": r["applicants"], "selected": r["selected"]}
+             "applicants": r["applicants"], "selected": r["selected"],
+             "usp": r["usp"] or "", "rewardType": r["reward_type"],
+             "rewardAmount": r["reward_amount"],
+             "rewardCurrency": r["reward_currency"], "platform": r["platform"],
+             "conditions": [str(x) for x in (r["conditions"] or [])
+                            if isinstance(x, (str, int, float))],
+             "capacity": r["capacity"] or 0,
+             "productId": str(r["product_id"]) if r["product_id"] else None}
             for r in rows]
 
 
@@ -112,7 +123,7 @@ def applicants(brand: str, campaign_id: str,
             " t.commission_pct, t.agreed_commission_pct, t.tiktok_handle,"
             " t.sample_tracking, t.content_url, t.spark_code,"
             " t.affiliate_link, t.shipping, t.revision_note,"
-            " t.revision_requested_at"
+            " t.revision_requested_at, t.platform_handle, t.agreed_terms"
             " FROM campaign_applications a"
             " JOIN creators c USING (creator_id)"
             " LEFT JOIN campaign_terms t"
@@ -134,12 +145,15 @@ def applicants(brand: str, campaign_id: str,
              "sparkCode": r["spark_code"] or "",
              "affiliateLink": r["affiliate_link"] or "",
              "shipping": r["shipping"],
-             "revisionNote": r["revision_note"] or ""} for r in rows]
+             "revisionNote": r["revision_note"] or "",
+             "platformHandle": r["platform_handle"] or "",
+             "agreedTerms": r["agreed_terms"]} for r in rows]
 
 
 class SelectIn(BaseModel):
     creator_id: str
-    commission_pct: float = Field(ge=0, le=80)
+    # 판매 수수료(어필리에이트) 캠페인만 필수. 고정 보상·제품 제공은 캠페인 조건으로 합의한다.
+    commission_pct: float | None = Field(default=None, ge=0, le=80)
 
 
 @router.post("/brands/{brand}/campaigns/{campaign_id}/select")
@@ -155,6 +169,8 @@ def select_creator(brand: str, campaign_id: str, body: SelectIn,
         camp = _campaign(conn, brand, campaign_id, lock=True)
         if camp["status"] not in ("open", "closed"):
             raise HTTPException(409, f"선정할 수 없는 캠페인 상태({camp['status']})입니다")
+        if camp["reward_type"] == "affiliate" and body.commission_pct is None:
+            raise HTTPException(400, "판매 수수료 캠페인은 제안 수수료(%)가 필요합니다")
         applied = conn.execute(
             "SELECT 1 FROM campaign_applications WHERE campaign_id=%s"
             " AND creator_id=%s", (campaign_id, body.creator_id)).fetchone()
@@ -417,6 +433,7 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
             " c.reward_type, c.affiliate_pct, c.deadline, c.status,"
             " c.countries, b.name AS brand_name, b.logo_url,"
             " c.reward_amount, c.capacity, c.conditions,"
+            " c.reward_currency, c.platform, c.product_id,"
             " a.status AS my_status, t.state AS terms_state,"
             # 캠페인 제품 이미지 — 반드시 같은 브랜드의 제품만 연결(타 브랜드
             # 이미지 금지). 초대 소개 이미지(최신 운영 입력)를 사용한다.
@@ -459,6 +476,8 @@ def my_campaigns(authorization: str = Header(default="")) -> list[dict]:
              "deadline": r["deadline"].isoformat() if r["deadline"] else None,
              # 브랜드가 저장한 값 그대로 — 비어 있으면 화면이 '브랜드 안내 대기'로 표시
              "rewardAmount": r["reward_amount"],
+             "rewardCurrency": r["reward_currency"], "platform": r["platform"],
+             "productId": str(r["product_id"]) if r["product_id"] else None,
              "capacity": r["capacity"] or 0,
              "conditions": [str(x) for x in (r["conditions"] or [])
                             if isinstance(x, (str, int, float))],
@@ -478,6 +497,8 @@ def my_offers(authorization: str = Header(default="")) -> list[dict]:
         cid = _creator(conn, authorization)
         rows = conn.execute(
             "SELECT t.*, c.name AS campaign_name, c.brand_id, c.product,"
+            " c.reward_type, c.reward_amount, c.reward_currency, c.platform,"
+            " c.affiliate_pct, c.conditions,"
             " b.name AS brand_name, b.logo_url,"
             " pip.image_url AS product_image"
             " FROM campaign_terms t"
@@ -492,6 +513,12 @@ def my_offers(authorization: str = Header(default="")) -> list[dict]:
                            "brandId": r["brand_id"],
                            "brandName": r["brand_name"],
                            "product": r["product"],
+                           "rewardType": r["reward_type"],
+                           "rewardAmount": r["reward_amount"],
+                           "rewardCurrency": r["reward_currency"],
+                           "platform": r["platform"],
+                           "conditions": [str(x) for x in (r["conditions"] or [])
+                                          if isinstance(x, (str, int, float))],
                            "logoUrl": r["logo_url"],
                            "imageUrl": (r["product_image"]
                                         if (r["product_image"] or "")
@@ -502,6 +529,7 @@ def my_offers(authorization: str = Header(default="")) -> list[dict]:
 class AgreeIn(BaseModel):
     accept: bool = True
     tiktok_handle: str = Field(default="", max_length=80)
+    handle: str = Field(default="", max_length=80)   # 캠페인 플랫폼 계정(TikTok/Instagram)
 
 
 @router.post("/me/campaign-offers/{campaign_id}/agree")
@@ -521,15 +549,32 @@ def agree_offer(campaign_id: str, body: AgreeIn,
             ledger_append(conn, f"creator:{cid}", "CAMPAIGN_TERMS_DECLINED",
                           campaign_id, {})
             return _terms_out(t)
-        handle = body.tiktok_handle.strip()
+        camp = conn.execute(
+            "SELECT reward_type, reward_amount, reward_currency, platform,"
+            " conditions, affiliate_pct FROM campaigns WHERE campaign_id=%s",
+            (campaign_id,)).fetchone()
+        platform = (camp and camp["platform"]) or "tiktok"
+        handle = (body.handle or body.tiktok_handle).strip()
         if not handle:
-            raise HTTPException(400, "합의에는 TikTok 핸들 확인이 필요합니다")
+            raise HTTPException(400, "합의에는 " + ("Instagram" if platform == "instagram" else "TikTok")
+                                     + " 계정 확인이 필요합니다")
+        # 합의 시점의 조건을 그대로 남긴다(이후 캠페인 수정과 무관하게 이 합의 기준 유지)
+        snapshot = {"rewardType": camp and camp["reward_type"],
+                    "commissionPct": float(t["commission_pct"]) if t["commission_pct"] is not None else None,
+                    "rewardAmount": camp and camp["reward_amount"],
+                    "rewardCurrency": camp and camp["reward_currency"],
+                    "platform": platform, "handle": handle,
+                    "conditions": [str(x) for x in ((camp and camp["conditions"]) or [])
+                                   if isinstance(x, (str, int, float))]}
+        import json as _json
         t = conn.execute(
             "UPDATE campaign_terms SET state='terms_agreed',"
-            " agreed_commission_pct=commission_pct, tiktok_handle=%s,"
-            " agreed_at=now()"
+            " agreed_commission_pct=commission_pct,"
+            " tiktok_handle=CASE WHEN %s='tiktok' THEN %s ELSE tiktok_handle END,"
+            " platform_handle=%s, agreed_terms=%s, agreed_at=now()"
             " WHERE campaign_id=%s AND creator_id=%s RETURNING *",
-            (handle, campaign_id, cid)).fetchone()
+            (platform, handle, handle, _json.dumps(snapshot, ensure_ascii=False),
+             campaign_id, cid)).fetchone()
         from .routes_service import award_xp
         _b = conn.execute("SELECT brand_id FROM campaigns WHERE"
                           " campaign_id=%s", (campaign_id,)).fetchone()
@@ -537,7 +582,9 @@ def agree_offer(campaign_id: str, body: AgreeIn,
             award_xp(conn, cid, _b["brand_id"], "agreement", campaign_id)
         ledger_append(conn, f"creator:{cid}", "CAMPAIGN_TERMS_AGREED",
                       campaign_id,
-                      {"commissionPct": float(t["agreed_commission_pct"])})
+                      {"commissionPct": (float(t["agreed_commission_pct"])
+                                         if t["agreed_commission_pct"] is not None else None),
+                       "rewardType": snapshot["rewardType"], "platform": platform})
     return _terms_out(t)
 
 
@@ -560,6 +607,10 @@ def submit_spark_code(campaign_id: str, body: SparkIn,
         if t["state"] not in ("terms_agreed", "sample_shipped",
                               "content_submitted", "revision_requested"):
             raise HTTPException(409, f"합의 후 제출 가능 (현재 {t['state']})")
+        plat = conn.execute("SELECT platform FROM campaigns WHERE campaign_id=%s",
+                            (campaign_id,)).fetchone()
+        if plat and plat["platform"] != "tiktok":
+            raise HTTPException(409, "Spark 코드는 TikTok 캠페인에만 제출해요")
         t = conn.execute(
             "UPDATE campaign_terms SET spark_code=%s"
             " WHERE campaign_id=%s AND creator_id=%s RETURNING *",

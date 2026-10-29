@@ -31,7 +31,7 @@ def test_public_listing_requires_presentation_and_hides_unlisted(client):
     with psycopg.connect(os.environ['DATABASE_URL']) as c:
         c.execute("UPDATE campaigns SET product_id=%s WHERE campaign_id=%s", (p['productId'], c1['campaignId']))
     client.post(f"/brands/pubco/campaigns/{c1['campaignId']}/publish", headers=H)
-    lst = client.get('/public/products').json()
+    lst = client.get('/public/products').json()['items']
     ids = [x['productId'] for x in lst]
     assert p['productId'] in ids and hidden['productId'] not in ids
     row = next(x for x in lst if x['productId'] == p['productId'])
@@ -41,7 +41,7 @@ def test_public_listing_requires_presentation_and_hides_unlisted(client):
     assert client.post(f"/brands/pubco2/products/{p['productId']}/public", json={'listed': False}, headers=H2).status_code == 404
     # 끄면 목록에서 빠진다
     client.post(f"/brands/pubco/products/{p['productId']}/public", json={'listed': False}, headers=H)
-    assert p['productId'] not in [x['productId'] for x in client.get('/public/products').json()]
+    assert p['productId'] not in [x['productId'] for x in client.get('/public/products').json()['items']]
 
 
 def test_suspended_brand_products_are_not_public(client):
@@ -53,4 +53,51 @@ def test_suspended_brand_products_are_not_public(client):
     assert client.post(f"/brands/pubsus/products/{p['productId']}/public", json={'listed': True}, headers=H).status_code == 200
     with psycopg.connect(os.environ['DATABASE_URL']) as c:
         c.execute("UPDATE brands SET suspended_at=now() WHERE brand_id='pubsus'")
-    assert p['productId'] not in [x['productId'] for x in client.get('/public/products').json()]
+    assert p['productId'] not in [x['productId'] for x in client.get('/public/products').json()['items']]
+
+
+def _present(pid, summary='공개용 제품 소개입니다 열 글자 이상', image='https://cdn.example.com/x.png'):
+    with psycopg.connect(os.environ['DATABASE_URL']) as c:
+        c.execute("INSERT INTO product_invitation_profiles (product_id, summary, image_url) VALUES (%s,%s,%s)"
+                  " ON CONFLICT (product_id) DO UPDATE SET summary=EXCLUDED.summary, image_url=EXCLUDED.image_url",
+                  (pid, summary, image))
+
+
+def test_other_brand_campaign_linked_to_product_is_never_shown(client):
+    H = _brand(client, 'xbrand1'); H2 = _brand(client, 'xbrand2')
+    p = client.post('/brands/xbrand1/products', json={'name': '교차 확인 제품'}, headers=H).json()
+    _present(p['productId'])
+    assert client.post(f"/brands/xbrand1/products/{p['productId']}/public", json={'listed': True}, headers=H).status_code == 200
+    # 잘못 연결된 fixture: 다른 브랜드 캠페인이 이 제품 id 를 가리킴
+    bad = client.post('/brands/xbrand2/campaigns', json={'name': '다른 브랜드 캠페인', 'reward_type': 'gifted'}, headers=H2).json()
+    with psycopg.connect(os.environ['DATABASE_URL']) as c:
+        c.execute("UPDATE campaigns SET product_id=%s, lifecycle='published', status='open' WHERE campaign_id=%s",
+                  (p['productId'], bad['campaignId']))
+    row = next(x for x in client.get('/public/products?brand=xbrand1').json()['items'] if x['productId'] == p['productId'])
+    assert all(c['campaignId'] != bad['campaignId'] for c in row['campaigns'])
+    assert client.get('/public/products?brand=xbrand1&can=true').json()['total'] == 0
+
+
+def test_listing_drops_when_presentation_removed_and_paging_filters(client):
+    H = _brand(client, 'pagebr')
+    pids = []
+    for i in range(3):
+        p = client.post('/brands/pagebr/products', json={'name': f'페이지 제품 {i}'}, headers=H).json()
+        _present(p['productId']); pids.append(p['productId'])
+        assert client.post(f"/brands/pagebr/products/{p['productId']}/public", json={'listed': True}, headers=H).status_code == 200
+    r1 = client.get('/public/products?brand=pagebr&limit=2').json()
+    assert r1['total'] == 3 and len(r1['items']) == 2 and r1['nextOffset'] == 2
+    r2 = client.get('/public/products?brand=pagebr&limit=2&offset=2').json()
+    assert len(r2['items']) == 1 and r2['nextOffset'] is None
+    assert client.get('/public/products?q=페이지 제품 1').json()['total'] >= 1
+    assert client.get('/public/products?ids=' + pids[0]).json()['items'][0]['productId'] == pids[0]
+    # 공개 후 소개를 지우면 읽을 때 빠진다(데이터는 그대로)
+    _present(pids[0], summary='')
+    assert pids[0] not in [x['productId'] for x in client.get('/public/products?brand=pagebr').json()['items']]
+    # 제품 분야가 저장돼 있으면 브랜드 분야 대신 그 값
+    with psycopg.connect(os.environ['DATABASE_URL']) as c:
+        c.execute("INSERT INTO product_profile_versions (product_id, version, fields, note) VALUES (%s, 1, %s, 'test')",
+                  (pids[1], '{"category": {"value": "헤어"}}'))
+    row = next(x for x in client.get('/public/products?brand=pagebr').json()['items'] if x['productId'] == pids[1])
+    assert row['category'] == '헤어'
+    assert [x['productId'] for x in client.get('/public/products?brand=pagebr&category=헤어').json()['items']] == [pids[1]]

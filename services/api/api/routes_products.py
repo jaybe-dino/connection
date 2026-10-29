@@ -513,45 +513,105 @@ def set_public_listing(brand: str, product_id: UUID, body: PublicListingIn,
 
 public_router = APIRouter()
 
+_PUBLIC_WHERE = (
+    " p.public_listed AND p.state='active'"
+    " AND b.suspended_at IS NULL AND NOT b.is_internal AND NOT b.is_demo"
+    # 공개 조건은 읽을 때도 확인한다 — 공개 후 소개·이미지를 지우면 목록에서 빠진다
+    " AND length(btrim(v.summary)) >= 10 AND v.image_url LIKE 'https://%%'")
+_OPEN_CAMPAIGN = (
+    "c.product_id=p.product_id AND c.brand_id=p.brand_id"   # 같은 브랜드 캠페인만
+    " AND c.status='open' AND c.lifecycle='published'"
+    " AND (c.deadline IS NULL OR c.deadline >= (now() AT TIME ZONE 'Asia/Seoul')::date)")
+
 
 @public_router.get("/public/products")
-def public_products() -> list[dict]:
-    """공개 표시한 제품만. 비공개·초안·정지·내부/데모 브랜드는 제외한다.
-    연락처·주소·계약 금액 같은 비공개 정보는 담지 않는다."""
+def public_products(q: str = "", brand: str = "", category: str = "",
+                    country: str = "", reward: str = "", can: bool = False,
+                    ids: str = "", offset: int = 0, limit: int = 60) -> dict:
+    """공개 표시한 제품만(서버 필터·페이지). 비공개·초안·정지·내부/데모 브랜드와
+    공개 조건(소개·이미지)이 빠진 제품은 제외. 연락처·주소·계약 금액은 담지 않는다."""
+    limit = max(1, min(int(limit or 60), 100))
+    offset = max(0, int(offset or 0))
+    where, args = [_PUBLIC_WHERE], []
+    if q.strip():
+        where.append("(p.name ILIKE %s OR b.name ILIKE %s)")
+        like = "%" + q.strip()[:80].replace("%", r"\%").replace("_", r"\_") + "%"
+        args += [like, like]
+    if brand.strip():
+        where.append("p.brand_id=%s"); args.append(brand.strip()[:40])
+    if country.strip():
+        if not re.fullmatch(r"[A-Z]{2}", country.strip().upper()):
+            raise HTTPException(400, "국가는 ISO 2자리 코드입니다")
+        where.append(f"EXISTS (SELECT 1 FROM campaigns c WHERE {_OPEN_CAMPAIGN}"
+                     " AND (cardinality(c.countries)=0 OR %s = ANY(c.countries)))")
+        args.append(country.strip().upper())
+    rt = {"affiliate": "affiliate", "ugc": "paid", "sample": "gifted"}.get(reward.strip())
+    if reward.strip() and not rt:
+        raise HTTPException(400, "보상 방식은 affiliate/ugc/sample 중 하나입니다")
+    if rt:
+        where.append(f"EXISTS (SELECT 1 FROM campaigns c WHERE {_OPEN_CAMPAIGN} AND c.reward_type=%s)")
+        args.append(rt)
+    if can:
+        where.append(f"EXISTS (SELECT 1 FROM campaigns c WHERE {_OPEN_CAMPAIGN})")
+    if category.strip():
+        # 분야: 제품 분야가 저장돼 있으면 그 값, 없을 때만 브랜드 분야(목록 표시와 같은 규칙)
+        where.append("COALESCE(NULLIF((SELECT fields->'category'->>'value' FROM product_profile_versions pv"
+                     " WHERE pv.product_id=p.product_id ORDER BY version DESC LIMIT 1),''), b.category)=%s")
+        args.append(category.strip()[:60])
+    if ids.strip():
+        id_list = [x for x in ids.split(",")[:200] if re.fullmatch(r"[0-9a-f-]{36}", x.strip())]
+        where.append("p.product_id::text = ANY(%s)"); args.append(id_list)
     with connect() as conn:
+        base = (" FROM brand_products p JOIN brands b USING (brand_id)"
+                " JOIN product_invitation_profiles v USING (product_id)"
+                " WHERE " + " AND ".join(where))
         rows = conn.execute(
             "SELECT p.product_id, p.brand_id, p.name, p.commission_pct,"
             " v.summary, v.image_url, b.name AS brand_name, b.logo_url,"
-            " b.category"
+            " b.category AS brand_category,"
+            " (SELECT fields->'category'->>'value' FROM product_profile_versions pv"
+            "   WHERE pv.product_id=p.product_id ORDER BY version DESC LIMIT 1) AS product_category"
+            + base + " ORDER BY p.public_listed_at DESC NULLS LAST, p.created_at DESC, p.product_id"
+            " LIMIT %s OFFSET %s", args + [limit, offset]).fetchall()
+        total = conn.execute("SELECT count(*) n" + base, args).fetchone()["n"]
+        # 분야: 제품 분야가 저장돼 있으면 그 값, 없을 때만 브랜드 분야
+        cats = conn.execute(
+            "SELECT DISTINCT COALESCE(NULLIF((SELECT fields->'category'->>'value' FROM product_profile_versions pv"
+            "   WHERE pv.product_id=p.product_id ORDER BY version DESC LIMIT 1),''), b.category) AS cat"
             " FROM brand_products p JOIN brands b USING (brand_id)"
-            " JOIN product_invitation_profiles v USING (product_id)"
-            " WHERE p.public_listed AND p.state='active'"
-            " AND b.suspended_at IS NULL AND NOT b.is_internal AND NOT b.is_demo"
-            " ORDER BY p.public_listed_at DESC NULLS LAST, p.created_at DESC"
-            " LIMIT 500").fetchall()
-        ids = [r["product_id"] for r in rows]
+            " JOIN product_invitation_profiles v USING (product_id) WHERE " + _PUBLIC_WHERE).fetchall()
+        brands = conn.execute(
+            "SELECT DISTINCT p.brand_id, b.name FROM brand_products p JOIN brands b USING (brand_id)"
+            " JOIN product_invitation_profiles v USING (product_id) WHERE " + _PUBLIC_WHERE
+            + " ORDER BY b.name").fetchall()
+        ids_ = [r["product_id"] for r in rows]
         camps = conn.execute(
-            "SELECT campaign_id, product_id, name, reward_type, affiliate_pct,"
-            " reward_amount, deadline, countries, conditions"
-            " FROM campaigns WHERE product_id = ANY(%s) AND status='open'"
-            " AND lifecycle='published'"
-            " AND (deadline IS NULL OR deadline >= (now() AT TIME ZONE 'Asia/Seoul')::date)"
-            " ORDER BY deadline NULLS LAST", (ids,)).fetchall() if ids else []
+            "SELECT c.campaign_id, c.product_id, c.name, c.reward_type, c.affiliate_pct,"
+            " c.reward_amount, c.reward_currency, c.platform, c.deadline, c.countries, c.conditions"
+            " FROM campaigns c JOIN brand_products p ON " + _OPEN_CAMPAIGN +
+            " WHERE p.product_id = ANY(%s) ORDER BY c.deadline NULLS LAST", (ids_,)).fetchall() if ids_ else []
     by = {}
     for c in camps:
         by.setdefault(c["product_id"], []).append(
             {"campaignId": c["campaign_id"], "name": c["name"],
              "rewardType": c["reward_type"],
              "affiliatePct": float(c["affiliate_pct"]) if c["affiliate_pct"] is not None else None,
-             "rewardAmount": c["reward_amount"],
+             "rewardAmount": c["reward_amount"], "rewardCurrency": c["reward_currency"],
+             "platform": c["platform"],
              "deadline": c["deadline"].isoformat() if c["deadline"] else None,
              "countries": list(c["countries"] or []),
              "conditions": [str(x) for x in (c["conditions"] or []) if isinstance(x, (str, int, float))]})
-    return [{"productId": str(r["product_id"]), "brandId": r["brand_id"],
-             "brandName": r["brand_name"],
-             "logoUrl": r["logo_url"] if (r["logo_url"] or "").startswith("https://") else "",
-             "category": r["category"] or "", "name": r["name"],
-             "summary": r["summary"] or "",
-             "imageUrl": r["image_url"] if (r["image_url"] or "").startswith("https://") else "",
-             "commissionPct": float(r["commission_pct"]),
-             "campaigns": by.get(r["product_id"], [])} for r in rows]
+    items = []
+    for r in rows:
+        cat = (r["product_category"] or "").strip() or (r["brand_category"] or "")
+        items.append({"productId": str(r["product_id"]), "brandId": r["brand_id"],
+                      "brandName": r["brand_name"],
+                      "logoUrl": r["logo_url"] if (r["logo_url"] or "").startswith("https://") else "",
+                      "category": cat, "name": r["name"], "summary": r["summary"] or "",
+                      "imageUrl": r["image_url"] if (r["image_url"] or "").startswith("https://") else "",
+                      "commissionPct": float(r["commission_pct"]),
+                      "campaigns": by.get(r["product_id"], [])})
+    return {"items": items, "total": total, "offset": offset, "limit": limit,
+            "nextOffset": offset + len(items) if offset + len(items) < total else None,
+            "facets": {"categories": sorted({c["cat"] for c in cats if c["cat"]}),
+                       "brands": [{"brandId": b["brand_id"], "name": b["name"]} for b in brands]}}

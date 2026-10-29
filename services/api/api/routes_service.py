@@ -755,6 +755,33 @@ class CampaignIn(BaseModel):
     capacity: int = Field(default=0, ge=0, le=10000)
     deadline: str = ""
     countries: list[str] = Field(default_factory=list, max_length=10)
+    # v8.1 조건 (추가 필드 — 비우면 기존과 같은 동작)
+    reward_amount: int | None = Field(default=None, ge=0, le=1_000_000_000)
+    reward_currency: str = Field(default="KRW", pattern="^(KRW|USD|THB|VND|JPY)$")
+    platform: str = Field(default="tiktok", pattern="^(tiktok|instagram)$")
+    conditions: list[str] = Field(default_factory=list, max_length=10)
+    product_id: str | None = Field(default=None, max_length=40)
+
+
+def _conditions(v: list[str] | None) -> list[str]:
+    out = [str(x).strip()[:200] for x in (v or []) if str(x).strip()]
+    return out[:10]
+
+
+def _product_of_brand(conn, brand_id: str, product_id: str | None):
+    """연결 제품은 같은 브랜드의 활성 제품만 — 다른 브랜드 제품 연결 금지."""
+    if not product_id:
+        return None
+    try:
+        uuid.UUID(str(product_id))
+    except ValueError:
+        raise HTTPException(400, "제품 ID 형식이 올바르지 않습니다")
+    row = conn.execute("SELECT product_id, name FROM brand_products WHERE"
+                       " product_id=%s AND brand_id=%s AND state='active'",
+                       (product_id, brand_id)).fetchone()
+    if not row:
+        raise HTTPException(404, "이 브랜드의 제품이 아닙니다")
+    return row
 
 
 def _parse_deadline(v: str):
@@ -780,16 +807,23 @@ def create_campaign(brand_id: str, body: CampaignIn,
     require_brand(brand_id, authorization, x_admin_key)
     with connect() as conn:
         check_brand_suspended(conn, brand_id)
+        prod = _product_of_brand(conn, brand_id, body.product_id)
         cid = "cmp-" + uuid.uuid4().hex[:12]
         conn.execute(
             "INSERT INTO campaigns (campaign_id, brand_id, name, product,"
             " usp, reward_type, affiliate_pct, capacity, deadline, status,"
-            " lifecycle, countries, updated_at)"
-            " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'open','draft',%s,now())",
-            (cid, brand_id, body.name.strip(), body.product.strip(),
+            " lifecycle, countries, updated_at, reward_amount,"
+            " reward_currency, platform, conditions, product_id)"
+            " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'open','draft',%s,now(),"
+            " %s,%s,%s,%s,%s)",
+            (cid, brand_id, body.name.strip(),
+             (body.product.strip() or (prod["name"] if prod else "")),
              body.usp.strip(), body.reward_type, body.affiliate_pct,
              body.capacity, _parse_deadline(body.deadline),
-             _countries(body.countries)))
+             _countries(body.countries), body.reward_amount,
+             body.reward_currency, body.platform,
+             json.dumps(_conditions(body.conditions), ensure_ascii=False),
+             prod["product_id"] if prod else None))
         ledger_append(conn, f"brand:{brand_id}", "CAMPAIGN_DRAFTED", cid,
                       {"name": body.name.strip()})
     return {"campaignId": cid, "lifecycle": "draft"}
@@ -803,6 +837,12 @@ class CampaignPatch(BaseModel):
     capacity: int | None = Field(default=None, ge=0, le=10000)
     deadline: str | None = None
     countries: list[str] | None = None
+    reward_type: str | None = Field(default=None, pattern="^(paid|gifted|affiliate)$")
+    reward_amount: int | None = Field(default=None, ge=0, le=1_000_000_000)
+    reward_currency: str | None = Field(default=None, pattern="^(KRW|USD|THB|VND|JPY)$")
+    platform: str | None = Field(default=None, pattern="^(tiktok|instagram)$")
+    conditions: list[str] | None = None
+    product_id: str | None = Field(default=None, max_length=40)
 
 
 @router.patch("/brands/{brand_id}/campaigns/{campaign_id}")
@@ -813,7 +853,10 @@ def edit_campaign(brand_id: str, campaign_id: str, body: CampaignPatch,
     sets, args = [], []
     for col, val in [("name", body.name), ("product", body.product),
                      ("usp", body.usp), ("affiliate_pct", body.affiliate_pct),
-                     ("capacity", body.capacity)]:
+                     ("capacity", body.capacity), ("reward_type", body.reward_type),
+                     ("reward_amount", body.reward_amount),
+                     ("reward_currency", body.reward_currency),
+                     ("platform", body.platform)]:
         if val is not None:
             sets.append(f"{col}=%s")
             args.append(val.strip() if isinstance(val, str) else val)
@@ -823,7 +866,10 @@ def edit_campaign(brand_id: str, campaign_id: str, body: CampaignPatch,
     if body.countries is not None:
         sets.append("countries=%s")
         args.append(_countries(body.countries))
-    if not sets:
+    if body.conditions is not None:
+        sets.append("conditions=%s")
+        args.append(json.dumps(_conditions(body.conditions), ensure_ascii=False))
+    if not sets and not body.product_id:
         raise HTTPException(400, "변경할 항목이 없습니다")
     with connect() as conn:
         row = conn.execute(
@@ -833,6 +879,10 @@ def edit_campaign(brand_id: str, campaign_id: str, body: CampaignPatch,
             raise HTTPException(404, "캠페인을 찾을 수 없습니다")
         if row["lifecycle"] == "closed":
             raise HTTPException(409, "마감된 캠페인은 수정할 수 없습니다")
+        if body.product_id:
+            prod = _product_of_brand(conn, brand_id, body.product_id)
+            sets.append("product_id=%s")
+            args.append(prod["product_id"])
         conn.execute("UPDATE campaigns SET " + ", ".join(sets)
                      + ", updated_at=now() WHERE campaign_id=%s",
                      args + [campaign_id])

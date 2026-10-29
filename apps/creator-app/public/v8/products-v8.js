@@ -13,7 +13,7 @@
   var JWT = (function () { try { return localStorage.getItem('CONNECTION_JWT') || ''; } catch (e) { return ''; } })();
   function req(path, auth) { return fetch(API + path, { headers: auth && JWT ? { Authorization: 'Bearer ' + JWT } : {}, credentials: 'omit' }).then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); }); }
   var CTRY = { KR: '한국', TH: '태국', US: '미국', VN: '베트남', JP: '일본' };
-  var S = { list: null, err: false, mine: {}, member: {}, f: { q: '', brand: '', cat: '', ctry: '', rtype: '', view: 'all', can: false } };
+  var S = { list: null, total: 0, next: null, more: false, facets: { categories: [], brands: [] }, err: false, mine: {}, member: {}, appliedPids: [], f: { q: '', brand: '', cat: '', ctry: '', rtype: '', view: 'all', can: false }, ver: 0 };
   var saved = (function () { try { return JSON.parse(localStorage.getItem('PRODUCTS_SAVED') || '[]'); } catch (e) { return []; } })();
   function keep() { try { localStorage.setItem('PRODUCTS_SAVED', JSON.stringify(saved)); } catch (e) {} }
   var P = { bag: 'M5 8h14l-1 13H6zM9 8V6a3 3 0 0 1 6 0v2', chat: 'M4 5h16v11H9l-5 4z' };
@@ -21,7 +21,7 @@
   function mono(name) { var l = h((name || '?').slice(0, 1).toUpperCase()); return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="10" fill="#f3eff6"/><text x="32" y="42" font-size="26" text-anchor="middle" fill="#695177" font-family="sans-serif">' + l + '</text></svg>'); }
   function reward(c) {
     if (c.rewardType === 'affiliate') return '판매 보상(판매금액의 ' + (c.affiliatePct != null ? c.affiliatePct + '%' : '— ') + ')';
-    if (c.rewardType === 'paid') return '고정비' + (c.rewardAmount != null ? ' ' + Number(c.rewardAmount).toLocaleString() + '원' : ' (금액 브랜드 안내 대기)');
+    if (c.rewardType === 'paid') return '고정비' + (c.rewardAmount != null ? ' ' + ((c.rewardCurrency || 'KRW') === 'KRW' ? Number(c.rewardAmount).toLocaleString('ko-KR') + '원' : Number(c.rewardAmount).toLocaleString('en-US') + ' ' + c.rewardCurrency) : ' (금액 브랜드 안내 대기)');
     if (c.rewardType === 'gifted') return '제품 제공 (금액 보상 없음)';
     return '브랜드 안내 대기';
   }
@@ -29,20 +29,7 @@
   function inviteUrl(p) { return '/?brand=' + encodeURIComponent(p.brandId) + '&product=' + encodeURIComponent(p.productId); }
   function campUrl(c) { return '/#/c-campaigns/' + encodeURIComponent(c.campaignId); }
   function applied(p) { return p.campaigns.some(function (c) { return S.mine[c.campaignId] && S.mine[c.campaignId] !== 'none'; }); }
-  function filtered() {
-    var f = S.f, q = f.q.trim().toLowerCase();
-    return (S.list || []).filter(function (p) {
-      if (q && (p.name + ' ' + p.brandName).toLowerCase().indexOf(q) < 0) return false;
-      if (f.brand && p.brandId !== f.brand) return false;
-      if (f.cat && p.category !== f.cat) return false;
-      if (f.ctry && !p.campaigns.some(function (c) { return (c.countries || []).indexOf(f.ctry) >= 0; })) return false;
-      if (f.rtype && !p.campaigns.some(function (c) { return RT[c.rewardType] === f.rtype; })) return false;
-      if (f.can && !p.campaigns.length) return false;
-      if (f.view === 'saved' && saved.indexOf(p.productId) < 0) return false;
-      if (f.view === 'applied' && !applied(p)) return false;
-      return true;
-    });
-  }
+  function filtered() { return S.list || []; }  // 필터·페이지는 서버(/public/products)에서 처리
   function card(p) {
     var cs = p.campaigns, open = cs.length, isApplied = applied(p), member = !!S.member[p.brandId];
     var countries = []; cs.forEach(function (c) { (c.countries || []).forEach(function (k) { if (countries.indexOf(k) < 0) countries.push(k); }); });
@@ -53,12 +40,12 @@
   }
   function opt(v, l, cur) { return '<option value="' + h(v) + '"' + (cur === v ? ' selected' : '') + '>' + h(l) + '</option>'; }
   function render() {
-    var f = S.f, list = S.list || [], brands = [], cats = [];
-    list.forEach(function (p) { if (!brands.some(function (b) { return b[0] === p.brandId; })) brands.push([p.brandId, p.brandName]); if (p.category && cats.indexOf(p.category) < 0) cats.push(p.category); });
+    var f = S.f, list = S.list || [];
+    var brands = (S.facets.brands || []).map(function (b) { return [b.brandId, b.name]; }), cats = S.facets.categories || [];
     var res = filtered();
     var body = S.err ? '<div class="v6-empty" role="alert"><b>제품 목록을 불러오지 못했어요.</b><p>연결 상태를 확인한 뒤 다시 시도해 주세요.</p><button type="button" class="btn" data-act="reload">다시 불러오기</button></div>' :
       !S.list ? '<div class="v6-empty" role="status">불러오는 중…</div>' :
-      '<p class="v6-count" id="v6pf-count" aria-live="polite">결과 ' + res.length + '개</p>' + (res.length ? '<ul class="v6-pgrid">' + res.map(card).join('') + '</ul>' : '<div class="v6-empty">' + (list.length ? '조건에 맞는 제품이 없어요. <button type="button" class="btn" data-act="reset">필터 초기화</button>' : '아직 공개된 제품이 없어요.') + '</div>');
+      '<p class="v6-count" id="v6pf-count" aria-live="polite">결과 ' + S.total + '개' + (res.length < S.total ? ' · ' + res.length + '개 표시' : '') + '</p>' + (res.length ? '<ul class="v6-pgrid">' + res.map(card).join('') + '</ul>' + (S.next != null ? '<div class="v6-actions"><button type="button" class="btn" data-act="more"' + (S.more ? ' disabled' : '') + '>' + (S.more ? '불러오는 중…' : '더 보기') + '</button></div>' : '') : '<div class="v6-empty">' + (S.filtered ? '조건에 맞는 제품이 없어요. <button type="button" class="btn" data-act="reset">필터 초기화</button>' : '아직 공개된 제품이 없어요.') + '</div>');
     var focused = document.activeElement && document.activeElement.id, caret = null;
     try { caret = focused === 'v6pf-q' ? document.activeElement.selectionStart : null; } catch (e) {}
     document.getElementById('stage').innerHTML = '<div class="catalog"><header class="catalog-top"><a class="catalog-logo" href="/">THEPRLIST</a><nav class="catalog-nav" aria-label="전역 메뉴"><a href="/products/" aria-current="page">' + icon('bag') + '<span>제품 모아보기</span></a><a href="/">' + icon('chat') + '<span>내 커뮤니티</span></a></nav><span class="catalog-sp"></span></header>' +
@@ -84,22 +71,43 @@
     S.sheetFrom = p.productId;
   }
   function closeSheet() { document.getElementById('pd-sheet').hidden = true; document.getElementById('pd-scrim').hidden = true; var back = S.sheetFrom && document.querySelector('[data-detail="' + S.sheetFrom + '"]'); if (back) back.focus(); }
-  document.addEventListener('input', function (e) { var k = e.target.dataset && e.target.dataset.f; if (k === 'q') { S.f.q = e.target.value; render(); } });
-  document.addEventListener('change', function (e) { var k = e.target.dataset && e.target.dataset.f; if (k && k !== 'q') { S.f[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; render(); } });
+  var qTimer = null;
+  document.addEventListener('input', function (e) { var k = e.target.dataset && e.target.dataset.f; if (k === 'q') { S.f.q = e.target.value; clearTimeout(qTimer); qTimer = setTimeout(function () { fetchPage(true); }, 250); } });
+  document.addEventListener('change', function (e) { var k = e.target.dataset && e.target.dataset.f; if (k && k !== 'q') { S.f[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; fetchPage(true); } });
   document.addEventListener('click', function (e) {
     var t = e.target.closest('button'); if (!t) { if (e.target.id === 'pd-scrim') closeSheet(); return; }
-    if (t.dataset.act === 'reset') { S.f = { q: '', brand: '', cat: '', ctry: '', rtype: '', view: 'all', can: false }; render(); }
+    if (t.dataset.act === 'reset') { S.f = { q: '', brand: '', cat: '', ctry: '', rtype: '', view: 'all', can: false }; fetchPage(true); }
     if (t.dataset.act === 'reload') load();
+    if (t.dataset.act === 'more') fetchPage(false);
     if (t.dataset.act === 'close') closeSheet();
     if (t.dataset.detail) { var p = (S.list || []).find(function (x) { return x.productId === t.dataset.detail; }); if (p) sheet(p); }
-    if (t.dataset.save) { var id = t.dataset.save, i = saved.indexOf(id); if (i < 0) saved.push(id); else saved.splice(i, 1); keep(); render(); }
+    if (t.dataset.save) { var id = t.dataset.save, i = saved.indexOf(id); if (i < 0) saved.push(id); else saved.splice(i, 1); keep(); if (S.f.view === 'saved') fetchPage(true); else render(); }
   });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !document.getElementById('pd-sheet').hidden) closeSheet(); });
+  function query(offset) {
+    var f = S.f, p = new URLSearchParams();
+    if (f.q.trim()) p.set('q', f.q.trim()); if (f.brand) p.set('brand', f.brand); if (f.cat) p.set('category', f.cat);
+    if (f.ctry) p.set('country', f.ctry); if (f.rtype) p.set('reward', f.rtype); if (f.can) p.set('can', 'true');
+    if (f.view === 'saved') p.set('ids', saved.join(',') || '00000000-0000-0000-0000-000000000000');
+    if (f.view === 'applied') p.set('ids', S.appliedPids.join(',') || '00000000-0000-0000-0000-000000000000');
+    p.set('offset', String(offset)); p.set('limit', '60');
+    S.filtered = !!(f.q.trim() || f.brand || f.cat || f.ctry || f.rtype || f.can || f.view !== 'all');
+    return '/public/products?' + p.toString();
+  }
+  function fetchPage(reset) {
+    var ver = ++S.ver, offset = reset ? 0 : (S.next || 0);
+    if (reset) { S.list = null; S.err = false; } else S.more = true;
+    render();
+    req(query(offset)).then(function (r) {
+      if (ver !== S.ver) return;
+      S.list = (reset ? [] : (S.list || [])).concat(r.items || []); S.total = r.total || 0; S.next = r.nextOffset; S.facets = r.facets || S.facets; S.more = false; render();
+    }).catch(function () { if (ver !== S.ver) return; S.more = false; if (reset) S.err = true; else toast('더 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'); render(); });
+  }
+  function toast(m) { var t = document.getElementById('toast'); if (!t) return; t.textContent = m; t.classList.add('show'); setTimeout(function () { t.classList.remove('show'); }, 2600); }
   function load() {
-    S.err = false; S.list = null; render();
-    req('/public/products').then(function (l) { S.list = l || []; render(); }).catch(function () { S.err = true; render(); });
+    fetchPage(true);
     if (JWT) {
-      req('/me/campaigns', true).then(function (cs) { (cs || []).forEach(function (c) { S.mine[c.campaignId] = c.termsState || c.myStatus; S.member[c.brandId] = true; }); render(); }).catch(function () {});
+      req('/me/campaigns', true).then(function (cs) { (cs || []).forEach(function (c) { var st = c.termsState || c.myStatus; S.mine[c.campaignId] = st; S.member[c.brandId] = true; if (st && st !== 'none' && c.productId && S.appliedPids.indexOf(c.productId) < 0) S.appliedPids.push(c.productId); }); render(); }).catch(function () {});
       req('/me/memberships', true).then(function (ms) { (ms || []).forEach(function (m) { S.member[m.brandId] = true; }); render(); }).catch(function () {});
     }
   }

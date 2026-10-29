@@ -13,7 +13,9 @@ test('public product introduction escapes text and URLs and never invents an ima
  c.invitationProduct.imageUrl='https://cdn.example.test/product.png';html=c.invitationProductHtml();assert.match(html,/<img/);assert.match(html,/referrerpolicy="no-referrer"/);
 });
 test('email authentication cleans magic secret while preserving the invitation locale',async()=>{
- const part=s.slice(s.indexOf('    if (magicTok && !magicForward) {'),s.indexOf('    if (jwtGet()) {',s.indexOf('    if (magicTok && !magicForward) {')));
+ const start=s.indexOf('    if (magicTok && !magicForward) {'),end=s.indexOf('    var handoffTok =',start);
+ assert.ok(start>=0&&end>start,'magic verification block boundaries exist');
+ const part=s.slice(start,end);
  const urls=[];const c={magicTok:'local-token',magicForward:false,sp:new URLSearchParams('?magic=local-token&brand=fau&application=opaque&lang=en'),URLSearchParams,window:{},location:{pathname:'/'},history:{replaceState:(a,b,u)=>urls.push(u)},req:()=>Promise.resolve({token:'session',user:{email:'qa@example.test'}}),jwtSet(){},authChip(){},toast(){},loadCreatorData(){}};
  vm.runInNewContext(part,c);await new Promise(r=>setImmediate(r));assert.equal(urls[0],'/?brand=fau&application=opaque&lang=en');assert.doesNotMatch(urls[0],/magic=/);
 });

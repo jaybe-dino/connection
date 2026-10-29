@@ -7,7 +7,9 @@ test('magic links forward application context only to the fixed creator app',()=
  assert.equal(urls[0],'https://app.theprlist.net/?brand=fau&magic=login-token&application=opaque-ctx');
 });
 test('magic verification removes login secret but preserves customer application context without auto-joining',async()=>{
- const part=s.slice(s.indexOf('    if (magicTok && !magicForward) {'),s.indexOf('    if (jwtGet()) {',s.indexOf('    if (magicTok && !magicForward) {')));
+ const start=s.indexOf('    if (magicTok && !magicForward) {'),end=s.indexOf('    var handoffTok =',start);
+ assert.ok(start>=0&&end>start,'magic verification block boundaries exist');
+ const part=s.slice(start,end);
  const calls=[],urls=[];const c={magicTok:'token',magicForward:false,sp:new URLSearchParams('?magic=token&brand=returnu&application=opaque'),URLSearchParams,window:{},location:{pathname:'/'},history:{replaceState:(a,b,u)=>urls.push(u)},req:(m,u,b)=>{calls.push(u);return Promise.resolve({token:'session',user:{email:'demo@example.invalid'}})},jwtSet(){},authChip(){},toast(){},loadCreatorData(){}};
  vm.runInNewContext(part,c);await new Promise(r=>setImmediate(r));
  assert.deepEqual(calls,['/auth/magic/verify']);assert.equal(urls[0],'/?brand=returnu&application=opaque');
